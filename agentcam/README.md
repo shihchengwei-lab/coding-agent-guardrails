@@ -1,8 +1,13 @@
 # agentcam
 
 [![CI](https://github.com/shihchengwei-lab/agentcam/actions/workflows/ci.yml/badge.svg)](https://github.com/shihchengwei-lab/agentcam/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/agentcam.svg)](https://pypi.org/project/agentcam/)
 
 > Local-first CLI wrapper that records what your AI coding agent changed in your repo and generates a Markdown run report after each run.
+
+<p align="center">
+  <img src="docs/demo.gif" alt="agentcam demo: pip install, wrap an agent edit to src/auth/login.py, report shows HIGH risk flag" width="780">
+</p>
 
 agentcam does **not** replace Claude Code, Codex, OpenHands, Aider, or any
 other coding agent. It wraps them.
