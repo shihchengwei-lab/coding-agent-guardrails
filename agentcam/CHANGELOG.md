@@ -7,6 +7,17 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Documented (2026-05-16, from first dogfood session)
+
+- **README known-limitations** now states the actual failure mode for
+  wrapping interactive TUI agents (specifically Claude Code):
+  `agentcam run -- claude` (no args) errors because claude refuses to
+  open its TUI when stdout is not a TTY; `agentcam run -- claude "..."`
+  and `agentcam run -- claude -p "..."` both work (claude switches to
+  print mode when given a prompt + non-TTY). Previous wording ("may
+  render imperfectly") understated this. True PTY-backed wrapping
+  deferred to v0.2.
+
 ### Published to PyPI (2026-05-16)
 
 - **`pip install agentcam` now works** — wheel + sdist uploaded to PyPI:

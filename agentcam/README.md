@@ -243,9 +243,24 @@ please file an issue.
   invisible.
 - **Best-effort redaction.** New secret formats may slip through. Do not
   rely on agentcam alone for credential hygiene.
-- **No interactive TUI guarantee.** Agents that draw full-screen TUIs
-  (curses-style) may render imperfectly through the wrapper. Their
-  side-effects on the repo are still recorded correctly.
+- **Interactive TUI agents must be invoked with a prompt arg, not bare.**
+  agentcam wraps subprocess stdout/stderr with `PIPE` (not a real TTY).
+  Agents like Claude Code that *refuse to open a TUI under non-TTY*
+  will error if invoked bare:
+  ```bash
+  agentcam run -- claude
+  # -> Error: Input must be provided either through stdin or as a prompt
+  #    argument when using --print
+  ```
+  Workarounds that DO work (claude switches to print mode when given a
+  prompt + no TTY):
+  ```bash
+  agentcam run -- claude "fix the failing tests"   # positional prompt
+  agentcam run -- claude -p "create hello.py"      # explicit -p
+  ```
+  For free-form interactive chat, invoke the agent directly (unwrapped).
+  True PTY-backed wrapping (Windows ConPTY / POSIX pty) so TUIs render
+  correctly under agentcam is on the v0.2 roadmap.
 - **No submodule traversal.** Running inside a submodule treats it as an
   independent repo. Superproject context is not analyzed.
 - **No sparse-checkout special handling.** Reports reflect what
