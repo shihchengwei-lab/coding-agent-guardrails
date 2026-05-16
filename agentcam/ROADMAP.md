@@ -50,9 +50,8 @@ v0.1 has 0 real users yet, the "1 user requesting it" rule from the
 ROADMAP intro applies. Building a team-workflow feature before having
 individual-tool users would be premature.
 
-**Timing.** Open. Suggestions and concrete use cases are welcome —
-file an issue or email — and will be considered. No specific bar to
-clear, no promise to build. Decision is mine.
+**Timing.** Open. File an issue or email with a concrete use case;
+it'll be considered.
 
 **Acceptance criteria (when built).** v0.2.0 must:
 - Publish `shihchengwei-lab/agentcam-action@v1` on GitHub Marketplace.
