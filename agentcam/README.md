@@ -278,8 +278,8 @@ For the full list of "things we deliberately did NOT do," see the
 ## Hacking
 
 ```bash
-git clone <this repo>
-cd flight_recorder
+git clone https://github.com/shihchengwei-lab/agentcam.git
+cd agentcam
 python -m venv .venv
 
 # Windows (Git Bash / PowerShell)
