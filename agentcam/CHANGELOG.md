@@ -37,6 +37,9 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
   assessment): SIGINT process-group leak, non-UTF8 filename decoding,
   POSIX exec permission. See ROADMAP v0.2 "POSIX hardening" entry and
   `docs/design.md` caveat 3.
+- **GitHub Actions matrix green (6/6 jobs)** on push to main:
+  Linux / macOS / Windows × Python 3.11 / 3.12 all pass.
+  Repo: https://github.com/shihchengwei-lab/agent-run-flight-recorder
 
 ## [0.1.0] — 2026-05-16
 

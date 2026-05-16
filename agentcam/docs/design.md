@@ -513,14 +513,23 @@ worktree's own root vs. the main repo's gitlink. Decision §17 already says
 v0.1 in worktree = treat as independent repo, no cross-repo analysis. This
 caveat is the specific case where that simplification leaks.
 
-### Caveat 3 (partially resolved 2026-05-16): Cross-platform validation
+### Caveat 3 (RESOLVED 2026-05-16): Cross-platform validation
 
-- **Windows + Python 3.12.10**: 171 passed, 1 skipped (POSIX-only signal test).
-- **Linux + Python 3.12.3 (WSL Ubuntu)**: 172 passed (the POSIX signal test runs and passes).
-- **macOS**: NOT tested. No macOS hardware available locally. CI yaml covers
-  it but hasn't been triggered (would require GitHub push). Linux is close
-  enough to macOS for high confidence in POSIX-shared behavior but is not
-  a substitute for native testing.
+GitHub Actions matrix (auto-triggered on push to main, run #25961418769):
+
+- ✅ ubuntu-latest × Python 3.11 — 172 passed (30s)
+- ✅ ubuntu-latest × Python 3.12 — 172 passed (36s)
+- ✅ macos-latest × Python 3.11 — 172 passed (32s)
+- ✅ macos-latest × Python 3.12 — 172 passed (32s)
+- ✅ windows-latest × Python 3.11 — 171 passed + 1 skipped (1m30s)
+- ✅ windows-latest × Python 3.12 — 171 passed + 1 skipped (1m21s)
+
+All three major platforms × both supported Python versions are green on
+real CI runners (not just local emulation).
+
+The Codex POSIX risks listed below remain valid as future-improvement
+items (see ROADMAP "POSIX hardening"). They're issues the test suite
+**doesn't cover** even when running on POSIX, not failures:
 
 The Codex cross-platform risk assessment identified 3 POSIX-specific
 concerns that the test suite does NOT exercise even when run on Linux

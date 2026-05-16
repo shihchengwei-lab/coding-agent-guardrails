@@ -1,5 +1,7 @@
 # agentbox
 
+[![CI](https://github.com/shihchengwei-lab/agent-run-flight-recorder/actions/workflows/ci.yml/badge.svg)](https://github.com/shihchengwei-lab/agent-run-flight-recorder/actions/workflows/ci.yml)
+
 > Local-first CLI wrapper that records what your AI coding agent changed in your repo and generates a Markdown run report after each run.
 
 agentbox does **not** replace Claude Code, Codex, OpenHands, Aider, or any
