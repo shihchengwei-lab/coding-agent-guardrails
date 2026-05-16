@@ -1,4 +1,4 @@
-"""Tests for agentbox.report.
+"""Tests for agentcam.report.
 
 Covers plan §5 (four rollback wording cases), §9 (Exit Code Detail), §10
 (manifest schema), §11 (report-wide redaction surface).
@@ -9,14 +9,14 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agentbox.models import (
+from agentcam.models import (
     ChangedFile,
     ExitDetail,
     GitState,
     RunManifest,
     RunPaths,
 )
-from agentbox.report import render_report, serialize_manifest, write_manifest
+from agentcam.report import render_report, serialize_manifest, write_manifest
 
 
 def _empty_state(*, dirty: bool = False) -> GitState:
@@ -58,8 +58,8 @@ def _state_with(*files: ChangedFile, **kw) -> GitState:
 
 
 def _paths(tmp_path: Path) -> RunPaths:
-    # Mirror production layout: <git_root>/.git/agentbox/runs/<run_id>/
-    base = tmp_path / ".git" / "agentbox" / "runs" / "20260516-213055-742-test"
+    # Mirror production layout: <git_root>/.git/agentcam/runs/<run_id>/
+    base = tmp_path / ".git" / "agentcam" / "runs" / "20260516-213055-742-test"
     base.mkdir(parents=True, exist_ok=True)
     return RunPaths(
         run_dir=str(base),
@@ -114,7 +114,7 @@ def _manifest(
         shell_used=False,
         terminal_forward_degraded=False,
         platform="linux",
-        agentbox_version="0.1.0",
+        agentcam_version="0.1.0",
         paths=_paths(tmp_path),
     )
 
@@ -244,7 +244,7 @@ class TestReportRedaction:
     def test_internal_path_excluded_from_changed_files(self, tmp_path: Path):
         after = _state_with(
             ChangedFile(
-                path=".git/agentbox/runs/20260516-x/stdout.log",
+                path=".git/agentcam/runs/20260516-x/stdout.log",
                 status="untracked",
             ),
             ChangedFile(path="real.py", status="unstaged_modified"),
@@ -253,7 +253,7 @@ class TestReportRedaction:
             _manifest(tmp_path), _empty_state(), after, [],
         )
         # Check only the Changed Files section. The Logs / Local Artifacts
-        # sections legitimately reference `.git/agentbox/runs/.../...` for
+        # sections legitimately reference `.git/agentcam/runs/.../...` for
         # *this* run's own outputs.
         changed_section = report.split("## Changed Files")[1].split("\n## ")[0]
         assert "stdout.log" not in changed_section
@@ -308,7 +308,7 @@ class TestVerdict:
         assert "Human review required: no" in report
 
     def test_high_flag_promotes(self, tmp_path: Path):
-        from agentbox.models import RiskFlag
+        from agentcam.models import RiskFlag
         flags = [RiskFlag(level="HIGH", rule="auth path", evidence="x")]
         report = render_report(
             _manifest(tmp_path), _empty_state(), _empty_state(), flags,
@@ -380,5 +380,5 @@ class TestHighAbsolutePathLeak:
         m = _manifest(tmp_path)
         report = render_report(m, _empty_state(), _empty_state(), [])
         # The redacted-log path should be shown as a relative POSIX-style
-        # path under .git/agentbox/runs/, not the absolute version.
-        assert ".git/agentbox/runs" in report
+        # path under .git/agentcam/runs/, not the absolute version.
+        assert ".git/agentcam/runs" in report

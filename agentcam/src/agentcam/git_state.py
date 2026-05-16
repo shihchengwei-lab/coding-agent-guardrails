@@ -13,7 +13,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from agentbox.models import ChangedFile, ChangeStatus, GitState
+from agentcam.models import ChangedFile, ChangeStatus, GitState
 
 # Order matters: the first matching marker wins. ``rebase-merge`` and
 # ``rebase-apply`` are checked before ``REVERT_HEAD`` etc.

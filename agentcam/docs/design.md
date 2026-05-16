@@ -1,4 +1,4 @@
-# agentbox v0.1 design notes
+# agentcam v0.1 design notes
 
 > Decision log for the next agent (or human) who picks up this codebase.
 > Each section follows: **Decision** → **Why** → **Why not the alternative**.
@@ -11,23 +11,23 @@ narrative ties the rules to their motivations.
 
 ---
 
-## 1. Output location: `<git_dir>/agentbox/runs/<run_id>/`
+## 1. Output location: `<git_dir>/agentcam/runs/<run_id>/`
 
 **Decision.** All run artifacts (raw logs, redacted logs, manifest, report)
-go under `<git_dir>/agentbox/runs/<run_id>/`. We resolve `git_dir` via
+go under `<git_dir>/agentcam/runs/<run_id>/`. We resolve `git_dir` via
 `git rev-parse --git-dir`, so worktrees and submodule gitlink files work.
 
 **Why.** Git does not track its own internals, so `git add .` (run by an
 agent or human, by accident or intent) cannot stage these files. Safety is a
 structural property, not a property of "remembering to add to .gitignore."
 
-**Why not `.agentbox/runs/`** (in the repo root). It would require us to
+**Why not `.agentcam/runs/`** (in the repo root). It would require us to
 either auto-edit the user's `.gitignore` (forbidden by user policy) or
 trust the user to do it. If the user forgets even once, an agent that runs
 `git add . && git commit && git push` will publish raw logs to GitHub. The
 risk surface is too large for the convenience (shorter paths) it buys.
 
-**Why not user cache** (`~/.cache/agentbox/<repo>/`). Decouples runs from
+**Why not user cache** (`~/.cache/agentcam/<repo>/`). Decouples runs from
 the repo, which is the wrong direction: a run *is about* this repo. Also
 makes share/demo flow worse for non-engineering users.
 
@@ -86,10 +86,10 @@ bytes), we fall back to `decode('utf-8', errors='replace')` and set
 
 ## 4. argv-only — no shell language compatibility
 
-**Decision.** `agentbox run -- <argv>` runs the subprocess with
+**Decision.** `agentcam run -- <argv>` runs the subprocess with
 `shell=False`. We do not interpret pipes (`|`), redirects (`>`), `&&`, or
 variable expansion. If the user wants those, they wrap their own shell:
-`agentbox run -- bash -lc "..."` / `pwsh -Command "..."` / `cmd /c "..."`.
+`agentcam run -- bash -lc "..."` / `pwsh -Command "..."` / `cmd /c "..."`.
 
 **Why.** "Support any shell command" sounds nice but is a lie. Different
 shells (bash, zsh, fish, pwsh, cmd) have different syntax; we cannot
@@ -216,16 +216,16 @@ JUnit XML from a known location).
 
 ## 10. Never auto-edit user's `.gitignore`
 
-**Decision.** agentbox does not touch the user's `.gitignore`. Period.
+**Decision.** agentcam does not touch the user's `.gitignore`. Period.
 
-**Why.** "agentbox modified my repo configuration" is exactly the
+**Why.** "agentcam modified my repo configuration" is exactly the
 behavior the tool is supposed to *detect*. We can't be the kind of tool we
 warn about.
 
-**Why this is OK.** Output goes under `.git/agentbox/`, which git ignores
+**Why this is OK.** Output goes under `.git/agentcam/`, which git ignores
 natively (it ignores everything inside `.git`). So there is no
 self-pollution problem to solve, and no need for `.gitignore`. Verified by
-`test_e2e.TestSmoke.test_git_status_does_not_list_agentbox`.
+`test_e2e.TestSmoke.test_git_status_does_not_list_agentcam`.
 
 ---
 
@@ -244,7 +244,7 @@ scripts).
 sees success. Retry adds the hex suffix for defense in depth.
 
 **Why exit 2 (not 1) for collision.** Exit 1 means "wrapped subprocess
-failed." Exit 2 means "agentbox itself couldn't run." Distinguishing them
+failed." Exit 2 means "agentcam itself couldn't run." Distinguishing them
 matters for CI users who treat `exit != 0` as "deploy failed."
 
 ---
@@ -281,9 +281,9 @@ false negative is a leaked credential name in a shared report.
 filename pattern over each argv element. The Markdown `Command:` field
 uses the redacted version; `manifest.command_argv_raw` keeps the original.
 
-**Why.** `agentbox run -- claude --api-key sk-…` is plausible. Without
+**Why.** `agentcam run -- claude --api-key sk-…` is plausible. Without
 argv redaction, the API key would land in `Command:` and stay there forever.
-Same logic for `agentbox run -- vim .env.production` — the filename leaks.
+Same logic for `agentcam run -- vim .env.production` — the filename leaks.
 
 **Why keep raw in manifest.** Forensic completeness. The user opted in by
 writing it. Manifest stays under `.git/`, so it's not at the same exposure
@@ -370,9 +370,9 @@ with `gitdir: ../.git/modules/sub`. Parsing this format ourselves is
 error-prone; `git rev-parse` does it correctly and cheaply.
 
 **Submodule policy.** v0.1 treats a submodule as an independent repo when
-agentbox runs inside it. We do not analyze the submodule / superproject
+agentcam runs inside it. We do not analyze the submodule / superproject
 relationship, do not recurse into nested submodules. If the user wants the
-superproject view, they run agentbox from there.
+superproject view, they run agentcam from there.
 
 **Sparse-checkout.** Not specially handled. The porcelain output reflects
 the sparse view; we report what git reports.
@@ -391,7 +391,7 @@ unaffected (always bytes).
 truth. Degrading display rather than crashing keeps the run usable.
 
 **Why not "set console to UTF-8."** Side effects on the user's shell
-session beyond agentbox's process. Not our place.
+session beyond agentcam's process. Not our place.
 
 ---
 
@@ -424,14 +424,14 @@ without running the tool. Plus the README screenshot needs a source.
 
 ---
 
-## 21. No `agentbox doctor`, no separate `risk-rules.md` / `report-format.md`
+## 21. No `agentcam doctor`, no separate `risk-rules.md` / `report-format.md`
 
-**Decision.** v0.1 has only `agentbox version` and `agentbox run`. The
+**Decision.** v0.1 has only `agentcam version` and `agentcam run`. The
 docs are this single `design.md` plus the README; no separate rules or
 format documents.
 
 **Why.** `doctor` was specced as an environment-checker. The error
-messages from `agentbox run` itself ("not in a git repository", "command
+messages from `agentcam run` itself ("not in a git repository", "command
 not found") cover the same use cases without a second subcommand.
 
 **Why no separate docs.** Risk rule rationale and report format rationale
@@ -468,7 +468,7 @@ matters.
 - **`argparse.REMAINDER` keeps the leading `--`** in the captured argv.
   Strip it via `_strip_leading_dashdash`.
 - **Tests use `sys.executable`** (the venv Python) to invoke
-  `agentbox.cli`, not a hardcoded `python` from PATH. Cross-environment
+  `agentcam.cli`, not a hardcoded `python` from PATH. Cross-environment
   reliability.
 - **Output scanner test had a false-failure mode** when the user's command
   itself echoes the matched string. Fixed by asserting only that the raw
@@ -487,7 +487,7 @@ just because pytest is green.
 
 ### Caveat 1: `_escape_for_cmd_shim` over-escapes literal `^` in argv
 
-`src/agentbox/runner.py` caret-doubles `^` regardless of whether it sits
+`src/agentcam/runner.py` caret-doubles `^` regardless of whether it sits
 inside `list2cmdline`-quoted segments. cmd.exe inside double quotes does NOT
 treat `^` as an escape character, so a literal `^` in user argv (e.g. a
 password containing `^`) becomes `^^` on the cmd line, and the `.cmd` /
@@ -500,11 +500,11 @@ need precise pass-through can wrap their own shell: `bash -lc "..."`.
 
 ### Caveat 2: `_relative_to_git_root` falls back to absolute in `git worktree`
 
-`src/agentbox/report.py`'s `_relative_to_git_root(absolute_path, git_root)`
+`src/agentcam/report.py`'s `_relative_to_git_root(absolute_path, git_root)`
 catches `ValueError` from `Path.relative_to()` and returns `absolute_path`
 as-is. This fallback fires in `git worktree` setups, where the real
 `git_dir` lives at `<main_repo>/.git/worktrees/<wt_name>/` while `git_root`
-is the worktree's working tree directory — agentbox output lands under the
+is the worktree's working tree directory — agentcam output lands under the
 real `git_dir`, so the redacted log paths in the report fall back to
 absolute strings, leaking username / repo location.
 

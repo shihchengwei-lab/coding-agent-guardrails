@@ -1,4 +1,4 @@
-"""End-to-end tests: real subprocess, real git repo, real ``agentbox run``.
+"""End-to-end tests: real subprocess, real git repo, real ``agentcam run``.
 
 Slower than unit tests (real subprocess + git per case), but they're the only
 way to confirm cli.py wires the modules correctly. Also the regression suite
@@ -15,10 +15,10 @@ from pathlib import Path
 GIT_AUTHOR = ["-c", "user.email=t@t", "-c", "user.name=t"]
 
 
-def _agentbox(cwd: Path, *args: str) -> subprocess.CompletedProcess:
-    """Invoke agentbox via the same Python that's running pytest (the venv)."""
+def _agentcam(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    """Invoke agentcam via the same Python that's running pytest (the venv)."""
     return subprocess.run(
-        [sys.executable, "-m", "agentbox.cli", *args],
+        [sys.executable, "-m", "agentcam.cli", *args],
         cwd=cwd,
         capture_output=True,
         timeout=25,
@@ -33,7 +33,7 @@ def _git(cwd: Path, *args: str) -> None:
 
 
 def _run_dir(repo: Path) -> Path:
-    runs = repo / ".git" / "agentbox" / "runs"
+    runs = repo / ".git" / "agentcam" / "runs"
     return next(runs.iterdir())
 
 
@@ -53,7 +53,7 @@ def _manifest(repo: Path) -> dict:
 
 class TestSmoke:
     def test_create_file(self, tmp_git_repo: Path):
-        proc = _agentbox(
+        proc = _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c", "open('hello.txt','w').write('hi')",
         )
@@ -61,10 +61,10 @@ class TestSmoke:
         report = _report(tmp_git_repo)
         assert "hello.txt" in report
 
-    def test_git_status_does_not_list_agentbox(self, tmp_git_repo: Path):
-        # Plan §1: .git/agentbox/ must NOT appear in git status (git ignores
+    def test_git_status_does_not_list_agentcam(self, tmp_git_repo: Path):
+        # Plan §1: .git/agentcam/ must NOT appear in git status (git ignores
         # its own internals).
-        _agentbox(
+        _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c", "pass",
         )
@@ -72,7 +72,7 @@ class TestSmoke:
             ["git", "status", "--porcelain"],
             cwd=tmp_git_repo, capture_output=True, text=True, check=True,
         )
-        assert "agentbox" not in ps.stdout
+        assert "agentcam" not in ps.stdout
         assert ".git" not in ps.stdout
 
 
@@ -85,7 +85,7 @@ class TestRiskFlags:
         (tmp_git_repo / "tracked.txt").write_text("x")
         _git(tmp_git_repo, "add", "tracked.txt")
         _git(tmp_git_repo, "commit", "-q", "-m", "add")
-        proc = _agentbox(
+        proc = _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c", "import os; os.remove('tracked.txt')",
         )
@@ -100,7 +100,7 @@ class TestRiskFlags:
         (tmp_git_repo / "src" / "auth" / "login.py").write_text("x")
         _git(tmp_git_repo, "add", ".")
         _git(tmp_git_repo, "commit", "-q", "-m", "auth")
-        proc = _agentbox(
+        proc = _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c",
             "open('src/auth/login.py','a').write('# c\\n')",
@@ -115,7 +115,7 @@ class TestRiskFlags:
         (tmp_git_repo / "author.md").write_text("x")
         _git(tmp_git_repo, "add", ".")
         _git(tmp_git_repo, "commit", "-q", "-m", "author")
-        _agentbox(
+        _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c", "open('author.md','a').write('# x\\n')",
         )
@@ -126,7 +126,7 @@ class TestRiskFlags:
         (tmp_git_repo / "package.json").write_text("{}")
         _git(tmp_git_repo, "add", ".")
         _git(tmp_git_repo, "commit", "-q", "-m", "pkg")
-        _agentbox(
+        _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c",
             "open('package.json','w').write('{\"name\":\"x\"}\\n')",
@@ -147,7 +147,7 @@ class TestPreRunDirty:
         _git(tmp_git_repo, "commit", "-q", "-m", "init")
         (tmp_git_repo / "tracked.txt").write_text("dirty")  # uncommitted modify
 
-        _agentbox(
+        _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c", "print('noop')",
         )
@@ -163,7 +163,7 @@ class TestPreRunDirty:
 
 class TestCommandFailure:
     def test_failure_still_reports(self, tmp_git_repo: Path):
-        proc = _agentbox(
+        proc = _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c", "import sys; sys.exit(2)",
         )
@@ -183,7 +183,7 @@ class TestCommandFailure:
 class TestRedaction:
     def test_secret_in_stdout(self, tmp_git_repo: Path):
         token = "ghp_" + "A" * 40
-        proc = _agentbox(
+        proc = _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c", f"print('GITHUB_TOKEN={token}')",
         )
@@ -204,7 +204,7 @@ class TestRedaction:
             "print('BBBBBBBB')\n"
             "print('-----END RSA PRIVATE KEY-----')\n"
         )
-        proc = _agentbox(
+        proc = _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c", script,
         )
@@ -220,7 +220,7 @@ class TestRedaction:
         # Plan §11: command argv passes through redact_argv before going
         # into the markdown report; raw stays only in manifest.
         secret = "sk-AAAAAAAAAAAAAAAAAAAA"
-        _agentbox(
+        _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c", "import sys; sys.argv  # noqa",
             "--api-key", secret,
@@ -239,7 +239,7 @@ class TestRedaction:
 
 class TestSecretFilenameRedaction:
     def test_dot_env_production_redacted(self, tmp_git_repo: Path):
-        _agentbox(
+        _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c",
             "open('.env.production','w').write('FAKE=x')",
@@ -263,7 +263,7 @@ class TestStagedOnly:
             "open('new.py','w').write('x')\n"
             "subprocess.run(['git','add','new.py'], check=True)\n"
         )
-        proc = _agentbox(
+        proc = _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c", script,
         )
@@ -278,7 +278,7 @@ class TestStagedOnly:
 
 class TestOutputScanner:
     def test_rm_rf_in_stdout_high(self, tmp_git_repo: Path):
-        _agentbox(
+        _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c",
             "print('about to rm -rf /opt/old/data now')",

@@ -8,7 +8,7 @@
 
 ## Why a roadmap exists
 
-agentbox v0.1 is intentionally minimal. A roadmap is useful so that:
+agentcam v0.1 is intentionally minimal. A roadmap is useful so that:
 
 - Users can see what's likely vs. unlikely to be in v0.x.
 - Contributors can see where help is welcome (and where the line is).
@@ -30,7 +30,7 @@ Ordered by likely value to v0.1 users, **not** by build difficulty.
 **What.** A reusable CI step:
 
 ```yaml
-- uses: agentbox/run-action@v1
+- uses: agentcam/run-action@v1
   with:
     command: claude "fix the failing tests"
     attach-to-pr: true
@@ -49,7 +49,7 @@ PRs across an org will be paid.
 **What.** Users add their own path / output patterns:
 
 ```yaml
-# .agentbox/rules.yaml
+# .agentcam/rules.yaml
 high_paths:
   - segment: payment
     label: payment processing path
@@ -63,7 +63,7 @@ don't know about." Without YAML, every team forks the source.
 **Constraint.** Basic rule mechanism stays free. Pre-built rule packs (PCI
 patterns, HIPAA patterns, FinTech patterns) could be paid.
 
-### 3. `agentbox compare <run-id-a> <run-id-b>`
+### 3. `agentcam compare <run-id-a> <run-id-b>`
 
 **What.** CLI subcommand to diff two run reports.
 
@@ -78,7 +78,7 @@ Three Codex-identified POSIX concerns the current code doesn't fully cover
 - **SIGINT process-group cleanup**: `run_wrapped` only kills the direct
   child via `proc.terminate()` / `proc.kill()`. On POSIX, when wrapping
   `bash -lc "..."`, the wrapped script's own children (grandchildren of
-  agentbox) survive the wrapper's SIGINT path. Fix: `subprocess.Popen(..., start_new_session=True)` on POSIX + `os.killpg(os.getpgid(proc.pid), signal.SIGTERM)` in the interrupt handler.
+  agentcam) survive the wrapper's SIGINT path. Fix: `subprocess.Popen(..., start_new_session=True)` on POSIX + `os.killpg(os.getpgid(proc.pid), signal.SIGTERM)` in the interrupt handler.
 - **Non-UTF8 filenames in git porcelain**: POSIX paths are byte strings,
   not Unicode. `parse_porcelain_v1z` and `_git_text` decode with
   `errors="replace"`, which silently corrupts non-UTF8 paths before
@@ -93,7 +93,7 @@ Three Codex-identified POSIX concerns the current code doesn't fully cover
 
 **What.** Optional `--format sarif` for risk flags.
 
-**Why.** Lets enterprise security teams ingest agentbox output into their
+**Why.** Lets enterprise security teams ingest agentcam output into their
 existing SARIF-aware tooling (GitHub Code Scanning, Sonarqube). Cheap to
 add; opens an enterprise door without changing the CLI's positioning.
 
@@ -109,7 +109,7 @@ known locations. Will probably stay opt-in via flag.
 
 ### 6. Multi-run dashboard
 
-Local-first first: a `agentbox view` command that renders the run history
+Local-first first: a `agentcam view` command that renders the run history
 as static HTML. No server required.
 
 A hosted version (with auth + retention + search) is the natural paid
@@ -127,14 +127,14 @@ hosted dashboard.
 ## What we deliberately are NOT doing (and why)
 
 These are out of scope for the foreseeable future. If you want them,
-agentbox is the wrong tool — see the alternatives noted.
+agentcam is the wrong tool — see the alternatives noted.
 
 ### Sandbox / pre-execution blocking
 
-agentbox is a recorder, not a gate. Pre-execution gating requires a
+agentcam is a recorder, not a gate. Pre-execution gating requires a
 trustworthy runtime sandbox, a policy language, an approval UI, and
 auditable rule evaluation. Each of those is its own product. We also
-explicitly do not want to be in the position of "agentbox said it was
+explicitly do not want to be in the position of "agentcam said it was
 safe" — see the `docs/design.md` § 14–16 cluster.
 
 ### Auto-rollback
@@ -152,13 +152,13 @@ runs anywhere is a different product.
 ### LLM-based risk analysis
 
 "Send the diff to GPT-5 to judge if it's risky" is a different product.
-agentbox is heuristic on purpose: cheap, deterministic, offline,
+agentcam is heuristic on purpose: cheap, deterministic, offline,
 debuggable.
 
 ### IDE / VS Code extension
 
 Probably never. The CLI is the unit of value. If someone wants an IDE
-button that runs `agentbox run -- ...`, they can add it themselves in
+button that runs `agentcam run -- ...`, they can add it themselves in
 two lines of `tasks.json`.
 
 ### Compliance / SOC2 evidence pipeline
@@ -202,7 +202,7 @@ behavior (wrap every agent run) that the tool exists to encourage.
 
 ## How to influence this list
 
-If you actually use agentbox, your input outweighs anything written here.
+If you actually use agentcam, your input outweighs anything written here.
 
 - File a GitHub issue with the use case.
 - Email `shihchengwei@gmail.com` if it's sensitive.

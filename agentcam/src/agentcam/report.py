@@ -12,14 +12,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agentbox.models import (
+from agentcam.models import (
     ChangedFile,
     ExitDetail,
     GitState,
     RiskFlag,
     RunManifest,
 )
-from agentbox.scanner import is_secret_like_filename
+from agentcam.scanner import is_secret_like_filename
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +90,7 @@ def serialize_manifest(m: RunManifest) -> dict:
         "shell_used": m.shell_used,
         "terminal_forward_degraded": m.terminal_forward_degraded,
         "platform": m.platform,
-        "agentbox_version": m.agentbox_version,
+        "agentcam_version": m.agentcam_version,
         "paths": paths_dict,
     }
 
@@ -131,7 +131,7 @@ def _render_header(m: RunManifest) -> str:
         f"- Pre-run dirty: {'yes' if m.pre_run_dirty else 'no'}\n"
         f"- Pre-existing op: {m.pre_existing_op or 'none'}\n"
         f"- Platform: {m.platform}\n"
-        f"- agentbox version: {m.agentbox_version}"
+        f"- agentcam version: {m.agentcam_version}"
     )
 
 
@@ -147,7 +147,7 @@ def _render_verdict(flags: list[RiskFlag]) -> str:
         f"- Overall risk: **{overall}**\n"
         f"- Human review required: {review}\n\n"
         "> Risk flags are heuristics, not verdicts. They indicate where to "
-        "look, not what happened. agentbox cannot judge intent or context."
+        "look, not what happened. agentcam cannot judge intent or context."
     )
 
 
@@ -277,7 +277,7 @@ def _render_exit_detail(d: ExitDetail | None) -> str:
     if d.interpretation_source == "unknown":
         lines.append("")
         lines.append(
-            "> agentbox does not maintain a full NTSTATUS table; "
+            "> agentcam does not maintain a full NTSTATUS table; "
             "unknown high returncodes are reported via `raw_returncode` "
             "and `raw_returncode_hex` so a human can look them up."
         )
@@ -388,7 +388,7 @@ def _render_local_artifacts(m: RunManifest) -> str:
 
 def _is_internal(path: str) -> bool:
     norm = path.replace("\\", "/")
-    return norm.startswith(".git/agentbox/") or "/agentbox/runs/" in norm
+    return norm.startswith(".git/agentcam/") or "/agentcam/runs/" in norm
 
 
 def _relative_to_git_root(absolute_path: str, git_root: str) -> str:

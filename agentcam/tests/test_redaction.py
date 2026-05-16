@@ -1,4 +1,4 @@
-"""Tests for agentbox.redaction.
+"""Tests for agentcam.redaction.
 
 Covers plan §6 (streaming buffer model) and §11 (report-wide redaction).
 
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import io
 
-from agentbox.redaction import (
+from agentcam.redaction import (
     StreamingRedactor,
     redact_argv,
     redact_inline,

@@ -1,6 +1,6 @@
-"""Path layout and run-id generation for agentbox.
+"""Path layout and run-id generation for agentcam.
 
-Run output is always written under ``<git_dir>/agentbox/runs/<run_id>/``.
+Run output is always written under ``<git_dir>/agentcam/runs/<run_id>/``.
 ``git_dir`` must be resolved by ``git rev-parse --git-dir`` so that worktree
 and submodule gitlink cases (where ``<repo>/.git`` is a file, not a dir) are
 handled correctly. See plan section 1 (output location) and section 4 (git
@@ -14,7 +14,7 @@ import secrets
 from datetime import datetime
 from pathlib import Path
 
-from agentbox.models import RunId, RunPaths
+from agentcam.models import RunId, RunPaths
 
 # Maximum slug length (after sanitization). Keeps run-id readable.
 _SLUG_MAX_LEN = 40
@@ -72,7 +72,7 @@ def create_run_dir(
     now: datetime,
     name: str | None = None,
 ) -> tuple[RunId, RunPaths]:
-    """Create ``<git_dir>/agentbox/runs/<run_id>/`` with collision retry.
+    """Create ``<git_dir>/agentcam/runs/<run_id>/`` with collision retry.
 
     Uses ``os.makedirs(exist_ok=False)`` so concurrent runs cannot silently
     share a directory. Retries up to ``_COLLISION_RETRIES`` times with a fresh
@@ -80,7 +80,7 @@ def create_run_dir(
     retries collide (extremely unlikely outside contrived race conditions).
     """
     slug = slugify(name)
-    base = git_dir / "agentbox" / "runs"
+    base = git_dir / "agentcam" / "runs"
 
     tried: list[str] = []
     suffix: str | None = None
@@ -96,7 +96,7 @@ def create_run_dir(
         return run_id, make_run_paths(run_dir)
 
     raise RunIdCollisionError(
-        "Another agentbox run is starting at the same millisecond. "
+        "Another agentcam run is starting at the same millisecond. "
         "Wait 1 second and retry, or pass `--name` with a unique slug. "
         f"Tried: {tried}"
     )

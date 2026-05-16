@@ -1,18 +1,18 @@
-"""Tests for agentbox.scanner.
+"""Tests for agentcam.scanner.
 
 Covers plan §8 (path segment matching), §11 (secret-like filename), §12
-(output patterns), and the .git/agentbox/ self-pollution skip rule (§1).
+(output patterns), and the .git/agentcam/ self-pollution skip rule (§1).
 
 Notable regression guards:
 - ``auth`` segment must NOT match ``author.md``.
 - Output scanner evidence must NOT contain the raw matched text (would leak
   secrets that landed in stdout).
-- Files under .git/agentbox/ must be skipped silently.
+- Files under .git/agentcam/ must be skipped silently.
 """
 from __future__ import annotations
 
-from agentbox.models import ChangedFile, RiskFlag
-from agentbox.scanner import (
+from agentcam.models import ChangedFile, RiskFlag
+from agentcam.scanner import (
     HIGH_OUTPUT_PATTERNS,
     HIGH_PATH_SEGMENTS,
     is_secret_like_filename,
@@ -165,14 +165,14 @@ class TestScanPaths:
 
 
 # ---------------------------------------------------------------------------
-# Self-pollution skip (.git/agentbox/)
+# Self-pollution skip (.git/agentcam/)
 # ---------------------------------------------------------------------------
 
 class TestSkipInternal:
-    def test_skip_dot_git_agentbox_path(self):
+    def test_skip_dot_git_agentcam_path(self):
         changed = [
             ChangedFile(
-                path=".git/agentbox/runs/20260516-x/stdout.log",
+                path=".git/agentcam/runs/20260516-x/stdout.log",
                 status="untracked",
             ),
         ]
@@ -181,15 +181,15 @@ class TestSkipInternal:
     def test_skip_does_not_block_other_files(self):
         changed = [
             ChangedFile(
-                path=".git/agentbox/runs/20260516-x/stdout.log",
+                path=".git/agentcam/runs/20260516-x/stdout.log",
                 status="untracked",
             ),
             ChangedFile(path="src/main.py", status="unstaged_modified"),
         ]
         flags = scan_paths(changed)
-        # No flag should reference the .git/agentbox path.
+        # No flag should reference the .git/agentcam path.
         for f in flags:
-            assert ".git/agentbox" not in f.evidence
+            assert ".git/agentcam" not in f.evidence
 
 
 # ---------------------------------------------------------------------------

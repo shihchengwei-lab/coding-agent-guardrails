@@ -25,7 +25,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from agentbox.models import ExitDetail
+from agentcam.models import ExitDetail
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ def resolve_command(argv: list[str]) -> ResolvedCommand:
     resolved = shutil.which(argv[0])
     if resolved is None:
         raise CommandNotFoundError(
-            f"agentbox: command not found: {argv[0]}. "
+            f"agentcam: command not found: {argv[0]}. "
             "Check PATH or pass an absolute path."
         )
 
@@ -244,7 +244,7 @@ def run_wrapped(
     """Run the wrapped command, capture raw logs, return :class:`RunResult`.
 
     Redaction is NOT done in this function. Callers consume the raw logs via
-    :class:`agentbox.redaction.StreamingRedactor` to produce ``*.redacted.log``.
+    :class:`agentcam.redaction.StreamingRedactor` to produce ``*.redacted.log``.
     """
     resolved = resolve_command(argv)
 

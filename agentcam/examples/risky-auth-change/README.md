@@ -1,7 +1,7 @@
 # Example: agent edits an auth path (HIGH)
 
 This example shows what `AGENT_RUN_REPORT.md` looks like when the wrapped
-agent modifies a file under an `auth` segment — one of agentbox's HIGH risk
+agent modifies a file under an `auth` segment — one of agentcam's HIGH risk
 heuristics.
 
 ## Scenario
@@ -9,11 +9,11 @@ heuristics.
 A developer asks Claude Code to add rate limiting to the login endpoint:
 
 ```bash
-agentbox run --name claude-rate-limit-login -- claude "add rate limiting to the login endpoint"
+agentcam run --name claude-rate-limit-login -- claude "add rate limiting to the login endpoint"
 ```
 
 Claude Code edits `src/auth/login.py` (and only that file). The wrapped
-process exits 0 (Claude reports success). agentbox produces the report below.
+process exits 0 (Claude reports success). agentcam produces the report below.
 
 ## What the report does
 
@@ -30,7 +30,7 @@ process exits 0 (Claude reports success). agentbox produces the report below.
   heuristic only says "this area is sensitive enough that a human should
   read the diff before merging."
 - It does *not* run the diff through any LLM judgment. Heuristics only.
-- It does *not* block the change. agentbox is a flight recorder, not a
+- It does *not* block the change. agentcam is a flight recorder, not a
   gate.
 
 ## How `expected-report.md` was generated
@@ -39,15 +39,15 @@ It was captured live on 2026-05-16 by:
 
 1. Creating a temporary git repo with one initial commit and
    `src/auth/login.py` already tracked.
-2. Running `agentbox run --name claude-rate-limit-login -- python -c
+2. Running `agentcam run --name claude-rate-limit-login -- python -c
    "<inline script appending rate-limit code to src/auth/login.py>"`.
 3. Reading the resulting `AGENT_RUN_REPORT.md` from
-   `.git/agentbox/runs/<run_id>/` and committing it here verbatim.
+   `.git/agentcam/runs/<run_id>/` and committing it here verbatim.
 
 The only edit to the captured output: the `Command:` field was abbreviated
 for readability (the full inline Python script is multi-line and noisy).
 Everything else — verdict, risk flags, changed files, diff stat, exit
-detail, rollback notes, log paths — is the verbatim output of agentbox 0.1.0.
+detail, rollback notes, log paths — is the verbatim output of agentcam 0.1.0.
 
 ## See also
 

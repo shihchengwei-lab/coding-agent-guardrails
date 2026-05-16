@@ -1,16 +1,16 @@
-# agentbox
+# agentcam
 
-[![CI](https://github.com/shihchengwei-lab/agent-run-flight-recorder/actions/workflows/ci.yml/badge.svg)](https://github.com/shihchengwei-lab/agent-run-flight-recorder/actions/workflows/ci.yml)
+[![CI](https://github.com/shihchengwei-lab/agentcam/actions/workflows/ci.yml/badge.svg)](https://github.com/shihchengwei-lab/agentcam/actions/workflows/ci.yml)
 
 > Local-first CLI wrapper that records what your AI coding agent changed in your repo and generates a Markdown run report after each run.
 
-agentbox does **not** replace Claude Code, Codex, OpenHands, Aider, or any
+agentcam does **not** replace Claude Code, Codex, OpenHands, Aider, or any
 other coding agent. It wraps them.
 
 ```bash
-agentbox run -- claude "fix the failing tests"
-agentbox run -- codex "add input validation to login form"
-agentbox run -- bash -lc "npm run build && npm test"
+agentcam run -- claude "fix the failing tests"
+agentcam run -- codex "add input validation to login form"
+agentcam run -- bash -lc "npm run build && npm test"
 ```
 
 After each run, you get an `AGENT_RUN_REPORT.md` answering three questions:
@@ -33,23 +33,23 @@ for what a report looks like when the agent touches a sensitive area.
 This is a **flight recorder**, not a governance platform.
 
 - Not a sandbox.
-- Not a pre-execution gate. agentbox does not block dangerous commands; it
+- Not a pre-execution gate. agentcam does not block dangerous commands; it
   records that they happened and flags them for review *after*.
 - Not a security scanner. The risk flags are heuristics ("look here"), not
   verdicts ("this is bad").
 - Not an audit / compliance tool. The Markdown report is for the developer
   reviewing the diff, not for a SOC2 evidence pipeline.
 - Not a SaaS. There is no account, no upload, no telemetry. Everything
-  stays under `.git/agentbox/runs/` on your machine.
+  stays under `.git/agentcam/runs/` on your machine.
 
 ---
 
 ## Install
 
-agentbox needs Python ≥ 3.11 and `git`.
+agentcam needs Python ≥ 3.11 and `git`.
 
 ```bash
-pipx install agentbox
+pipx install agentcam
 ```
 
 (Once published to PyPI. For now, install from source — see "Hacking"
@@ -58,8 +58,8 @@ below.)
 Verify:
 
 ```bash
-agentbox version
-# agentbox 0.1.0
+agentcam version
+# agentcam 0.1.0
 ```
 
 ---
@@ -69,43 +69,43 @@ agentbox version
 Inside any git repository:
 
 ```bash
-agentbox run -- bash -lc "echo hello > demo.txt"
+agentcam run -- bash -lc "echo hello > demo.txt"
 ```
 
-agentbox will:
+agentcam will:
 
 1. snapshot git state (HEAD, branch, staged / unstaged / untracked)
 2. run your command, tee-ing stdout and stderr to logs (raw + redacted)
 3. snapshot git state again
 4. scan for risk flags (path patterns, output patterns, deletions)
 5. write `AGENT_RUN_REPORT.md` and `manifest.json` under
-   `.git/agentbox/runs/<run_id>/`
+   `.git/agentcam/runs/<run_id>/`
 6. exit with 0 if your command succeeded, 1 otherwise
 
-stdout and stderr stream live to your terminal — agentbox does not buffer
+stdout and stderr stream live to your terminal — agentcam does not buffer
 them.
 
 ### Wrapping Claude Code
 
 ```bash
-agentbox run --name claude-fix-tests -- claude "fix the failing tests"
+agentcam run --name claude-fix-tests -- claude "fix the failing tests"
 ```
 
 ### Wrapping Codex
 
 ```bash
-agentbox run --name codex-add-validation -- codex "add input validation to login form"
+agentcam run --name codex-add-validation -- codex "add input validation to login form"
 ```
 
 ### Wrapping anything (with shell features)
 
-agentbox runs the command with `shell=False`. If you need pipes, redirects,
+agentcam runs the command with `shell=False`. If you need pipes, redirects,
 variable expansion, wrap your own shell explicitly:
 
 ```bash
-agentbox run -- bash -lc "npm run build 2>&1 | tee build.log"
-agentbox run -- pwsh -Command "Get-Process | Out-File procs.txt"
-agentbox run -- cmd /c "dir > files.txt"
+agentcam run -- bash -lc "npm run build 2>&1 | tee build.log"
+agentcam run -- pwsh -Command "Get-Process | Out-File procs.txt"
+agentcam run -- cmd /c "dir > files.txt"
 ```
 
 This is a deliberate constraint — see [`docs/design.md` § 4](docs/design.md).
@@ -116,7 +116,7 @@ This is a deliberate constraint — see [`docs/design.md` § 4](docs/design.md).
 
 ```
 .git/
-└── agentbox/
+└── agentcam/
     └── runs/
         └── 20260516-143000-451-claude-rate-limit-login/
             ├── AGENT_RUN_REPORT.md       # human-readable, share-friendly
@@ -128,7 +128,7 @@ This is a deliberate constraint — see [`docs/design.md` § 4](docs/design.md).
 ```
 
 Output lives under `.git/` on purpose — git doesn't track its own
-internals, so agent invocations of `git add .` cannot stage agentbox's
+internals, so agent invocations of `git add .` cannot stage agentcam's
 output by accident.
 
 > **Warning about raw logs.** Raw logs preserve the original stdout /
@@ -212,27 +212,27 @@ in the markdown report also pass through redaction — a literal
 
 ## Local-only, no telemetry
 
-agentbox makes no network calls. It does not phone home. There is no
+agentcam makes no network calls. It does not phone home. There is no
 account, no upload, no opt-in or opt-out toggle for telemetry — because
 there is no telemetry to toggle.
 
-If you ever observe an outbound connection from agentbox, that's a bug;
+If you ever observe an outbound connection from agentcam, that's a bug;
 please file an issue.
 
 ---
 
 ## Known limitations
 
-- **Not a sandbox.** agentbox does not isolate the wrapped command from
+- **Not a sandbox.** agentcam does not isolate the wrapped command from
   your filesystem, network, or credentials.
 - **Does not block.** High-risk patterns are recorded *after* they happen;
-  agentbox does not approve or deny commands.
-- **Does not see inside the agent.** agentbox observes only what reaches
+  agentcam does not approve or deny commands.
+- **Does not see inside the agent.** agentcam observes only what reaches
   stdout / stderr and what changes in the git working tree. The agent's
   internal tool calls (file reads, web requests, model calls) are
   invisible.
 - **Best-effort redaction.** New secret formats may slip through. Do not
-  rely on agentbox alone for credential hygiene.
+  rely on agentcam alone for credential hygiene.
 - **No interactive TUI guarantee.** Agents that draw full-screen TUIs
   (curses-style) may render imperfectly through the wrapper. Their
   side-effects on the repo are still recorded correctly.
@@ -269,7 +269,7 @@ python -m venv .venv
 The codebase is intentionally small (one source module per concern):
 
 ```
-src/agentbox/
+src/agentcam/
 ├── cli.py          # argparse + orchestrator
 ├── runner.py       # threads-based tee + exit code interpretation
 ├── git_state.py    # porcelain parser + git_dir resolver

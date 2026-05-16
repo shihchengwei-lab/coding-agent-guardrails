@@ -1,8 +1,8 @@
 # Security policy
 
-## What agentbox is — and is not
+## What agentcam is — and is not
 
-agentbox is a **flight recorder** for AI coding agents. It records what
+agentcam is a **flight recorder** for AI coding agents. It records what
 happened in your repo during a wrapped command and produces a Markdown
 report. It is **not**:
 
@@ -12,11 +12,11 @@ report. It is **not**:
 - a DLP / compliance product
 - an audit pipeline for SOC2 / ISO 27001 / PCI / HIPAA / GDPR / CCPA
 
-If you need any of those, agentbox does not replace them.
+If you need any of those, agentcam does not replace them.
 
-## Threat model agentbox addresses
+## Threat model agentcam addresses
 
-agentbox helps you answer, **after** an agent run finishes:
+agentcam helps you answer, **after** an agent run finishes:
 
 - What files did the agent change?
 - Where (in this repo) might the change be sensitive — auth paths, secrets,
@@ -25,24 +25,24 @@ agentbox helps you answer, **after** an agent run finishes:
   should look at?
 - How do I roll back this specific run cleanly?
 
-## Threat model agentbox does NOT address
+## Threat model agentcam does NOT address
 
-- **Live attacks during the run.** agentbox does not block the wrapped
-  command. If the agent runs `rm -rf $HOME` and exits 0, agentbox will
+- **Live attacks during the run.** agentcam does not block the wrapped
+  command. If the agent runs `rm -rf $HOME` and exits 0, agentcam will
   flag it in the report; the files will already be gone.
 - **Sandbox escape.** The wrapped command runs in your normal shell with
   your normal credentials. There is no isolation.
-- **Network exfiltration.** agentbox does not monitor or intercept network
+- **Network exfiltration.** agentcam does not monitor or intercept network
   traffic.
-- **Adversarial agents.** agentbox is built for "agent does roughly what
+- **Adversarial agents.** agentcam is built for "agent does roughly what
   it claims, but a careful reviewer wants a record." It is not built to
   defend against an agent deliberately trying to defeat the recorder.
 
 ## Best-effort properties (not guarantees)
 
-These are agentbox's design intent. None are warranted:
+These are agentcam's design intent. None are warranted:
 
-1. **Secret redaction.** agentbox redacts common token shapes
+1. **Secret redaction.** agentcam redacts common token shapes
    (AWS / GitHub / OpenAI / Anthropic / Slack / npm / GitLab / Bearer /
    JWT / env-style assignments) and PEM private key blocks in the
    `*.redacted.log` files and in every Markdown surface of the report.
@@ -50,9 +50,9 @@ These are agentbox's design intent. None are warranted:
    original bytes for forensic review.
 
 2. **Self-pollution avoidance.** Output is written under
-   `<git_dir>/agentbox/runs/`, which git itself does not track. Agent
-   invocations of `git add .` cannot stage agentbox's output. Verified by
-   `tests/test_e2e.py::TestSmoke::test_git_status_does_not_list_agentbox`.
+   `<git_dir>/agentcam/runs/`, which git itself does not track. Agent
+   invocations of `git add .` cannot stage agentcam's output. Verified by
+   `tests/test_e2e.py::TestSmoke::test_git_status_does_not_list_agentcam`.
 
 3. **Argv redaction.** Command argv passes through redaction before being
    shown in the Markdown `Command:` field. `manifest.command_argv_raw`
@@ -65,7 +65,7 @@ These are agentbox's design intent. None are warranted:
 
 ## Local data exposure surfaces
 
-The following are kept on disk under `.git/agentbox/runs/<run_id>/`:
+The following are kept on disk under `.git/agentcam/runs/<run_id>/`:
 
 | File | Contents |
 |---|---|
@@ -83,13 +83,13 @@ accident. They **can** be exposed by:
 - a malicious process on the same machine reading user-readable files
 
 If any of these matter for your environment, periodically clean
-`.git/agentbox/runs/` and treat raw logs as confidential.
+`.git/agentcam/runs/` and treat raw logs as confidential.
 
 ## Reporting a vulnerability
 
 Please **do not** file public issues for security vulnerabilities.
 
-Email: **shihchengwei@gmail.com** with subject `[agentbox security]`.
+Email: **shihchengwei@gmail.com** with subject `[agentcam security]`.
 
 Include:
 
@@ -98,7 +98,7 @@ Include:
 - Your platform (OS + Python version)
 - Whether you'd like to be credited in the fix announcement
 
-I'll acknowledge within 7 calendar days. There is no formal SLA: agentbox
+I'll acknowledge within 7 calendar days. There is no formal SLA: agentcam
 is a personal-time project. If the issue affects user safety (e.g. raw
 secret leakage to the redacted log, self-pollution regression), I'll
 prioritize a fix and a release.
@@ -115,7 +115,7 @@ These are **expected** behaviors, not vulnerabilities:
   This is the design — see `docs/design.md` § 2.
 - The `Command:` field shows the redacted argv. The raw argv lives in
   `manifest.command_argv_raw` by design.
-- agentbox does not defend against an adversarial wrapped subprocess that
+- agentcam does not defend against an adversarial wrapped subprocess that
   tries to evade detection (e.g. by writing to files outside the repo).
 
 If you're unsure whether something is in scope, email anyway and I'll

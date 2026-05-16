@@ -1,4 +1,4 @@
-"""Tests for agentbox.paths.
+"""Tests for agentcam.paths.
 
 Covers plan section 7 (run id format) and section 13 (parallel collision).
 """
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from agentbox.paths import (
+from agentcam.paths import (
     RunIdCollisionError,
     create_run_dir,
     format_run_id,
@@ -72,9 +72,9 @@ class TestCreateRunDir:
 
         # Directory exists.
         assert Path(paths.run_dir).is_dir()
-        # Layout under <git_dir>/agentbox/runs/<run_id>/.
+        # Layout under <git_dir>/agentcam/runs/<run_id>/.
         rel = Path(paths.run_dir).relative_to(tmp_path)
-        assert rel.parts == ("agentbox", "runs", run_id.text)
+        assert rel.parts == ("agentcam", "runs", run_id.text)
         # File paths point inside run_dir.
         assert paths.manifest_json.endswith("manifest.json")
         assert paths.report_md.endswith("AGENT_RUN_REPORT.md")
@@ -98,10 +98,10 @@ class TestCreateRunDir:
         ts = datetime(2026, 5, 16, 21, 30, 55, 742000)
 
         # Make secrets.token_hex deterministic so all retries land on -dead.
-        from agentbox import paths as paths_mod
+        from agentcam import paths as paths_mod
         monkeypatch.setattr(paths_mod.secrets, "token_hex", lambda n: "dead")
 
-        base = tmp_path / "agentbox" / "runs"
+        base = tmp_path / "agentcam" / "runs"
         os.makedirs(base / "20260516-213055-742-test")
         os.makedirs(base / "20260516-213055-742-test-dead")
 

@@ -1,4 +1,4 @@
-"""Tests for agentbox.runner.
+"""Tests for agentcam.runner.
 
 Covers plan §2 (tee), §3 (argv-only), §9 (exit code), §14 (Windows).
 
@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from agentbox.runner import (
+from agentcam.runner import (
     CommandNotFoundError,
     interpret_exit,
     resolve_command,
@@ -95,7 +95,7 @@ class TestResolveCommand:
 
     def test_missing_command_raises(self):
         with pytest.raises(CommandNotFoundError):
-            resolve_command(["agentbox-no-such-binary-xyzzy"])
+            resolve_command(["agentcam-no-such-binary-xyzzy"])
 
     def test_empty_argv_raises(self):
         with pytest.raises(ValueError):
@@ -184,7 +184,7 @@ class TestRunWrapped:
     def test_missing_command_raises(self, tmp_path: Path):
         with pytest.raises(CommandNotFoundError):
             run_wrapped(
-                ["agentbox-no-such-binary-xyzzy"],
+                ["agentcam-no-such-binary-xyzzy"],
                 cwd=tmp_path,
                 stdout_raw_path=tmp_path / "stdout.log",
                 stderr_raw_path=tmp_path / "stderr.log",
@@ -205,35 +205,35 @@ class TestHighCmdShimEscape:
     """
 
     def test_ampersand_is_caret_escaped(self):
-        from agentbox.runner import _escape_for_cmd_shim
+        from agentcam.runner import _escape_for_cmd_shim
         result = _escape_for_cmd_shim(["foo.cmd", "arg & val"])
         # `&` inside the argv must be caret-escaped so cmd.exe doesn't
         # treat it as a command separator.
         assert "^&" in result
 
     def test_percent_is_doubled(self):
-        from agentbox.runner import _escape_for_cmd_shim
+        from agentcam.runner import _escape_for_cmd_shim
         result = _escape_for_cmd_shim(["foo.cmd", "%VAR%"])
         # Variable expansion must be suppressed via `%%`.
         assert "%%VAR%%" in result
 
     def test_pipe_is_caret_escaped(self):
-        from agentbox.runner import _escape_for_cmd_shim
+        from agentcam.runner import _escape_for_cmd_shim
         result = _escape_for_cmd_shim(["foo.cmd", "a | b"])
         assert "^|" in result
 
     def test_resolve_cmd_shim_uses_escape(self, tmp_path: Path, monkeypatch):
         """End-to-end on resolve_command: when shim path is detected, the
         returned argv[0] passes through _escape_for_cmd_shim."""
-        from agentbox.runner import resolve_command
+        from agentcam.runner import resolve_command
 
         # Force the shim path: pretend platform is Windows and shutil.which
         # returns a .cmd file.
         monkeypatch.setattr(
-            "agentbox.runner.platform.system", lambda: "Windows"
+            "agentcam.runner.platform.system", lambda: "Windows"
         )
         monkeypatch.setattr(
-            "agentbox.runner.shutil.which", lambda x: "C:\\tools\\fake.cmd"
+            "agentcam.runner.shutil.which", lambda x: "C:\\tools\\fake.cmd"
         )
         rc = resolve_command(["fake", "x & y"])
         assert rc.use_shell is True
@@ -286,7 +286,7 @@ class TestHighSigintCleanup:
 
         fake = FakeProc(real_proc)
         monkeypatch.setattr(
-            "agentbox.runner.subprocess.Popen",
+            "agentcam.runner.subprocess.Popen",
             lambda *a, **kw: fake,
         )
 

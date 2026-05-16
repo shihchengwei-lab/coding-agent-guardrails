@@ -18,7 +18,7 @@ import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
-from agentbox.models import ChangedFile, RiskFlag, RiskLevel
+from agentcam.models import ChangedFile, RiskFlag, RiskLevel
 
 
 # ---------------------------------------------------------------------------
@@ -164,9 +164,9 @@ def _path_matches_extension(path: str, ext: str) -> bool:
 
 
 def _is_internal_path(path: str) -> bool:
-    """True if path is inside .git/agentbox/ — our own output. Plan §1."""
+    """True if path is inside .git/agentcam/ — our own output. Plan §1."""
     norm = _normalize(path)
-    return norm.startswith(".git/agentbox/") or "/agentbox/runs/" in norm
+    return norm.startswith(".git/agentcam/") or "/agentcam/runs/" in norm
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +176,7 @@ def _is_internal_path(path: str) -> bool:
 def scan_paths(changed: list[ChangedFile]) -> list[RiskFlag]:
     """Generate risk flags from a list of changed files.
 
-    Skips files inside ``.git/agentbox/`` (our own output). For each file:
+    Skips files inside ``.git/agentcam/`` (our own output). For each file:
     - HIGH if status is ``staged_deleted`` / ``unstaged_deleted``
     - HIGH if filename is secret-like
     - HIGH/MEDIUM by path segment / prefix / basename / extension rules

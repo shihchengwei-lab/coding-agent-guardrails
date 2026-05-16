@@ -3,7 +3,7 @@ requires = ["hatchling>=1.21"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agentbox"
+name = "agentcam"
 version = "0.1.0"
 description = "Local-first CLI wrapper that records what your AI coding agent changed in your repo."
 readme = "README.md"
@@ -36,10 +36,10 @@ dev = [
 ]
 
 [project.scripts]
-agentbox = "agentbox.cli:main"
+agentcam = "agentcam.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/agentbox"]
+packages = ["src/agentcam"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

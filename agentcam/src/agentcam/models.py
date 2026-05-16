@@ -1,4 +1,4 @@
-"""Data structures used across agentbox modules.
+"""Data structures used across agentcam modules.
 
 Plain dataclasses (no Pydantic) to keep dependencies to the standard library
 only. JSON serialization is done by ``report.py`` and the manifest writer, not
@@ -36,7 +36,7 @@ InterpretationSource = Literal[
 
 @dataclass(frozen=True, slots=True)
 class RunId:
-    """Identifier for an agentbox run.
+    """Identifier for an agentcam run.
 
     Format: ``YYYYMMDD-HHMMSS-<ms>-<slug>[-<hex>]``
     where ``<hex>`` is a 4-char collision-avoidance suffix added on retry.
@@ -50,9 +50,9 @@ class RunId:
 
 @dataclass(frozen=True, slots=True)
 class RunPaths:
-    """Filesystem layout for a single agentbox run.
+    """Filesystem layout for a single agentcam run.
 
-    All paths live under ``<git_dir>/agentbox/runs/<run_id>/``. ``git_dir`` is
+    All paths live under ``<git_dir>/agentcam/runs/<run_id>/``. ``git_dir`` is
     the *real* git dir as resolved by ``git rev-parse --git-dir`` (handles
     worktrees and submodule gitlinks correctly).
     """
@@ -142,5 +142,5 @@ class RunManifest:
     shell_used: bool
     terminal_forward_degraded: bool
     platform: str
-    agentbox_version: str
+    agentcam_version: str
     paths: RunPaths

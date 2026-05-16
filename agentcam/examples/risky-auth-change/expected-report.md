@@ -1,12 +1,12 @@
 <!--
-This report was captured live by running `agentbox` in a temporary git
+This report was captured live by running `agentcam` in a temporary git
 repo on 2026-05-16. The wrapped command was a short inline Python script
 simulating a Claude Code edit to `src/auth/login.py`. In real use, the
 `Command:` field would read e.g.
     Command: `claude add rate limiting to the login endpoint`
 The Python-inline command is shown here in abbreviated form. The rest of
 the report — risk flags, changed files, diff stat, exit detail, rollback
-notes, paths — is the verbatim output of agentbox 0.1.0.
+notes, paths — is the verbatim output of agentcam 0.1.0.
 -->
 
 # Agent Run Report
@@ -24,14 +24,14 @@ notes, paths — is the verbatim output of agentbox 0.1.0.
 - Pre-run dirty: no
 - Pre-existing op: none
 - Platform: windows
-- agentbox version: 0.1.0
+- agentcam version: 0.1.0
 
 ## Verdict
 
 - Overall risk: **HIGH**
 - Human review required: yes
 
-> Risk flags are heuristics, not verdicts. They indicate where to look, not what happened. agentbox cannot judge intent or context.
+> Risk flags are heuristics, not verdicts. They indicate where to look, not what happened. agentcam cannot judge intent or context.
 
 ## Risk Flags
 
@@ -81,13 +81,13 @@ No untracked files were created.
 
 ## Logs
 
-- stdout (redacted): `.git/agentbox/runs/20260516-174827-754-claude-rate-limit-login/stdout.redacted.log`
-- stderr (redacted): `.git/agentbox/runs/20260516-174827-754-claude-rate-limit-login/stderr.redacted.log`
+- stdout (redacted): `.git/agentcam/runs/20260516-174827-754-claude-rate-limit-login/stdout.redacted.log`
+- stderr (redacted): `.git/agentcam/runs/20260516-174827-754-claude-rate-limit-login/stderr.redacted.log`
 
 > Raw logs (`stdout.log`, `stderr.log`) are kept for forensic review but should not be shared. They live under `.git/`, so they are NOT tracked by git, but they CAN be picked up by cloud sync, system backups, or by sharing the entire `.git/` directory.
 
 ## Local Artifacts
 
-- manifest: `.git/agentbox/runs/20260516-174827-754-claude-rate-limit-login/manifest.json`
-- this report: `.git/agentbox/runs/20260516-174827-754-claude-rate-limit-login/AGENT_RUN_REPORT.md`
-- run directory: `.git/agentbox/runs/20260516-174827-754-claude-rate-limit-login`
+- manifest: `.git/agentcam/runs/20260516-174827-754-claude-rate-limit-login/manifest.json`
+- this report: `.git/agentcam/runs/20260516-174827-754-claude-rate-limit-login/AGENT_RUN_REPORT.md`
+- run directory: `.git/agentcam/runs/20260516-174827-754-claude-rate-limit-login`

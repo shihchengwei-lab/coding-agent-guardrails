@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for agentbox tests."""
+"""Shared pytest fixtures for agentcam tests."""
 from __future__ import annotations
 
 import subprocess

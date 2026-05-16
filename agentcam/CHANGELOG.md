@@ -1,11 +1,21 @@
 # Changelog
 
-All notable changes to agentbox are recorded here. Format follows
+All notable changes to agentcam are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) loosely.
 Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 0.x is unstable on purpose.
 
 ## [Unreleased]
+
+### Renamed (2026-05-16)
+
+- **Package + CLI renamed `agentbox` → `agentcam`** (PyPI name `agentbox`
+  was taken; `agentcam` is available on PyPI and free of prominent GitHub
+  collisions). Source dir `src/agentbox/` → `src/agentcam/`; CLI entry
+  `agentbox` → `agentcam`; artifact path `<git_dir>/agentbox/runs/` →
+  `<git_dir>/agentcam/runs/`. All 25 files updated; 171 tests still pass.
+- GitHub repo renamed `agent-run-flight-recorder` → `agentcam`.
+  Old URL auto-redirects via GitHub.
 
 ### Hardening (post-source-review fixes, 2026-05-16)
 
@@ -39,7 +49,7 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
   `docs/design.md` caveat 3.
 - **GitHub Actions matrix green (6/6 jobs)** on push to main:
   Linux / macOS / Windows × Python 3.11 / 3.12 all pass.
-  Repo: https://github.com/shihchengwei-lab/agent-run-flight-recorder
+  Repo: https://github.com/shihchengwei-lab/agentcam (renamed from agent-run-flight-recorder on 2026-05-16)
 
 ## [0.1.0] — 2026-05-16
 
@@ -48,8 +58,8 @@ report, do not lie about what we don't know."
 
 ### Added
 
-- **`agentbox version`** — print version and exit
-- **`agentbox run -- <argv...>`** — wrap an argv-style command, record
+- **`agentcam version`** — print version and exit
+- **`agentcam run -- <argv...>`** — wrap an argv-style command, record
   before/after git state, tee stdout/stderr, generate Markdown report
 
 #### What gets recorded per run
@@ -62,7 +72,7 @@ report, do not lie about what we don't know."
 - `manifest.json` — machine-readable run metadata
 - `AGENT_RUN_REPORT.md` — human-readable report
 
-All artifacts live under `<git_dir>/agentbox/runs/<run_id>/` so git itself
+All artifacts live under `<git_dir>/agentcam/runs/<run_id>/` so git itself
 cannot stage them.
 
 #### Risk heuristics in this release

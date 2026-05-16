@@ -1,4 +1,4 @@
-"""Tests for agentbox.git_state.
+"""Tests for agentcam.git_state.
 
 Covers plan section 4 (git state collection): porcelain parsing, staged vs
 unstaged vs untracked, detached HEAD, no-commits repo, pre-existing op
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from agentbox.git_state import (
+from agentcam.git_state import (
     NotAGitRepoError,
     collect_git_state,
     detect_pre_existing_op,

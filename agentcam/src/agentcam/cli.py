@@ -1,16 +1,16 @@
-"""agentbox command-line entry point.
+"""agentcam command-line entry point.
 
 Subcommands:
-  - ``agentbox version``           — print version and exit
-  - ``agentbox run -- <argv...>``  — wrap a command, record raw + redacted
+  - ``agentcam version``           — print version and exit
+  - ``agentcam run -- <argv...>``  — wrap a command, record raw + redacted
                                      logs, generate AGENT_RUN_REPORT.md
 
 ``run`` is intentionally argv-only; for shell features (pipes, redirects,
 variable expansion) wrap your own shell explicitly, e.g.::
 
-    agentbox run -- bash -lc "echo hi > out.txt"
-    agentbox run -- pwsh -Command "Get-Process | Out-File procs.txt"
-    agentbox run -- cmd /c "dir > files.txt"
+    agentcam run -- bash -lc "echo hi > out.txt"
+    agentcam run -- pwsh -Command "Get-Process | Out-File procs.txt"
+    agentcam run -- cmd /c "dir > files.txt"
 
 See ``docs/design.md`` (forthcoming) for the rationale.
 """
@@ -22,12 +22,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agentbox import __version__
+from agentcam import __version__
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="agentbox",
+        prog="agentcam",
         description=(
             "Local-first CLI wrapper that records what your AI coding agent "
             "changed in your repo."
@@ -35,7 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="cmd", required=True, metavar="COMMAND")
 
-    sub.add_parser("version", help="Print agentbox version and exit.")
+    sub.add_parser("version", help="Print agentcam version and exit.")
 
     run = sub.add_parser(
         "run",
@@ -72,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.cmd == "version":
-        print(f"agentbox {__version__}")
+        print(f"agentcam {__version__}")
         return 0
 
     if args.cmd == "run":
@@ -83,30 +83,30 @@ def main(argv: list[str] | None = None) -> int:
 
 
 # ---------------------------------------------------------------------------
-# `agentbox run` orchestrator
+# `agentcam run` orchestrator
 # ---------------------------------------------------------------------------
 
 def _run_command(args) -> int:
-    # Imports are local so `agentbox version` doesn't pay for them at startup.
-    from agentbox.git_state import (
+    # Imports are local so `agentcam version` doesn't pay for them at startup.
+    from agentcam.git_state import (
         NotAGitRepoError,
         collect_git_state,
         is_working_tree_dirty,
         resolve_git_dir,
         resolve_git_root,
     )
-    from agentbox.models import RunManifest
-    from agentbox.paths import RunIdCollisionError, create_run_dir
-    from agentbox.redaction import StreamingRedactor, redact_argv
-    from agentbox.report import render_report, write_manifest
-    from agentbox.runner import CommandNotFoundError, run_wrapped
-    from agentbox.scanner import scan_output, scan_paths
+    from agentcam.models import RunManifest
+    from agentcam.paths import RunIdCollisionError, create_run_dir
+    from agentcam.redaction import StreamingRedactor, redact_argv
+    from agentcam.report import render_report, write_manifest
+    from agentcam.runner import CommandNotFoundError, run_wrapped
+    from agentcam.scanner import scan_output, scan_paths
 
     run_argv = _strip_leading_dashdash(args.argv or [])
     if not run_argv:
         print(
-            "agentbox run: no command provided. "
-            "Usage: agentbox run -- <command...>",
+            "agentcam run: no command provided. "
+            "Usage: agentcam run -- <command...>",
             file=sys.stderr,
         )
         return 2
@@ -119,13 +119,13 @@ def _run_command(args) -> int:
         git_root = resolve_git_root(cwd)
     except NotAGitRepoError:
         print(
-            "agentbox: not in a git repository. "
+            "agentcam: not in a git repository. "
             "Initialize one with 'git init' first.",
             file=sys.stderr,
         )
         return 2
     except Exception as e:  # noqa: BLE001
-        print(f"agentbox: git error: {e}", file=sys.stderr)
+        print(f"agentcam: git error: {e}", file=sys.stderr)
         return 2
 
     # 2) Collect pre-run git state.
@@ -133,21 +133,21 @@ def _run_command(args) -> int:
         state_before = collect_git_state(cwd, is_after=False)
     except NotAGitRepoError:
         print(
-            "agentbox: not in a git repository. "
+            "agentcam: not in a git repository. "
             "Initialize one with 'git init' first.",
             file=sys.stderr,
         )
         return 2
     pre_run_dirty = is_working_tree_dirty(state_before)
 
-    # 3) Create the run directory under <git_dir>/agentbox/runs/<run_id>/.
+    # 3) Create the run directory under <git_dir>/agentcam/runs/<run_id>/.
     started_at = datetime.now(timezone.utc).astimezone()
     try:
         run_id, run_paths = create_run_dir(
             git_dir, started_at, name=args.name
         )
     except RunIdCollisionError as e:
-        print(f"agentbox: {e}", file=sys.stderr)
+        print(f"agentcam: {e}", file=sys.stderr)
         return 2
 
     # 4) Run the wrapped subprocess with threads-based tee.
@@ -201,7 +201,7 @@ def _run_command(args) -> int:
         shell_used=run_result.shell_used,
         terminal_forward_degraded=run_result.terminal_forward_degraded,
         platform=platform.system().lower(),
-        agentbox_version=__version__,
+        agentcam_version=__version__,
         paths=run_paths,
     )
 
@@ -215,7 +215,7 @@ def _run_command(args) -> int:
     # 10) Tell the user where to find the report (stderr so it doesn't pollute
     # programmatic stdout consumers).
     print(
-        f"\nagentbox: run report at {run_paths.report_md}",
+        f"\nagentcam: run report at {run_paths.report_md}",
         file=sys.stderr,
     )
 
@@ -225,7 +225,7 @@ def _run_command(args) -> int:
 
 def _redact_log(raw_path: Path, redacted_path: Path) -> None:
     """Stream raw_path through StreamingRedactor into redacted_path."""
-    from agentbox.redaction import StreamingRedactor
+    from agentcam.redaction import StreamingRedactor
 
     with raw_path.open("rb") as in_fp, redacted_path.open("wb") as out_fp:
         r = StreamingRedactor(out_fp)
@@ -239,7 +239,7 @@ def _redact_log(raw_path: Path, redacted_path: Path) -> None:
 
 def _scan_log(raw_path: Path, label: str):
     """Scan a raw log for output-pattern risk flags."""
-    from agentbox.scanner import scan_output
+    from agentcam.scanner import scan_output
 
     try:
         text = raw_path.read_bytes().decode("utf-8", errors="replace")
