@@ -7,6 +7,14 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Published to PyPI (2026-05-16)
+
+- **`pip install agentcam` now works** — wheel + sdist uploaded to PyPI:
+  <https://pypi.org/project/agentcam/0.1.0/>
+- Owner: `shihchengwei` (PyPI account). Verified end-to-end: fresh venv
+  → `pip install agentcam` → `agentcam version` returns `agentcam 0.1.0`.
+- README install section updated (removed "Once published to PyPI" caveat).
+
 ### Renamed (2026-05-16)
 
 - **Package + CLI renamed `agentbox` → `agentcam`** (PyPI name `agentbox`

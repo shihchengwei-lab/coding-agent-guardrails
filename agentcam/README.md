@@ -52,8 +52,13 @@ agentcam needs Python ≥ 3.11 and `git`.
 pipx install agentcam
 ```
 
-(Once published to PyPI. For now, install from source — see "Hacking"
-below.)
+Or via `pip` into a venv:
+
+```bash
+pip install agentcam
+```
+
+Available on PyPI: <https://pypi.org/project/agentcam/>.
 
 Verify:
 
