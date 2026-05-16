@@ -50,11 +50,18 @@ v0.1 has 0 real users yet, the "1 user requesting it" rule from the
 ROADMAP intro applies. Building a team-workflow feature before having
 individual-tool users would be premature.
 
-**Trigger to start building.** Any of:
-- Someone opens a GitHub issue mentioning CI / PR comment / Action,
-- A direct email to `shihchengwei@gmail.com` asking the same,
-- An HN / Reddit / Twitter comment on the launch post asking
-  "does this work in CI?" — even once.
+**Trigger to start building.** Both of:
+- ≥ 2 distinct users (different accounts, ideally different channels)
+  request CI integration with a **concrete use case** — not "would be
+  cool if", but "we run X in CI today, want to plug agentcam in".
+- At least one of them commits to being the design partner: tries the
+  v0.2 build pre-release, files feedback, signals "actually adopted"
+  rather than "looks neat".
+
+Casual "does this work in CI?" comments do **not** trigger building.
+The standard reply is: "Not yet. Would you actually adopt it if I built
+it? If yes, tell me the specific workflow." If they don't follow up
+with details, it was curiosity, not demand.
 
 **Acceptance criteria (when built).** v0.2.0 must:
 - Publish `shihchengwei-lab/agentcam-action@v1` on GitHub Marketplace.
