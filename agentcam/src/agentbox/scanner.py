@@ -1,0 +1,363 @@
+"""Path-based and output-based risk scanner.
+
+Path matching uses *segment / basename* matching, NOT substring matching.
+This avoids false positives like ``auth`` matching ``author.md``. Plan §8.
+
+Output scanning reads RAW logs (not redacted), because the redactor may have
+hidden the very pattern we want to flag (e.g. a printed ``rm -rf`` line).
+But scanner evidence NEVER includes the raw matched text — only the pattern
+label and line number. This guarantees output scanning cannot leak secrets
+through risk flag evidence. Plan §12.
+
+This module is pure: it operates on strings and dataclasses, never the
+filesystem or git.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from pathlib import PurePosixPath
+
+from agentbox.models import ChangedFile, RiskFlag, RiskLevel
+
+
+# ---------------------------------------------------------------------------
+# Path patterns (plan §8, §12.5)
+# ---------------------------------------------------------------------------
+
+# (segment, rule_label) — segment-match: any directory or basename equals
+# segment, OR basename starts with `<segment>.` or `<segment>-`.
+HIGH_PATH_SEGMENTS: list[tuple[str, str]] = [
+    ("auth", "auth path"),
+    ("login", "login path"),
+    ("permission", "permission path"),
+    ("permissions", "permissions path"),
+    ("middleware", "middleware path"),
+    ("session", "session path"),
+    ("jwt", "jwt path"),
+    ("oauth", "oauth path"),
+    ("migration", "migration path"),
+    ("migrations", "migrations path"),
+    ("secret", "secret path"),
+    ("secrets", "secrets path"),
+    ("credential", "credential path"),
+    ("credentials", "credentials path"),
+    ("terraform", "terraform path"),
+    ("k8s", "kubernetes (k8s) path"),
+    ("kubernetes", "kubernetes path"),
+    ("helm", "helm path"),
+]
+
+MEDIUM_PATH_SEGMENTS: list[tuple[str, str]] = [
+    (".devcontainer", "devcontainer config"),
+]
+
+# Directory prefix matching (full prefix on the normalized path).
+HIGH_PATH_PREFIXES: list[tuple[str, str]] = [
+    (".github/workflows/", "GitHub Actions workflow"),
+]
+
+MEDIUM_PATH_PREFIXES: list[tuple[str, str]] = [
+    ("docker-compose", "docker compose config"),
+]
+
+# Exact basename matching.
+HIGH_PATH_BASENAMES: list[tuple[str, str]] = [
+    ("schema.prisma", "Prisma schema"),
+    ("fly.toml", "fly.io config"),
+    ("render.yaml", "render.com config"),
+    ("vercel.json", "vercel config"),
+    ("netlify.toml", "netlify config"),
+    ("cloudflare.toml", "cloudflare config"),
+]
+
+MEDIUM_PATH_BASENAMES: list[tuple[str, str]] = [
+    ("package.json", "npm package manifest"),
+    ("package-lock.json", "npm lockfile"),
+    ("pnpm-lock.yaml", "pnpm lockfile"),
+    ("yarn.lock", "yarn lockfile"),
+    ("requirements.txt", "pip requirements"),
+    ("pyproject.toml", "Python project manifest"),
+    ("poetry.lock", "poetry lockfile"),
+    ("uv.lock", "uv lockfile"),
+    ("Dockerfile", "Dockerfile"),
+]
+
+# Lowercase extension matching (e.g. ".tf").
+HIGH_PATH_EXTENSIONS: list[tuple[str, str]] = [
+    (".tf", "terraform file"),
+    (".tfvars", "terraform vars"),
+]
+
+
+# ---------------------------------------------------------------------------
+# Secret-like filename patterns (plan §11)
+# ---------------------------------------------------------------------------
+
+# Matched against the basename. If any pattern matches, the file is treated
+# as secret-like: scanner flags HIGH and report.py replaces the filename in
+# all markdown surfaces.
+_SECRET_LIKE_BASENAME_PATTERNS: list[re.Pattern[str]] = [
+    # All patterns use re.IGNORECASE: case-insensitive filesystems on
+    # Windows and macOS treat `.ENV` and `.env` as the same file, so
+    # the scanner must too. (Codex source-review CRITICAL.)
+    re.compile(r"^\.env$", re.IGNORECASE),
+    re.compile(r"^\.env\.", re.IGNORECASE),
+    re.compile(r"credential", re.IGNORECASE),
+    re.compile(r"secret", re.IGNORECASE),
+    re.compile(r"\.pem$", re.IGNORECASE),
+    re.compile(r"\.key$", re.IGNORECASE),
+    re.compile(r"^id_(rsa|dsa|ecdsa|ed25519)", re.IGNORECASE),
+    re.compile(r"\.pfx$", re.IGNORECASE),
+    re.compile(r"\.p12$", re.IGNORECASE),
+    re.compile(r"^\.npmrc$", re.IGNORECASE),
+    re.compile(r"^\.pypirc$", re.IGNORECASE),
+]
+
+
+def is_secret_like_filename(path: str) -> bool:
+    """True if the basename of ``path`` looks like it might hold a secret."""
+    basename = PurePosixPath(_normalize(path)).name
+    return any(p.search(basename) for p in _SECRET_LIKE_BASENAME_PATTERNS)
+
+
+# ---------------------------------------------------------------------------
+# Path matching helpers
+# ---------------------------------------------------------------------------
+
+def _normalize(path: str) -> str:
+    """Normalize Windows backslashes to forward slashes."""
+    return path.replace("\\", "/")
+
+
+def _segments(path: str) -> list[str]:
+    return [s for s in _normalize(path).split("/") if s]
+
+
+def path_matches_segment(path: str, segment: str) -> bool:
+    """Segment matching.
+
+    Returns True if any directory or basename equals ``segment`` exactly, OR
+    if a basename starts with ``segment.`` or ``segment-``.
+
+    Examples (segment="auth"):
+        match: src/auth/login.py, auth.ts, auth-helper.js
+        no:    src/author.md, src/authorization-docs/x.md
+    """
+    segs = _segments(path)
+    if segment in segs:
+        return True
+    basename = segs[-1] if segs else ""
+    return basename.startswith(segment + ".") or basename.startswith(segment + "-")
+
+
+def _path_matches_prefix(path: str, prefix: str) -> bool:
+    return _normalize(path).startswith(prefix)
+
+
+def _path_matches_basename(path: str, basename: str) -> bool:
+    return PurePosixPath(_normalize(path)).name == basename
+
+
+def _path_matches_extension(path: str, ext: str) -> bool:
+    return _normalize(path).lower().endswith(ext.lower())
+
+
+def _is_internal_path(path: str) -> bool:
+    """True if path is inside .git/agentbox/ — our own output. Plan §1."""
+    norm = _normalize(path)
+    return norm.startswith(".git/agentbox/") or "/agentbox/runs/" in norm
+
+
+# ---------------------------------------------------------------------------
+# Path scanner
+# ---------------------------------------------------------------------------
+
+def scan_paths(changed: list[ChangedFile]) -> list[RiskFlag]:
+    """Generate risk flags from a list of changed files.
+
+    Skips files inside ``.git/agentbox/`` (our own output). For each file:
+    - HIGH if status is ``staged_deleted`` / ``unstaged_deleted``
+    - HIGH if filename is secret-like
+    - HIGH/MEDIUM by path segment / prefix / basename / extension rules
+    """
+    flags: list[RiskFlag] = []
+
+    for cf in changed:
+        if _is_internal_path(cf.path):
+            continue
+
+        path = cf.path
+        is_secret = is_secret_like_filename(path)
+        evidence_path = "<redacted-secret-filename>" if is_secret else path
+
+        if cf.status in ("staged_deleted", "unstaged_deleted"):
+            flags.append(RiskFlag(
+                level="HIGH",
+                rule="tracked file deleted",
+                evidence=evidence_path,
+            ))
+
+        if is_secret:
+            flags.append(RiskFlag(
+                level="HIGH",
+                rule="secret-like filename",
+                evidence="<redacted-secret-filename>",
+            ))
+
+        # Try matchers in HIGH then MEDIUM order. First hit per matcher class
+        # wins (we don't emit multiple flags for the same file from the same
+        # matcher class — keeps the report tidy).
+        if _emit_first_match(path, HIGH_PATH_SEGMENTS, "HIGH",
+                             evidence_path, flags, _seg_match):
+            pass
+        if _emit_first_match(path, HIGH_PATH_PREFIXES, "HIGH",
+                             evidence_path, flags, _path_matches_prefix):
+            pass
+        if _emit_first_match(path, HIGH_PATH_BASENAMES, "HIGH",
+                             evidence_path, flags, _path_matches_basename):
+            pass
+        if _emit_first_match(path, HIGH_PATH_EXTENSIONS, "HIGH",
+                             evidence_path, flags, _path_matches_extension):
+            pass
+        if _emit_first_match(path, MEDIUM_PATH_SEGMENTS, "MEDIUM",
+                             evidence_path, flags, _seg_match):
+            pass
+        if _emit_first_match(path, MEDIUM_PATH_BASENAMES, "MEDIUM",
+                             evidence_path, flags, _path_matches_basename):
+            pass
+        if _emit_first_match(path, MEDIUM_PATH_PREFIXES, "MEDIUM",
+                             evidence_path, flags, _path_matches_prefix):
+            pass
+
+    return flags
+
+
+def _seg_match(path: str, segment: str) -> bool:
+    return path_matches_segment(path, segment)
+
+
+def _emit_first_match(
+    path: str,
+    rules: list[tuple[str, str]],
+    level: RiskLevel,
+    evidence: str,
+    out: list[RiskFlag],
+    match_fn,
+) -> bool:
+    for rule_key, label in rules:
+        if match_fn(path, rule_key):
+            out.append(RiskFlag(level=level, rule=label, evidence=evidence))
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Output patterns (plan §12)
+# ---------------------------------------------------------------------------
+
+HIGH_OUTPUT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    # POSIX shell high-risk
+    (re.compile(r"\bgit\s+reset\s+--hard\b"), "git reset --hard"),
+    (re.compile(r"\brm\s+-rf\s+/(?!tmp\b)"), "rm -rf root-like path"),
+    (re.compile(r"\brm\s+-rf\s+~"), "rm -rf home"),
+    (re.compile(r"\brm\s+-rf\s+\$"), "rm -rf with variable"),
+    (re.compile(r"\bchmod\s+777\b"), "chmod 777"),
+    (re.compile(r"\bcurl\s+[^|]*\|\s*(sh|bash|zsh)\b"), "curl pipe to shell"),
+    (re.compile(r"\bwget\s+[^|]*\|\s*(sh|bash|zsh)\b"), "wget pipe to shell"),
+    # PowerShell equivalents
+    (
+        re.compile(r"(?i)Remove-Item\s+-Recurse\s+-Force\s+(?:/|~|C:\\|\\\\)"),
+        "PowerShell Remove-Item -Recurse -Force",
+    ),
+    (re.compile(r"(?i)\bInvoke-Expression\b"), "PowerShell Invoke-Expression"),
+    (re.compile(r"(?i)\biex\s+\("), "PowerShell iex"),
+    # Conflict markers leaked into stdout/stderr
+    (re.compile(r"^<{7}\s", re.MULTILINE), "conflict marker (<<<<<<<)"),
+    (re.compile(r"^>{7}\s", re.MULTILINE), "conflict marker (>>>>>>>)"),
+    (re.compile(r"^={7}$", re.MULTILINE), "conflict marker (=======)"),
+    # Force push
+    (
+        re.compile(r"\bgit\s+push\s+(?:-f\b|--force\b|--force-with-lease\b)"),
+        "git push --force",
+    ),
+]
+
+MEDIUM_OUTPUT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (
+        re.compile(r"(?i)\b(?:tests?\s+failed|failing\s+tests?|failed\s+tests?)\b"),
+        "tests failed",
+    ),
+    (
+        re.compile(r"(?i)\b(?:lint|build|typecheck|typescript)\s+(?:failed|error)\b"),
+        "lint/build/typecheck failed",
+    ),
+    (
+        re.compile(r"(?i)\b(?:panic|segmentation\s+fault|stack\s+overflow)\b"),
+        "runtime panic / segfault",
+    ),
+]
+
+
+@dataclass(frozen=True)
+class _OutputHit:
+    label: str
+    line_no: int
+
+
+def _scan_output_text(
+    text: str,
+    patterns: list[tuple[re.Pattern[str], str]],
+) -> list[_OutputHit]:
+    hits: list[_OutputHit] = []
+    for pat, label in patterns:
+        for m in pat.finditer(text):
+            line_no = text.count("\n", 0, m.start()) + 1
+            hits.append(_OutputHit(label=label, line_no=line_no))
+    return hits
+
+
+def scan_output(raw_text: str, *, stream_label: str) -> list[RiskFlag]:
+    """Scan a raw log stream for HIGH / MEDIUM output patterns.
+
+    ``stream_label`` is e.g. ``"stdout.log"`` or ``"stderr.log"``; it appears
+    in evidence. Evidence intentionally never contains the raw matched text.
+    """
+    flags: list[RiskFlag] = []
+    flags.extend(
+        _consolidate(_scan_output_text(raw_text, HIGH_OUTPUT_PATTERNS),
+                     stream_label, "HIGH")
+    )
+    flags.extend(
+        _consolidate(_scan_output_text(raw_text, MEDIUM_OUTPUT_PATTERNS),
+                     stream_label, "MEDIUM")
+    )
+    return flags
+
+
+def _consolidate(
+    hits: list[_OutputHit],
+    stream_label: str,
+    level: RiskLevel,
+) -> list[RiskFlag]:
+    by_label: dict[str, list[int]] = {}
+    for h in hits:
+        by_label.setdefault(h.label, []).append(h.line_no)
+
+    flags: list[RiskFlag] = []
+    for label, line_nos in by_label.items():
+        line_nos = sorted(set(line_nos))
+        line_part = ", ".join(str(n) for n in line_nos[:5])
+        if len(line_nos) > 5:
+            line_part += ", ..."
+        plural = "s" if len(line_nos) > 1 else ""
+        evidence = (
+            f"{stream_label} line {line_part} "
+            f"({len(line_nos)} occurrence{plural})"
+        )
+        flags.append(RiskFlag(
+            level=level,
+            rule=f"output_pattern: {label}",
+            evidence=evidence,
+        ))
+    return flags

@@ -1,0 +1,301 @@
+"""Subprocess wrapper with threads-based stdout/stderr tee.
+
+The wrapped subprocess runs with ``shell=False`` (except for Windows ``.cmd`` /
+``.bat`` shims; see :func:`resolve_command`). stdout and stderr are each read
+by a dedicated thread that:
+
+  1. writes raw bytes to ``stdout.log`` / ``stderr.log``
+  2. forwards bytes to the parent terminal (``sys.stdout`` / ``sys.stderr``)
+
+Redaction is NOT done here — see ``redaction.py`` and plan §6 for the
+streaming-buffer model. This module's contract: produce raw logs + exit-code
+detail.
+
+Plan sections: §2 (tee), §3 (CLI argv-only), §9 (exit code), §14 (Windows).
+"""
+from __future__ import annotations
+
+import os
+import platform
+import shutil
+import signal
+import subprocess
+import sys
+import threading
+from dataclasses import dataclass
+from pathlib import Path
+
+from agentbox.models import ExitDetail
+
+
+# ---------------------------------------------------------------------------
+# Exit code interpretation (plan §9)
+# ---------------------------------------------------------------------------
+
+# Most common Windows NTSTATUS values that show up as subprocess returncodes.
+# We deliberately don't try to maintain the full NTSTATUS table — unknown
+# values get interpretation_source="unknown" plus the raw hex.
+_NTSTATUS_TABLE: dict[int, str] = {
+    0xC0000005: "STATUS_ACCESS_VIOLATION",
+    0xC000001D: "STATUS_ILLEGAL_INSTRUCTION",
+    0xC0000094: "STATUS_INTEGER_DIVIDE_BY_ZERO",
+    0xC0000096: "STATUS_PRIVILEGED_INSTRUCTION",
+    0xC00000FD: "STATUS_STACK_OVERFLOW",
+    0xC0000409: "STATUS_STACK_BUFFER_OVERRUN",
+    0xC000013A: "STATUS_CONTROL_C_EXIT",
+}
+
+
+def interpret_exit(returncode: int) -> ExitDetail:
+    """Build an :class:`ExitDetail` from a subprocess returncode.
+
+    Wrapper exit is binary: 0 means subprocess succeeded, 1 means anything
+    else. Cause is captured in the interpretation fields. Plan §9.
+    """
+    plat = platform.system().lower()  # 'windows' | 'linux' | 'darwin'
+
+    wrapper_exit = 0 if returncode == 0 else 1
+    hex_repr: str | None = None
+    interpretation: str
+    source: str
+
+    if returncode < 0:
+        signo = -returncode
+        try:
+            name = signal.Signals(signo).name
+            interpretation = f"terminated by signal {name} ({signo})"
+        except ValueError:
+            interpretation = f"terminated by unknown signal ({signo})"
+        source = "signal"
+    elif returncode == 0:
+        interpretation = "success"
+        source = "known_table"
+    elif 1 <= returncode <= 255:
+        interpretation = "subprocess exited with user-defined non-zero code"
+        source = "user_defined"
+    else:
+        # Likely Windows NTSTATUS or other large 32-bit value.
+        masked = returncode & 0xFFFFFFFF
+        hex_repr = f"0x{masked:08x}"
+        known = _NTSTATUS_TABLE.get(masked)
+        if known:
+            interpretation = known
+            source = "known_table"
+        else:
+            interpretation = "unknown high returncode"
+            source = "unknown"
+
+    return ExitDetail(
+        wrapper_exit=wrapper_exit,
+        raw_returncode=returncode,
+        raw_returncode_hex=hex_repr,
+        platform=plat,
+        interpretation=interpretation,
+        interpretation_source=source,  # type: ignore[arg-type]
+    )
+
+
+# ---------------------------------------------------------------------------
+# Command resolution (Windows .cmd / .bat shim handling, plan §14)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True, slots=True)
+class ResolvedCommand:
+    """Argv after resolving via shutil.which, plus shell-mode flag."""
+
+    argv: list[str]
+    use_shell: bool
+
+
+class CommandNotFoundError(FileNotFoundError):
+    """Raised when the requested command cannot be found on PATH."""
+
+
+def resolve_command(argv: list[str]) -> ResolvedCommand:
+    """Resolve the first argv element via :func:`shutil.which`.
+
+    On Windows, if the resolved path ends in ``.cmd`` or ``.bat``, we must
+    invoke via ``shell=True`` because ``CreateProcess`` does not run batch
+    files directly. Everywhere else uses ``shell=False``.
+    """
+    if not argv:
+        raise ValueError("empty argv")
+
+    resolved = shutil.which(argv[0])
+    if resolved is None:
+        raise CommandNotFoundError(
+            f"agentbox: command not found: {argv[0]}. "
+            "Check PATH or pass an absolute path."
+        )
+
+    is_windows = platform.system().lower() == "windows"
+    is_shim = is_windows and resolved.lower().endswith((".cmd", ".bat"))
+
+    if is_shim:
+        cmdline = _escape_for_cmd_shim([resolved, *argv[1:]])
+        return ResolvedCommand(argv=[cmdline], use_shell=True)
+
+    return ResolvedCommand(argv=[resolved, *argv[1:]], use_shell=False)
+
+
+def _escape_for_cmd_shim(argv: list[str]) -> str:
+    """Build a cmd.exe-safe command line for invoking a ``.cmd`` / ``.bat`` shim.
+
+    Two layers:
+    1. ``subprocess.list2cmdline`` — standard MSVCRT-style argv quoting
+       (handles embedded spaces and double quotes).
+    2. cmd.exe parser pass — caret-escape ``& | < > ^`` so cmd.exe doesn't
+       treat them as command separators / escape chars; double ``%`` so
+       variable expansion is suppressed.
+
+    Codex source-review HIGH: ``list2cmdline`` alone is not enough.
+    cmd.exe parses these metacharacters before MSVCRT sees the quoted
+    string, so they must be escaped at the cmd.exe layer too.
+    """
+    cmdline = subprocess.list2cmdline(argv)
+    out: list[str] = []
+    for ch in cmdline:
+        if ch == "%":
+            out.append("%%")
+        elif ch in "&|<>^":
+            out.append("^")
+            out.append(ch)
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+# ---------------------------------------------------------------------------
+# Stream tee (plan §2)
+# ---------------------------------------------------------------------------
+
+_CHUNK_SIZE = 4096
+
+
+class _TeeThread(threading.Thread):
+    """Read bytes from a subprocess pipe; write to raw log + terminal."""
+
+    def __init__(
+        self,
+        pipe,
+        raw_log_path: Path,
+        terminal_stream,
+    ) -> None:
+        super().__init__(daemon=True)
+        self._pipe = pipe
+        self._raw_log_path = raw_log_path
+        self._terminal_stream = terminal_stream
+        self.degraded = False  # set True if console encoding forced fallback
+
+    def run(self) -> None:
+        # Open binary for append-friendly atomic writes.
+        with self._raw_log_path.open("wb") as raw_fp:
+            while True:
+                try:
+                    chunk = os.read(self._pipe.fileno(), _CHUNK_SIZE)
+                except OSError:
+                    break
+                if not chunk:
+                    break
+                # 1) raw log (bytes, no decoding) — single source of truth
+                raw_fp.write(chunk)
+                raw_fp.flush()
+                # 2) terminal forward (may degrade on Windows console encoding)
+                self._forward_to_terminal(chunk)
+
+    def _forward_to_terminal(self, chunk: bytes) -> None:
+        """Forward bytes to terminal, degrading on encoding errors."""
+        buf = getattr(self._terminal_stream, "buffer", None)
+        if buf is not None:
+            try:
+                buf.write(chunk)
+                buf.flush()
+                return
+            except (OSError, UnicodeEncodeError):
+                self.degraded = True
+
+        # Fallback: decode lossily and write as text.
+        try:
+            text = chunk.decode("utf-8", errors="replace")
+            self._terminal_stream.write(text)
+            self._terminal_stream.flush()
+            self.degraded = True
+        except Exception:
+            # Last resort: swallow. Raw log on disk is the source of truth.
+            self.degraded = True
+
+
+@dataclass
+class RunResult:
+    """Result of running the wrapped subprocess."""
+
+    exit_detail: ExitDetail
+    terminal_forward_degraded: bool
+    shell_used: bool
+
+
+def run_wrapped(
+    argv: list[str],
+    *,
+    cwd: Path,
+    stdout_raw_path: Path,
+    stderr_raw_path: Path,
+) -> RunResult:
+    """Run the wrapped command, capture raw logs, return :class:`RunResult`.
+
+    Redaction is NOT done in this function. Callers consume the raw logs via
+    :class:`agentbox.redaction.StreamingRedactor` to produce ``*.redacted.log``.
+    """
+    resolved = resolve_command(argv)
+
+    # shell=True wants a single string; shell=False wants a list.
+    cmd_arg: list[str] | str
+    cmd_arg = resolved.argv[0] if resolved.use_shell else list(resolved.argv)
+
+    proc = subprocess.Popen(
+        cmd_arg,
+        cwd=str(cwd),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        bufsize=0,
+        shell=resolved.use_shell,
+    )
+
+    assert proc.stdout is not None and proc.stderr is not None
+
+    stdout_thread = _TeeThread(proc.stdout, stdout_raw_path, sys.stdout)
+    stderr_thread = _TeeThread(proc.stderr, stderr_raw_path, sys.stderr)
+    stdout_thread.start()
+    stderr_thread.start()
+
+    try:
+        proc.wait()
+    except KeyboardInterrupt:
+        # Codex source-review HIGH: Ctrl+C must not skip cleanup. The
+        # subprocess on POSIX usually already received SIGINT via the
+        # process group, but we still escalate (terminate -> kill) if it
+        # doesn't die. On Windows, subprocess may not receive Ctrl+C the
+        # same way, so terminate() defensively.
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+    finally:
+        # Always join tee threads so raw logs flush. The threads exit
+        # cleanly once their pipe sees EOF (which happens when the
+        # subprocess is reaped above).
+        stdout_thread.join(timeout=5)
+        stderr_thread.join(timeout=5)
+
+    return RunResult(
+        exit_detail=interpret_exit(proc.returncode),
+        terminal_forward_degraded=(
+            stdout_thread.degraded or stderr_thread.degraded
+        ),
+        shell_used=resolved.use_shell,
+    )
