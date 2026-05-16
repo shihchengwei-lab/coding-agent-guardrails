@@ -30,9 +30,9 @@ Ordered by likely value to v0.1 users, **not** by build difficulty.
 **What.** A reusable CI step:
 
 ```yaml
-- uses: agentcam/run-action@v1
+- uses: shihchengwei-lab/agentcam-action@v1
   with:
-    command: claude "fix the failing tests"
+    command: claude -p "fix the failing tests"
     attach-to-pr: true
 ```
 
@@ -43,6 +43,36 @@ hook: no SSO, no DPA, no hosted infra needed.
 
 **Free or paid.** The Action itself is free / OSS. Aggregating multiple
 PRs across an org will be paid.
+
+**Status (recorded 2026-05-16).** Suggested mid-launch by GPT/Codex
+review; user decided to defer (decision logged here). Reasoning:
+v0.1 has 0 real users yet, the "1 user requesting it" rule from the
+ROADMAP intro applies. Building a team-workflow feature before having
+individual-tool users would be premature.
+
+**Trigger to start building.** Any of:
+- Someone opens a GitHub issue mentioning CI / PR comment / Action,
+- A direct email to `shihchengwei@gmail.com` asking the same,
+- An HN / Reddit / Twitter comment on the launch post asking
+  "does this work in CI?" — even once.
+
+**Acceptance criteria (when built).** v0.2.0 must:
+- Publish `shihchengwei-lab/agentcam-action@v1` on GitHub Marketplace.
+- Wrap an agent command (claude / codex / any argv) in CI.
+- Post `AGENT_RUN_REPORT.md` as a PR comment when running in PR context.
+  Handle the 65 535-char PR comment limit (truncate body, link to the
+  full artifact).
+- Upload the full run directory as a workflow artifact.
+- Skip the PR comment step gracefully when running on `push` to a
+  branch (no PR yet); just upload artifact in that case.
+- Example workflow shipped at `examples/github-action/workflow.yml`
+  with a one-page README explaining how to copy/adapt.
+- No `attach-to-pr: true` requires any agentcam config or new schema
+  field beyond standard GitHub Action inputs.
+
+**Out of scope for v0.2 even if built.** Marketplace icon / branded
+listing polish, multi-PR aggregation dashboard (those belong in a
+paid SKU), GitLab CI (different platform, separate v0.3+ effort).
 
 ### 2. Custom risk rules via YAML
 
