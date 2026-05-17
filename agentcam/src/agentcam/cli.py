@@ -101,6 +101,7 @@ def _run_command(args) -> int:
     from agentcam.git_state import (
         NotAGitRepoError,
         collect_git_state,
+        compute_diff_fingerprint,
         is_working_tree_dirty,
         resolve_git_dir,
         resolve_git_root,
@@ -150,6 +151,15 @@ def _run_command(args) -> int:
         return 2
     pre_run_dirty = is_working_tree_dirty(state_before)
 
+    # Diff fingerprint for the no-diff cleanup decision (step 6.5).
+    # Computed only when cleanup might fire — `--keep-empty` skips the
+    # untracked-content hashing cost entirely (was a doc lie before the
+    # Codex round-2 fix; fingerprint used to be always computed inside
+    # collect_git_state regardless of --keep-empty).
+    fingerprint_before = (
+        compute_diff_fingerprint(cwd) if not args.keep_empty else ""
+    )
+
     # 3) Create the run directory under <git_dir>/agentcam/runs/<run_id>/.
     started_at = datetime.now(timezone.utc).astimezone()
     try:
@@ -182,27 +192,44 @@ def _run_command(args) -> int:
     # 6) Collect post-run git state (is_after=True triggers diff --check).
     state_after = collect_git_state(cwd, is_after=True)
 
+    fingerprint_after = (
+        compute_diff_fingerprint(cwd) if not args.keep_empty else ""
+    )
+
     # 6.5) "No-diff = no report": if the run made no git-visible changes
     # AND succeeded, delete the run dir. Pure-alignment sessions (agent
     # and user discussed but did not change code) don't clutter
     # .git/agentcam/runs/. Errors and any state change still produce a
     # report. Opt out per-invocation with --keep-empty.
-    no_git_change = (
-        state_before.head == state_after.head
-        and state_before.porcelain_raw == state_after.porcelain_raw
-        and state_before.diff_fingerprint == state_after.diff_fingerprint
-    )
+    if args.keep_empty:
+        no_git_change = False  # cleanup disabled — skip the comparison
+    else:
+        no_git_change = (
+            state_before.head == state_after.head
+            and state_before.porcelain_raw == state_after.porcelain_raw
+            and fingerprint_before == fingerprint_after
+        )
     exit_ok = run_result.exit_detail.wrapper_exit == 0
-    if no_git_change and exit_ok and not args.keep_empty:
+    if no_git_change and exit_ok:
         import shutil
         try:
             shutil.rmtree(run_paths.run_dir)
         except OSError as e:
             # On Windows, held file handles or AV scanners can make
-            # rmtree fail mid-deletion. Silently suppressing
-            # (ignore_errors=True) would leave orphan logs on disk while
-            # stderr says "skipped" — confusing. Fall through to normal
-            # report generation so the user has *something*.
+            # rmtree fail mid-deletion. Two sub-cases:
+            #   (a) Run dir still exists → fall through to normal report
+            #       generation so the user has *something*.
+            #   (b) Run dir itself was already removed (partial failure
+            #       on a sibling write or race) → write_text on report.md
+            #       would FileNotFoundError. Log and exit clean instead.
+            if not Path(run_paths.run_dir).exists():
+                print(
+                    f"agentcam: cleanup of {run_paths.run_dir} partially "
+                    f"succeeded then failed ({e}); no report could be "
+                    "written.",
+                    file=sys.stderr,
+                )
+                return 0
             print(
                 f"agentcam: cleanup of {run_paths.run_dir} failed ({e}); "
                 "generating report normally.",

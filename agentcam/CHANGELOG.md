@@ -7,6 +7,31 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Hardening (2026-05-18, second Codex pass on the no-diff cleanup)
+
+- **`--keep-empty` now actually skips the fingerprint hashing cost it
+  claims to.** Previously the cost was always paid inside
+  `collect_git_state`; the flag only disabled the `rmtree` call.
+  Moved fingerprint computation into a standalone
+  `compute_diff_fingerprint()` in `git_state.py`, called from `cli.py`
+  only when `not args.keep_empty`.
+- **Partial-`rmtree` failure handled.** Previously, if `rmtree`
+  removed the run dir itself but failed on a child, the fall-through
+  to normal report generation crashed with `FileNotFoundError` when
+  `write_text` tried to write to the missing parent. Now we check
+  whether the run dir still exists after the exception; if yes, fall
+  through normally; if no, log and `return 0` cleanly (no report, but
+  no crash).
+- **`git ls-files` failure no longer silently collides across
+  snapshots.** Previously a failed `git ls-files --others` returned
+  `b""`; if it failed on both pre and post snapshots, fingerprints
+  matched and false cleanup could fire. Now returns a per-call unique
+  sentinel (returncode + random nonce) so the fingerprints can never
+  match across a failure — cleanup is conservatively skipped, report
+  kept.
+- **Symlink-retarget and large-file caveats documented** in
+  `docs/design.md` decision #23 as known limitations.
+
 ### Changed (2026-05-18, "always record, throw away if no diff")
 
 - **No-diff success runs now auto-clean their run dir.** `agentcam run`

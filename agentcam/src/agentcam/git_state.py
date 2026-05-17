@@ -95,22 +95,6 @@ def collect_git_state(cwd: Path, *, is_after: bool = False) -> GitState:
     pre_existing_op = detect_pre_existing_op(git_dir)
     changed_files = parse_porcelain_v1z(porcelain_raw)
 
-    # Fingerprint for the no-diff cleanup decision in cli.py. Hashes:
-    # (1) `git diff` — content changes to tracked files in the working tree
-    # (2) `git diff --cached` — staged changes
-    # (3) Each untracked file's (path + content)
-    # Untracked content is needed because `git diff` ignores untracked,
-    # and porcelain only shows "?? path"; without hashing the bytes, an
-    # in-place rewrite of a pre-existing untracked file looks unchanged
-    # and would be falsely cleaned up (data loss).
-    fp = hashlib.sha256()
-    fp.update(_git(cwd, "diff", check=False).stdout)
-    fp.update(b"\x00")
-    fp.update(_git(cwd, "diff", "--cached", check=False).stdout)
-    fp.update(b"\x00")
-    fp.update(_untracked_content_hash(cwd))
-    diff_fingerprint = fp.hexdigest()
-
     return GitState(
         head=head,
         branch=branch,
@@ -124,8 +108,31 @@ def collect_git_state(cwd: Path, *, is_after: bool = False) -> GitState:
         diff_check_cached=diff_check_cached,
         pre_existing_op=pre_existing_op,
         changed_files=changed_files,
-        diff_fingerprint=diff_fingerprint,
     )
+
+
+def compute_diff_fingerprint(cwd: Path) -> str:
+    """sha256 hex digest of the working tree's git-visible state.
+
+    Hashes:
+    (1) `git diff` — content changes to tracked files in the working tree
+    (2) `git diff --cached` — staged changes
+    (3) Each untracked file's (path + content), via
+        :func:`_untracked_content_hash`
+
+    Called by cli.py *only* when no-diff cleanup might actually fire
+    (i.e. `--keep-empty` is not set). Computing this requires one
+    `git diff` + one `git diff --cached` + one `git ls-files` + a read
+    of every untracked file's bytes, so it is non-trivial cost for
+    repos with large unignored artifacts.
+    """
+    fp = hashlib.sha256()
+    fp.update(_git(cwd, "diff", check=False).stdout)
+    fp.update(b"\x00")
+    fp.update(_git(cwd, "diff", "--cached", check=False).stdout)
+    fp.update(b"\x00")
+    fp.update(_untracked_content_hash(cwd))
+    return fp.hexdigest()
 
 
 def is_working_tree_dirty(state: GitState) -> bool:
@@ -149,11 +156,20 @@ def _untracked_content_hash(cwd: Path) -> bytes:
     Performance: O(N) reads, where N is the count of untracked files NOT
     matched by .gitignore. For repos with large unignored artifacts this
     is slow; the escape hatch is `agentcam run --keep-empty`.
+
+    On `git ls-files` failure (rare; git binary issue / weird repo state),
+    returns a per-call unique sentinel so the pre/post fingerprints
+    cannot collide silently — caller falls through to keep the report.
+    Codex round-2 review caught this hole; previously returned b"".
     """
+    import os
     res = _git(cwd, "ls-files", "--others", "--exclude-standard", "-z",
                check=False)
     if res.returncode != 0:
-        return b""
+        return (
+            b"<LS-FILES-FAILED rc=" + str(res.returncode).encode()
+            + b" nonce=" + os.urandom(16).hex().encode() + b">"
+        )
     paths = sorted(p for p in res.stdout.split(b"\x00") if p)
     fp = hashlib.sha256()
     for path_bytes in paths:

@@ -101,11 +101,6 @@ class GitState:
     diff_check_cached: str = ""
     pre_existing_op: str | None = None  # 'merge' | 'rebase' | 'cherry-pick' | ...
     changed_files: list[ChangedFile] = field(default_factory=list)
-    # sha256(diff || NUL || diff --cached) — used for "no-diff" cleanup
-    # (delete the run dir if state_before.diff_fingerprint == state_after's).
-    # Defaults to "" so older callers / tests constructing GitState by hand
-    # still work; collect_git_state always populates it.
-    diff_fingerprint: str = ""
 
 
 @dataclass

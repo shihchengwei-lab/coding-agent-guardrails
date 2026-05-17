@@ -487,8 +487,13 @@ adversarial review (2026-05-17) caught this hole before ship.
 AV scanners or held file handles can make `rmtree` fail mid-deletion.
 The original `ignore_errors=True` would leave orphan log files on disk
 while telling the user "report skipped" — confusing and lossy. The
-chosen path catches `OSError`, logs it, and falls through to the normal
-report generation so the user always has *something*.
+chosen path catches `OSError` and branches on whether the run dir still
+exists: (a) dir survives → fall through to normal report generation so
+the user has *something*; (b) dir itself already removed (partial
+failure or race) → log the failure and `return 0` without a report,
+because `Path(report_md).write_text(...)` would `FileNotFoundError` on
+a missing parent. Both branches print a clear stderr message. Codex
+round-2 review caught the (b) sub-case before ship.
 
 **Why a per-invocation flag (`--keep-empty`) instead of config.** Matches
 the rest of agentcam: no config file, no implicit state, every behavior
@@ -509,7 +514,25 @@ snapshot, where N is the count of untracked files NOT matched by
 down agentcam. The escape hatch is `--keep-empty` (skips the
 fingerprint comparison's payoff but avoids the cost) plus the
 encouragement to `.gitignore` build artifacts (which the user would
-want regardless).
+want regardless). Implementation detail: `compute_diff_fingerprint`
+lives in `git_state.py` as a standalone function, called from `cli.py`
+only when `not args.keep_empty`, so the flag genuinely skips the cost
+rather than just disabling the cleanup branch.
+
+**Known limitations.**
+- *Untracked symlinks*: `_untracked_content_hash` reads files via
+  `Path.read_bytes()`, which follows symlinks. An untracked symlink
+  retargeted to a file with equivalent content produces an identical
+  hash → false no-change. Rare; symlink-as-agent-output is uncommon.
+- *Large untracked files*: `read_bytes()` loads each file fully into
+  memory. Multi-GB unignored artifacts can spike RAM. Mitigation:
+  keep large artifacts in `.gitignore`, or use `--keep-empty`.
+- *Empty directories* and *`.gitignore`d artifacts* are invisible by
+  design — the contract is "git-visible changes."
+- *`git ls-files` failure*: returns a per-call unique sentinel from
+  `_untracked_content_hash` (random nonce + return code), so a failed
+  enumeration on either snapshot can NEVER match the other; cleanup
+  is conservatively skipped and the report kept.
 
 **Soft breaking change.** Pre-v0.2 behavior was "every run produces a
 report." Post-cleanup, no-diff success runs produce nothing. CHANGELOG
