@@ -95,6 +95,18 @@ agentcam will:
 stdout and stderr stream live to your terminal — agentcam does not buffer
 them.
 
+If the wrapped command produced **no git-visible changes** and exited
+successfully, the run directory is auto-deleted and stderr gets a
+`no git-visible changes; report skipped` notice. Pass `--keep-empty`
+before `--` to opt out and always keep the report:
+
+```bash
+agentcam run --keep-empty -- claude -p "..."
+```
+
+This is the "no-diff cleanup" default. The same logic applies to Hook
+mode (see below). Full rationale: [`docs/design.md` § 23](docs/design.md).
+
 ### Wrapping Claude Code
 
 ```bash
@@ -154,6 +166,14 @@ generic wrapping path above (`agentcam run -- ...`).
 
 Both hook commands always exit 0; Claude Code is never blocked even
 if agentcam has an internal error.
+
+**Hook-mode reports do not include stdout/stderr.** Claude Code does
+not pipe its terminal output through hook subprocesses, so agentcam
+cannot capture it. The Logs section in a hook-mode report points to
+empty placeholder files; risk flags come from changed file paths only,
+not from scanning output for patterns like `rm -rf` or `git push
+--force`. If you need stdout/stderr captured, use the wrapping path
+(`agentcam run -- claude "..."`) for that specific session.
 
 ---
 
@@ -257,6 +277,13 @@ in the markdown report also pass through redaction — a literal
 
 ## Local-only, no telemetry
 
+agentcam reads your **local** git state (`git status`, `git diff` against
+the `.git/` directory on your machine). git is a local tool; GitHub is a
+separate hosting service that you push to. agentcam never talks to GitHub
+or any other remote service — pushing to a remote is an independent
+action that agentcam does not see, and reports are generated regardless
+of whether the repo has ever been pushed.
+
 agentcam makes no network calls. It does not phone home. There is no
 account, no upload, no opt-in or opt-out toggle for telemetry — because
 there is no telemetry to toggle.
@@ -278,6 +305,12 @@ please file an issue.
   invisible.
 - **Best-effort redaction.** New secret formats may slip through. Do not
   rely on agentcam alone for credential hygiene.
+- **Hook mode captures no stdout/stderr.** Claude Code does not pipe
+  its terminal output through hook subprocesses, so a hook-mode report
+  shows path-based risk flags only; output-pattern scanning (`rm -rf`,
+  `git push --force`, etc.) is unavailable. Empty placeholder log
+  files exist so the report template renders. Use the wrapping path
+  if you need full output capture for a specific session.
 - **Interactive TUI agents must be invoked with a prompt arg, not bare.**
   agentcam wraps subprocess stdout/stderr with `PIPE` (not a real TTY).
   Agents like Claude Code that *refuse to open a TUI under non-TTY*
