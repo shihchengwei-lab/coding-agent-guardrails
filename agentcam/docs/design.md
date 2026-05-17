@@ -458,6 +458,66 @@ matters.
 
 ---
 
+## 23. "No-diff" run cleanup: delete the run dir if pre and post state match
+
+**Decision.** After collecting `state_after`, if (a) `head_before == head_after`,
+(b) `porcelain_raw_before == porcelain_raw_after`, (c) the
+`diff_fingerprint` matches (sha256 of `git diff` || NUL || `git diff
+--cached` || NUL || untracked-file path/content bytes), AND (d) the wrapped
+subprocess exited 0, AND (e) the user did NOT pass `--keep-empty`, then
+`shutil.rmtree(run_paths.run_dir)` and return 0 with a stderr notice.
+Otherwise generate the normal report.
+
+**Why.** The product framing is "flight recorder" — recording should not
+require user discipline per invocation. Combined with the Hook-mode path
+on the roadmap (ROADMAP v0.2 #1), the model becomes "always record,
+throw away if nothing happened." Without this cleanup, every chat-only
+("alignment thinking") session leaves a zero-value report under
+`.git/agentcam/runs/`, eventually degrading triage of the *interesting*
+reports.
+
+**Why include untracked file contents in the fingerprint.** A file that
+existed as untracked pre-run and is rewritten in place by the agent has
+the same path, same porcelain status (`?? path`), and is invisible to
+`git diff`. Without hashing untracked bytes the fingerprint would match
+across the rewrite → false-cleanup → agent's work disappears. Codex
+adversarial review (2026-05-17) caught this hole before ship.
+
+**Why fall through (not silent success) on `rmtree` failure.** On Windows,
+AV scanners or held file handles can make `rmtree` fail mid-deletion.
+The original `ignore_errors=True` would leave orphan log files on disk
+while telling the user "report skipped" — confusing and lossy. The
+chosen path catches `OSError`, logs it, and falls through to the normal
+report generation so the user always has *something*.
+
+**Why a per-invocation flag (`--keep-empty`) instead of config.** Matches
+the rest of agentcam: no config file, no implicit state, every behavior
+is opt-in via argv. Anyone who wants the old "always keep" behavior
+types one extra flag; everyone else gets the cleaner default.
+
+**Why not just check `is_working_tree_dirty(state_after)`.** A pre-run
+dirty tree + no-op agent is a common "alignment thinking" case — the
+user wants to discuss with the agent without touching code. The dirty
+state pre-existed and is not the agent's doing; recording it would be
+duplicate of any prior agent-run report that already captured it.
+Equality (before == after) handles this correctly; "is dirty"
+over-keeps.
+
+**Performance caveat.** Hashing untracked files is O(N) reads per
+snapshot, where N is the count of untracked files NOT matched by
+`.gitignore`. For repos with large unignored artifacts, this slows
+down agentcam. The escape hatch is `--keep-empty` (skips the
+fingerprint comparison's payoff but avoids the cost) plus the
+encouragement to `.gitignore` build artifacts (which the user would
+want regardless).
+
+**Soft breaking change.** Pre-v0.2 behavior was "every run produces a
+report." Post-cleanup, no-diff success runs produce nothing. CHANGELOG
+entry must mention this and point to `--keep-empty` for users who
+relied on the old default.
+
+---
+
 ## Implementation notes (things that surprised us mid-build)
 
 - **PEM regex original spec was wrong.** Plan wrote `[A-Z ]+`, which fails

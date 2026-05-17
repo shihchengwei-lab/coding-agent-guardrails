@@ -10,6 +10,7 @@ work correctly. See plan section 1.
 """
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from pathlib import Path
 
@@ -94,6 +95,22 @@ def collect_git_state(cwd: Path, *, is_after: bool = False) -> GitState:
     pre_existing_op = detect_pre_existing_op(git_dir)
     changed_files = parse_porcelain_v1z(porcelain_raw)
 
+    # Fingerprint for the no-diff cleanup decision in cli.py. Hashes:
+    # (1) `git diff` — content changes to tracked files in the working tree
+    # (2) `git diff --cached` — staged changes
+    # (3) Each untracked file's (path + content)
+    # Untracked content is needed because `git diff` ignores untracked,
+    # and porcelain only shows "?? path"; without hashing the bytes, an
+    # in-place rewrite of a pre-existing untracked file looks unchanged
+    # and would be falsely cleaned up (data loss).
+    fp = hashlib.sha256()
+    fp.update(_git(cwd, "diff", check=False).stdout)
+    fp.update(b"\x00")
+    fp.update(_git(cwd, "diff", "--cached", check=False).stdout)
+    fp.update(b"\x00")
+    fp.update(_untracked_content_hash(cwd))
+    diff_fingerprint = fp.hexdigest()
+
     return GitState(
         head=head,
         branch=branch,
@@ -107,12 +124,53 @@ def collect_git_state(cwd: Path, *, is_after: bool = False) -> GitState:
         diff_check_cached=diff_check_cached,
         pre_existing_op=pre_existing_op,
         changed_files=changed_files,
+        diff_fingerprint=diff_fingerprint,
     )
 
 
 def is_working_tree_dirty(state: GitState) -> bool:
     """True if there are any staged, unstaged, or untracked changes."""
     return bool(state.changed_files)
+
+
+# ---------------------------------------------------------------------------
+# Untracked content hashing (for the no-diff fingerprint)
+# ---------------------------------------------------------------------------
+
+def _untracked_content_hash(cwd: Path) -> bytes:
+    """Hash all untracked files (path + content bytes) for fingerprinting.
+
+    Why: `git diff` and `git diff --cached` ignore untracked files. Without
+    this, a pre-existing untracked file rewritten in place by the wrapped
+    command produces identical diff bytes pre/post and identical porcelain
+    output ("?? path"), causing a false no-diff cleanup — agent's work is
+    lost. Respects `.gitignore` via `--exclude-standard`.
+
+    Performance: O(N) reads, where N is the count of untracked files NOT
+    matched by .gitignore. For repos with large unignored artifacts this
+    is slow; the escape hatch is `agentcam run --keep-empty`.
+    """
+    res = _git(cwd, "ls-files", "--others", "--exclude-standard", "-z",
+               check=False)
+    if res.returncode != 0:
+        return b""
+    paths = sorted(p for p in res.stdout.split(b"\x00") if p)
+    fp = hashlib.sha256()
+    for path_bytes in paths:
+        fp.update(path_bytes)
+        fp.update(b"\x00")
+        try:
+            # surrogateescape preserves non-UTF8 byte paths on POSIX
+            # (see ROADMAP "POSIX hardening" — caveat 2).
+            path_str = path_bytes.decode("utf-8", errors="surrogateescape")
+            content = (cwd / path_str).read_bytes()
+            fp.update(hashlib.sha256(content).digest())
+        except OSError:
+            # File disappeared between ls-files and read, or unreadable.
+            # Sentinel so different missing files don't collide silently.
+            fp.update(b"<MISSING>")
+        fp.update(b"\x00")
+    return fp.digest()
 
 
 # ---------------------------------------------------------------------------

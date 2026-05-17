@@ -63,10 +63,12 @@ class TestSmoke:
 
     def test_git_status_does_not_list_agentcam(self, tmp_git_repo: Path):
         # Plan §1: .git/agentcam/ must NOT appear in git status (git ignores
-        # its own internals).
+        # its own internals). Use a command that creates a file so a run dir
+        # actually exists (without that, no-diff cleanup makes the test
+        # trivially pass via "nothing under .git/agentcam at all").
         _agentcam(
             tmp_git_repo, "run", "--",
-            sys.executable, "-c", "pass",
+            sys.executable, "-c", "open('artifact.txt','w').write('x')",
         )
         ps = subprocess.run(
             ["git", "status", "--porcelain"],
@@ -147,9 +149,14 @@ class TestPreRunDirty:
         _git(tmp_git_repo, "commit", "-q", "-m", "init")
         (tmp_git_repo / "tracked.txt").write_text("dirty")  # uncommitted modify
 
+        # Agent also modifies state (creates a new file) so the no-diff
+        # cleanup doesn't delete the report. The property under test —
+        # "no blanket rollback when pre-dirty" — is what matters, and that
+        # applies whenever there IS a report (i.e. the agent did something).
         _agentcam(
             tmp_git_repo, "run", "--",
-            sys.executable, "-c", "print('noop')",
+            sys.executable, "-c",
+            "open('new_artifact.txt','w').write('hi')",
         )
         report = _report(tmp_git_repo)
         assert "Manual review required" in report
@@ -183,8 +190,9 @@ class TestCommandFailure:
 class TestRedaction:
     def test_secret_in_stdout(self, tmp_git_repo: Path):
         token = "ghp_" + "A" * 40
+        # --keep-empty: this test inspects logs, doesn't change git state.
         proc = _agentcam(
-            tmp_git_repo, "run", "--",
+            tmp_git_repo, "run", "--keep-empty", "--",
             sys.executable, "-c", f"print('GITHUB_TOKEN={token}')",
         )
         assert proc.returncode == 0
@@ -204,8 +212,9 @@ class TestRedaction:
             "print('BBBBBBBB')\n"
             "print('-----END RSA PRIVATE KEY-----')\n"
         )
+        # --keep-empty: this test inspects logs, doesn't change git state.
         proc = _agentcam(
-            tmp_git_repo, "run", "--",
+            tmp_git_repo, "run", "--keep-empty", "--",
             sys.executable, "-c", script,
         )
         assert proc.returncode == 0
@@ -219,9 +228,10 @@ class TestRedaction:
     def test_command_argv_redaction(self, tmp_git_repo: Path):
         # Plan §11: command argv passes through redact_argv before going
         # into the markdown report; raw stays only in manifest.
+        # --keep-empty: this test inspects report+manifest, no git change.
         secret = "sk-AAAAAAAAAAAAAAAAAAAA"
         _agentcam(
-            tmp_git_repo, "run", "--",
+            tmp_git_repo, "run", "--keep-empty", "--",
             sys.executable, "-c", "import sys; sys.argv  # noqa",
             "--api-key", secret,
         )
@@ -278,10 +288,12 @@ class TestStagedOnly:
 
 class TestOutputScanner:
     def test_rm_rf_in_stdout_high(self, tmp_git_repo: Path):
+        # Wrap a command that also writes a file, so the no-diff cleanup
+        # doesn't discard the report we want to inspect.
         _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c",
-            "print('about to rm -rf /opt/old/data now')",
+            "open('x.txt','w').write('x'); print('about to rm -rf /opt/old/data now')",
         )
         report = _report(tmp_git_repo)
         assert "HIGH" in report
@@ -291,3 +303,138 @@ class TestOutputScanner:
         # whatever the user typed, so we only check the Risk Flags section.)
         risk_section = report.split("## Risk Flags")[1].split("\n## ")[0]
         assert "/opt/old/data" not in risk_section
+
+
+# ---------------------------------------------------------------------------
+# No-diff cleanup: "always record, throw away if no diff"
+# ---------------------------------------------------------------------------
+
+class TestNoDiffCleanup:
+    """`agentcam run` deletes the run dir when the wrapped command produced
+    no git-visible change AND exited 0. Pure-alignment sessions ('agent and
+    user discussed but did not change code') leave no clutter under
+    .git/agentcam/runs/. Failures and any state change still produce a
+    report. Opt out per-invocation with --keep-empty."""
+
+    def test_no_op_success_leaves_no_run_dir(self, tmp_git_repo: Path):
+        runs_dir = tmp_git_repo / ".git" / "agentcam" / "runs"
+        proc = _agentcam(
+            tmp_git_repo, "run", "--",
+            sys.executable, "-c", "pass",
+        )
+        assert proc.returncode == 0
+        # No-diff + exit 0 → run dir cleaned up entirely.
+        assert not runs_dir.exists() or not any(runs_dir.iterdir()), (
+            "runs dir should be empty after no-diff success run, got: "
+            f"{list(runs_dir.iterdir()) if runs_dir.exists() else 'no runs dir'}"
+        )
+
+    def test_no_op_pre_dirty_leaves_no_run_dir(self, tmp_git_repo: Path):
+        # Pre-existing dirty state, agent does nothing → state_before ==
+        # state_after → still no report (the dirty was there before the
+        # run, not caused by it).
+        (tmp_git_repo / "tracked.txt").write_text("init")
+        _git(tmp_git_repo, "add", ".")
+        _git(tmp_git_repo, "commit", "-q", "-m", "init")
+        (tmp_git_repo / "tracked.txt").write_text("dirty")  # pre-existing
+
+        runs_dir = tmp_git_repo / ".git" / "agentcam" / "runs"
+        proc = _agentcam(
+            tmp_git_repo, "run", "--",
+            sys.executable, "-c", "pass",
+        )
+        assert proc.returncode == 0
+        assert not runs_dir.exists() or not any(runs_dir.iterdir())
+
+    def test_failed_run_keeps_report_even_no_diff(self, tmp_git_repo: Path):
+        # Exit != 0 means the user needs the logs to debug, even when no
+        # git change. Report must be preserved.
+        proc = _agentcam(
+            tmp_git_repo, "run", "--",
+            sys.executable, "-c", "import sys; sys.exit(2)",
+        )
+        assert proc.returncode == 1
+        report = _report(tmp_git_repo)
+        assert "subprocess raw returncode: 2" in report
+
+    def test_any_change_keeps_report(self, tmp_git_repo: Path):
+        # Sanity: a real change still produces a report.
+        proc = _agentcam(
+            tmp_git_repo, "run", "--",
+            sys.executable, "-c", "open('hello.txt','w').write('hi')",
+        )
+        assert proc.returncode == 0
+        report = _report(tmp_git_repo)
+        assert "hello.txt" in report
+
+    def test_keep_empty_flag_preserves_report(self, tmp_git_repo: Path):
+        # --keep-empty opts out of the cleanup: report is generated even
+        # for no-diff success runs.
+        proc = _agentcam(
+            tmp_git_repo, "run", "--keep-empty", "--",
+            sys.executable, "-c", "pass",
+        )
+        assert proc.returncode == 0
+        # _report() would raise StopIteration if no run dir existed; the
+        # successful read here proves the report was kept.
+        report = _report(tmp_git_repo)
+        assert len(report) > 0
+
+    def test_content_swap_preserving_status_still_detected(
+        self, tmp_git_repo: Path,
+    ):
+        # Edge case: file is dirty pre-run with content A, agent rewrites
+        # it to content B. Porcelain status is identical (" M tracked.txt"
+        # in both snapshots) but content differs. The diff fingerprint
+        # must distinguish them so the report is kept.
+        (tmp_git_repo / "tracked.txt").write_text("committed")
+        _git(tmp_git_repo, "add", ".")
+        _git(tmp_git_repo, "commit", "-q", "-m", "init")
+        (tmp_git_repo / "tracked.txt").write_text("dirty version A")
+
+        proc = _agentcam(
+            tmp_git_repo, "run", "--",
+            sys.executable, "-c",
+            "open('tracked.txt','w').write('dirty version B totally different')",
+        )
+        assert proc.returncode == 0
+        report = _report(tmp_git_repo)
+        assert "tracked.txt" in report
+
+    def test_untracked_content_swap_still_detected(self, tmp_git_repo: Path):
+        # Untracked file exists pre-run with content A. Agent rewrites it
+        # to content B (same path, still untracked). Porcelain says
+        # "?? scratch.txt" in BOTH snapshots and `git diff` ignores
+        # untracked files entirely. Without hashing untracked content in
+        # the fingerprint, cleanup would falsely fire and lose the work.
+        # Regression test for the Codex review hole.
+        (tmp_git_repo / "scratch.txt").write_text("content A")
+        proc = _agentcam(
+            tmp_git_repo, "run", "--",
+            sys.executable, "-c",
+            "open('scratch.txt','w').write('content B totally different')",
+        )
+        assert proc.returncode == 0
+        report = _report(tmp_git_repo)
+        assert "scratch.txt" in report
+
+    def test_empty_commit_kept(self, tmp_git_repo: Path):
+        # An empty commit moves HEAD without changing files. head_before
+        # differs from head_after → cleanup must NOT apply, report exists.
+        # (Set repo-level identity so the wrapped `git commit` succeeds
+        # without inheriting the test fixture's -c flags.)
+        subprocess.run(
+            ["git", "config", "user.email", "t@t"],
+            cwd=tmp_git_repo, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "t"],
+            cwd=tmp_git_repo, check=True, capture_output=True,
+        )
+        proc = _agentcam(
+            tmp_git_repo, "run", "--",
+            "git", "commit", "--allow-empty", "-m", "empty marker",
+        )
+        assert proc.returncode == 0
+        report = _report(tmp_git_repo)
+        assert len(report) > 0

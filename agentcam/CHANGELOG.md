@@ -7,6 +7,35 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Changed (2026-05-18, "always record, throw away if no diff")
+
+- **No-diff success runs now auto-clean their run dir.** `agentcam run`
+  compares pre/post git state (`head`, `porcelain`, full diff bytes,
+  and untracked file contents); if identical AND the wrapped subprocess
+  exited 0, the entire `<git_dir>/agentcam/runs/<run_id>/` is deleted
+  and stderr prints `agentcam: no git-visible changes; report skipped`.
+  Pure-alignment sessions (agent and user discussed without changing
+  code) no longer clutter `runs/`.
+- **Opt out with `--keep-empty`**: `agentcam run --keep-empty -- ...`
+  preserves the old "always keep" behavior for any single invocation.
+- **Soft breaking change** — anyone who relied on every wrapped run
+  producing a report (e.g. an external script that scans
+  `<git_dir>/agentcam/runs/` after every wrap) needs `--keep-empty` to
+  maintain that.
+- **Untracked file contents are hashed** as part of the pre/post state
+  comparison so an in-place rewrite of a pre-existing untracked file
+  is detected as a change. Caught by Codex adversarial review before
+  ship — without it, the fingerprint would falsely match across the
+  rewrite and the report would be wrongly deleted (data loss).
+- **`shutil.rmtree` failure now falls through to normal report
+  generation** instead of silently swallowing the error. On Windows,
+  AV scanners or held file handles can make `rmtree` fail; with
+  `ignore_errors=True` users would see "report skipped" while orphan
+  logs remained on disk.
+- See `docs/design.md` decision #23 for the full rationale.
+- +8 regression tests (6 for the cleanup behaviors, 2 for the Codex
+  edge cases). Test total: 171 → 179 on Windows (+1 POSIX-only skip).
+
 ### Documented (2026-05-16, from first dogfood session)
 
 - **README known-limitations** now states the actual failure mode for

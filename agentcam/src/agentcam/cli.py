@@ -52,6 +52,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Slug included in the run id (e.g. 'claude-fix-login').",
     )
     run.add_argument(
+        "--keep-empty",
+        action="store_true",
+        help=(
+            "Keep the run report even when the wrapped command produced no "
+            "git-visible changes. Default is to delete the run dir on a "
+            "no-diff success, so pure-alignment sessions don't clutter "
+            ".git/agentcam/runs/."
+        ),
+    )
+    run.add_argument(
         "argv",
         nargs=argparse.REMAINDER,
         help="The command to run, after a `--` separator.",
@@ -171,6 +181,40 @@ def _run_command(args) -> int:
 
     # 6) Collect post-run git state (is_after=True triggers diff --check).
     state_after = collect_git_state(cwd, is_after=True)
+
+    # 6.5) "No-diff = no report": if the run made no git-visible changes
+    # AND succeeded, delete the run dir. Pure-alignment sessions (agent
+    # and user discussed but did not change code) don't clutter
+    # .git/agentcam/runs/. Errors and any state change still produce a
+    # report. Opt out per-invocation with --keep-empty.
+    no_git_change = (
+        state_before.head == state_after.head
+        and state_before.porcelain_raw == state_after.porcelain_raw
+        and state_before.diff_fingerprint == state_after.diff_fingerprint
+    )
+    exit_ok = run_result.exit_detail.wrapper_exit == 0
+    if no_git_change and exit_ok and not args.keep_empty:
+        import shutil
+        try:
+            shutil.rmtree(run_paths.run_dir)
+        except OSError as e:
+            # On Windows, held file handles or AV scanners can make
+            # rmtree fail mid-deletion. Silently suppressing
+            # (ignore_errors=True) would leave orphan logs on disk while
+            # stderr says "skipped" — confusing. Fall through to normal
+            # report generation so the user has *something*.
+            print(
+                f"agentcam: cleanup of {run_paths.run_dir} failed ({e}); "
+                "generating report normally.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "agentcam: no git-visible changes; report skipped "
+                "(use --keep-empty to override).",
+                file=sys.stderr,
+            )
+            return 0
 
     # 7) Scan paths + raw output for risk flags.
     risk_flags = scan_paths(state_after.changed_files)
