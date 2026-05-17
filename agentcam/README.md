@@ -122,6 +122,41 @@ This is a deliberate constraint — see [`docs/design.md` § 4](docs/design.md).
 
 ---
 
+## Hook mode (Claude Code: no wrapper needed)
+
+If your agent is Claude Code, you can register agentcam as a hook so
+that every `claude` session is recorded automatically — no need to
+remember a wrapper command. Add this to `~/.claude/settings.json` (or
+a per-project `.claude/settings.json`):
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{"matcher": "", "hooks": [
+      {"type": "command", "command": "agentcam hook-session-start"}
+    ]}],
+    "SessionEnd": [{"matcher": "", "hooks": [
+      {"type": "command", "command": "agentcam hook-session-end"}
+    ]}]
+  }
+}
+```
+
+That's the whole setup. Start a `claude` session in any git repo, make
+some changes, exit. agentcam writes the report under
+`.git/agentcam/runs/<run_id>/` automatically. Sessions that don't touch
+the working tree leave no trace — the no-diff cleanup applies the
+same way as in the wrapping path.
+
+Hook mode is Claude Code-specific (it uses Claude Code's settings.json
+hook mechanism). For other agents (Codex, Aider, OpenHands), use the
+generic wrapping path above (`agentcam run -- ...`).
+
+Both hook commands always exit 0; Claude Code is never blocked even
+if agentcam has an internal error.
+
+---
+
 ## Where the artifacts live
 
 ```

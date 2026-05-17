@@ -7,6 +7,54 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Added (2026-05-18, Hook mode -- "always record" without the wrapper)
+
+- **`agentcam hook-session-start` / `agentcam hook-session-end`** --
+  two new subcommands designed to be wired into Claude Code's
+  `~/.claude/settings.json` SessionStart / SessionEnd hooks. Read the
+  Claude Code hook payload JSON from stdin (`session_id`, `cwd`),
+  snapshot git state at session start, compare at session end. Generate
+  a report under `<git_dir>/agentcam/runs/<run_id>/` ONLY if there's a
+  git-visible diff (same no-diff cleanup as the wrapping path).
+- **No more `cr "task"` typing for Claude Code users.** Set up the
+  hook once; every subsequent `claude` session records automatically.
+  Stays on Pro/Max subscription billing (interactive Claude Code, not
+  `claude -p`) so the 2026-06-15 Agent SDK billing change doesn't bite.
+- Both hook commands exit 0 unconditionally -- Claude Code is never
+  blocked, even on agentcam internal errors. All exceptions caught at
+  the top level; stderr print is itself wrapped in try/except.
+- Persistence:
+  `<git_dir>/agentcam/sessions/<sanitized-session-id>/state_before.pickle`,
+  written via `.tmp` + `os.replace` (atomic so SessionEnd can never
+  read a half-written file). Cleaned up on SessionEnd whether or not a
+  report is generated.
+- **Duplicate SessionStart** (resume / clear / compact) preserves the
+  first snapshot so changes made between duplicates don't silently
+  disappear from the eventual report.
+- Snapshot loading validates `schema_version`, dict shape, and the
+  types of every field used downstream (`state` is `GitState`,
+  `started_at` is `datetime`, etc.). Malformed snapshots are discarded
+  with cleanup, not orphaned.
+- 14 new e2e tests in `tests/test_hooks.py`.
+- See README "Hook mode" section for the one-time settings.json
+  snippet, and `docs/design.md` decision #24 for the full rationale.
+
+### Known limitations of Hook mode (acceptable for ship)
+
+- Sanitized session-id collision: two distinct raw IDs that sanitize
+  to the same string (e.g. `session-1` vs `session.1`) would share a
+  session dir. Real Claude Code session IDs are UUIDs, so this is
+  theoretical. Documented in `docs/design.md` #24.
+- Windows reserved names (`CON`, `PRN`, etc.): same theoretical risk;
+  same UUID mitigation in practice.
+- Hook mode has no stdout/stderr capture -- the hook can't read Claude
+  Code's transcript. Report Logs section points to empty placeholder
+  files. To be addressed via a `capture_mode: hook` manifest field in
+  a future release.
+- Concurrent SessionStart TOCTOU: two SessionStart processes racing
+  could both pass the `state_file.exists()` check. Real-world Claude
+  Code single-install is fine; robust fix (lock dir / O_EXCL) deferred.
+
 ### Hardening (2026-05-18, second Codex pass on the no-diff cleanup)
 
 - **`--keep-empty` now actually skips the fingerprint hashing cost it

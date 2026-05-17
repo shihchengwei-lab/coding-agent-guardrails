@@ -541,6 +541,108 @@ relied on the old default.
 
 ---
 
+## 24. Hook mode: SessionStart / SessionEnd, not per-prompt
+
+**Decision.** Hook mode (`agentcam hook-session-start`,
+`agentcam hook-session-end`) integrates with Claude Code's
+`SessionStart` and `SessionEnd` hook events, not `UserPromptSubmit` /
+`Stop`. Both hooks read Claude Code's JSON payload from stdin
+(`session_id`, `cwd`), exit 0 unconditionally, and persist state to
+`<git_dir>/agentcam/sessions/<sanitized-sid>/state_before.pickle`
+via atomic `.tmp` + `os.replace`. SessionEnd loads the snapshot,
+validates schema + types, runs the same no-diff cleanup comparison
+as the wrapping path, and either generates a report under
+`runs/<run_id>/` or cleans up silently. Session dir is always
+removed on SessionEnd.
+
+**Why session-level, not per-turn.** UserPromptSubmit / Stop fire per
+user prompt, giving N reports per session for N turns. SessionStart /
+SessionEnd fire once per session lifetime. The session-level diff
+captures the cumulative effect — what the agent did across the whole
+conversation — which is closer to what the user wants when reviewing
+"what happened during this work". Per-turn would produce one report
+per "hi → ok" exchange even when the agent didn't change anything.
+
+**Why exit 0 unconditionally.** Hooks that exit non-zero block Claude
+Code. agentcam crashing must NEVER prevent the user from using
+Claude. All exceptions are caught at the top of `cmd_hook_session_start`
+and `cmd_hook_session_end`; the failure-path `print()` is itself
+wrapped in try/except because stderr could be closed. Failures degrade
+silently to "no report for this session" — bad, but not blocking.
+
+**Why pickle for persistence (not JSON).** GitState contains `bytes`
+(porcelain_raw) and nested dataclasses. JSON would need custom
+serializers for each. Pickle is convenient and the trust model is OK:
+files live under `.git/agentcam/sessions/` which is local-only and
+write-controlled by the user. SessionEnd validates the loaded
+snapshot's `schema_version` and the runtime types of every field used
+downstream (`state` is `GitState`, `started_at` is `datetime`, etc.)
+before trusting it — a malformed-but-loadable pickle is discarded
+with cleanup, not used.
+
+**Why atomic write (.tmp + os.replace).** SessionEnd could fire while
+SessionStart is mid-write (e.g. Claude Code crash during startup
+hook). Without atomicity, SessionEnd would read a partial pickle,
+fail validation, discard, and lose what would have been a valid
+snapshot if SessionStart had finished. The atomic rename guarantees
+SessionEnd sees either the fully-written snapshot or nothing.
+
+**Why duplicate SessionStart preserves the first snapshot.** Claude
+Code fires SessionStart again on resume / clear / compact. Overwriting
+would discard changes made between the original SessionStart and the
+duplicate — a silent data loss. The implementation checks
+`state_file.exists()` and returns 0 early. The eventual SessionEnd
+compares against the very first snapshot, so the report covers the
+full session lifetime including all resumed segments.
+
+**Why session_id sanitization.** Raw session IDs from Claude Code are
+opaque strings; in principle they could contain `..`, slashes, NUL,
+or other path metacharacters. The sanitizer replaces anything outside
+`[a-zA-Z0-9_-]` with `_` and caps length at 64. Path traversal is
+structurally impossible after sanitization (always a single segment
+under `sessions/`). Test
+`test_session_id_with_path_traversal_is_sanitized` covers this.
+
+**Why no stdout/stderr capture in hook mode.** Hooks cannot intercept
+Claude Code's own stdout/stderr — they're piped to the terminal, not
+to the hook subprocess. The hook only sees the JSON payload Claude
+Code chose to expose (`session_id`, `cwd`, `transcript_path`). To
+capture transcript text we would have to parse `transcript_path`
+(JSONL file), which is a v0.3+ improvement. Hook mode reports show
+empty placeholder log files; the Logs section in the report wording
+will be misleading until a `capture_mode: hook` manifest field
+exists.
+
+**Known limitations.**
+- *Sanitized session-id collision*: two distinct raw IDs that
+  sanitize to the same string would share a session dir → reports
+  could collide. Real Claude Code session IDs are UUIDs (collision
+  probability negligible), so this is theoretical. A `sha256(raw)[:12]`
+  suffix would close it; deferred until evidence of real-world
+  collision.
+- *Windows reserved names* (`CON`, `PRN`, `AUX`, `NUL`): same as
+  above — UUID mitigation in practice, theoretical risk only.
+- *Concurrent SessionStart TOCTOU*: two SessionStart processes racing
+  could both pass `state_file.exists()` before either writes, then
+  both write, with one winning (last write wins). Claude Code docs
+  imply matching hooks are deduplicated; single-install case is
+  unaffected. Robust fix (lock dir / `O_EXCL`) deferred.
+- *Orphaned session dirs*: if Claude Code crashes between
+  SessionStart and SessionEnd, the session dir is never cleaned up.
+  A future `agentcam cleanup-orphans` command (or implicit cleanup
+  at next SessionStart) would address.
+
+**Why not "fold this into agentcam run".** Hook mode and wrap mode
+have different correlation models (cross-invocation session id vs
+single-invocation argv), different log capture (none vs stdout/stderr
+tee), and different invocation contexts (stdin JSON vs argv). One
+unified entry point would compromise the readability of both. Keeping
+them as parallel paths (sharing `compute_diff_fingerprint`,
+`collect_git_state`, `render_report`, the no-diff comparison) is
+cleaner.
+
+---
+
 ## Implementation notes (things that surprised us mid-build)
 
 - **PEM regex original spec was wrong.** Plan wrote `[A-Z ]+`, which fails

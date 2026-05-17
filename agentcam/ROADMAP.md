@@ -25,12 +25,20 @@ of scope (see `docs/design.md` "Out-of-scope reminders").
 
 Ordered by likely value to v0.1 users, **not** by build difficulty.
 
-### 1. Always-on recording (Claude Code via hooks)
+### 1. Always-on recording (Claude Code via hooks) — SHIPPED 2026-05-18
+
+**Status.** Shipped in the [Unreleased] section of CHANGELOG.md (will
+be promoted to a tagged 0.2 release later). Implementation in
+`src/agentcam/hooks.py`. Uses Claude Code's SessionStart / SessionEnd
+hook events (not UserPromptSubmit / Stop — those are per-turn rather
+than per-session; session-level captures more useful diffs). User
+wiring: see README "Hook mode" section for the one-time
+`~/.claude/settings.json` snippet.
 
 **What.** A `settings.json` integration that runs agentcam automatically
 from inside every Claude Code session — no manual `cr "task"` wrapper.
-Uses Claude Code's UserPromptSubmit / Stop hooks (or equivalent) to
-snapshot git state before and generate the run report after.
+Uses Claude Code's SessionStart / SessionEnd hooks to snapshot git
+state before and generate the run report after.
 
 **Why first.** v0.1's opt-in wrapping (`cr "task"`) forces the user to
 remember a command per invocation. Forget once = no record. The

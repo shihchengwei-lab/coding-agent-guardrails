@@ -37,6 +37,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("version", help="Print agentcam version and exit.")
 
+    sub.add_parser(
+        "hook-session-start",
+        help=(
+            "Claude Code SessionStart hook: snapshot git state. Reads "
+            "JSON payload from stdin. Wire via ~/.claude/settings.json."
+        ),
+    )
+    sub.add_parser(
+        "hook-session-end",
+        help=(
+            "Claude Code SessionEnd hook: compare against the SessionStart "
+            "snapshot, render a report under .git/agentcam/runs/ if there's "
+            "a git-visible diff. Reads JSON payload from stdin."
+        ),
+    )
+
     run = sub.add_parser(
         "run",
         help="Wrap a command and record the agent run.",
@@ -87,6 +103,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "run":
         return _run_command(args)
+
+    if args.cmd == "hook-session-start":
+        from agentcam.hooks import cmd_hook_session_start
+        return cmd_hook_session_start()
+
+    if args.cmd == "hook-session-end":
+        from agentcam.hooks import cmd_hook_session_end
+        return cmd_hook_session_end()
 
     parser.error(f"unknown subcommand: {args.cmd}")
     return 2  # unreachable; parser.error exits
