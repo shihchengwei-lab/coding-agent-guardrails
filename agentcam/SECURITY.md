@@ -37,6 +37,13 @@ agentcam helps you answer, **after** an agent run finishes:
 - **Adversarial agents.** agentcam is built for "agent does roughly what
   it claims, but a careful reviewer wants a record." It is not built to
   defend against an agent deliberately trying to defeat the recorder.
+- **Malicious hook payloads.** The hook subcommands
+  (`agentcam hook-session-start` / `hook-session-end`) trust the JSON
+  payload on stdin (`session_id`, `cwd`) supplied by Claude Code. A
+  compromised or adversarial Claude Code could point `cwd` at an
+  unintended repo, causing agentcam to snapshot that repo's state.
+  Falls under "Adversarial agents" above — not separately defended
+  against.
 
 ## Best-effort properties (not guarantees)
 
@@ -73,6 +80,17 @@ The following are kept on disk under `.git/agentcam/runs/<run_id>/`:
 | `stdout.redacted.log` / `stderr.redacted.log` | Redacted versions |
 | `manifest.json` | Includes `command_argv_raw` (original argv) |
 | `AGENT_RUN_REPORT.md` | Only references redacted logs and redacted argv |
+| `sessions/<sid>/state_before.pickle` (Hook mode only) | Pickled snapshot of git state captured at SessionStart, including porcelain bytes and untracked-file content hashes. Cleaned up on SessionEnd. |
+
+The `state_before.pickle` file uses Python's `pickle` format. An attacker
+with write access to `.git/agentcam/sessions/` could replace it with a
+malicious payload that runs arbitrary code under the current user when
+`agentcam hook-session-end` loads it. This matches the trust model of
+every other artifact under `.git/`: an attacker who can write to
+`.git/agentcam/` can also write to `.git/hooks/`, `.git/config`, or
+the working tree — write access to `.git/` is already root-equivalent
+for the user. agentcam does not introduce additional risk beyond what
+local write access already grants.
 
 `.git/` is not tracked by git, so these files cannot be `git push`-ed by
 accident. They **can** be exposed by:
