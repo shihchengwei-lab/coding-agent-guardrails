@@ -260,7 +260,7 @@ please file an issue.
   ```
   For free-form interactive chat, invoke the agent directly (unwrapped).
   True PTY-backed wrapping (Windows ConPTY / POSIX pty) so TUIs render
-  correctly under agentcam is on the v0.2 roadmap.
+  correctly under agentcam is on the roadmap.
 - **No submodule traversal.** Running inside a submodule treats it as an
   independent repo. Superproject context is not analyzed.
 - **No sparse-checkout special handling.** Reports reflect what

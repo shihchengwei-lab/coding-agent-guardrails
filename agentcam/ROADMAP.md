@@ -25,7 +25,75 @@ of scope (see `docs/design.md` "Out-of-scope reminders").
 
 Ordered by likely value to v0.1 users, **not** by build difficulty.
 
-### 1. GitHub Action / GitLab CI plugin
+### 1. Always-on recording (Claude Code via hooks)
+
+**What.** A `settings.json` integration that runs agentcam automatically
+from inside every Claude Code session — no manual `cr "task"` wrapper.
+Uses Claude Code's UserPromptSubmit / Stop hooks (or equivalent) to
+snapshot git state before and generate the run report after.
+
+**Why first.** v0.1's opt-in wrapping (`cr "task"`) forces the user to
+remember a command per invocation. Forget once = no record. The
+flight-recorder framing requires always-on; opt-in undermines it.
+Anthropic's 2026-06-15 billing change also moves `claude -p` (the headless
+mode the current `cr` wrapper uses) off Pro/Max subscription onto a
+separate Agent SDK credit pool — making the wrapped path both inconvenient
+*and* costly while bare interactive `claude` stays free under
+subscription. Hook mode is the smallest fix that records bare interactive
+sessions, on subscription billing, with zero manual command.
+
+**Vendor scope.** Claude Code only. For all other agents (Codex,
+OpenHands, Aider), the existing wrapping path and the PTY entry below
+cover always-on. agentcam's vendor-agnostic positioning is preserved by
+keeping wrapping as the core mechanism — this is an accelerator on top,
+not a replacement.
+
+**Free or paid.** Free / OSS.
+
+**Timing.** Open. File an issue or email with a concrete use case;
+it'll be considered.
+
+**Acceptance criteria (when built).**
+- Owner can install agentcam, register the Claude Code hook once, and
+  have every subsequent `claude` session auto-recorded without typing
+  any agentcam command.
+- "No-diff" runs (pre and post git state identical) are auto-discarded
+  or not created — no point keeping zero-change recordings.
+- Existing `agentcam run -- ...` wrapping path still works unchanged.
+  Hook mode is additive, not a replacement.
+
+### 2. PTY-backed wrapping
+
+**What.** Replace agentcam's current `PIPE`-based stdio handling with
+PTY-backed wrapping (Windows ConPTY, POSIX pty). Lets
+`agentcam run -- claude` (bare, interactive) work — TUI renders
+correctly, agentcam still records what happened.
+
+**Why second.** Two motivations rolled into one feature:
+1. Today, wrapping interactive TUI agents fails (`PIPE` breaks TUI).
+   v0.1 README documents this as a known limitation.
+2. Combined with auto-aliasing `claude` → `agentcam run -- claude` (or
+   equivalent for any TUI agent), this extends always-on recording to
+   any agent with a TUI — not just Claude Code (which has hooks). The
+   vendor-agnostic version of always-on.
+
+**Free or paid.** Free / OSS.
+
+**Timing.** Open. Hook-mode entry #1 already covers always-on for Claude
+Code users. PTY's main payoff is extending always-on to Codex /
+OpenHands / Aider users — file an issue if you're using one of those
+and want this.
+
+**Acceptance criteria (when built).**
+- `agentcam run -- claude` (no `-p`, no positional prompt) works: TUI
+  renders correctly, raw stdout/stderr are still captured to disk, the
+  run report still generates.
+- Same for `agentcam run -- codex` and other TUI agents.
+- Windows + macOS + Linux all pass CI.
+- Existing `PIPE`-based path remains available behind a flag for cases
+  where users explicitly want the non-PTY behavior.
+
+### 3. GitHub Action / GitLab CI plugin
 
 **What.** A reusable CI step:
 
@@ -71,7 +139,7 @@ it'll be considered.
 listing polish, multi-PR aggregation dashboard (those belong in a
 paid SKU), GitLab CI (different platform, separate v0.3+ effort).
 
-### 2. Custom risk rules via YAML
+### 4. Custom risk rules via YAML
 
 **What.** Users add their own path / output patterns:
 
@@ -90,14 +158,14 @@ don't know about." Without YAML, every team forks the source.
 **Constraint.** Basic rule mechanism stays free. Pre-built rule packs (PCI
 patterns, HIPAA patterns, FinTech patterns) could be paid.
 
-### 3. `agentcam compare <run-id-a> <run-id-b>`
+### 5. `agentcam compare <run-id-a> <run-id-b>`
 
 **What.** CLI subcommand to diff two run reports.
 
 **Why.** "Did the second attempt actually fix the regression introduced
 by the first?" Local-only, no network, no SaaS — fits v0.x boundary.
 
-### 4. POSIX hardening
+### 6. POSIX hardening
 
 Three Codex-identified POSIX concerns the current code doesn't fully cover
 (see `docs/design.md` caveat 3 for the full discussion):
@@ -116,7 +184,7 @@ Three Codex-identified POSIX concerns the current code doesn't fully cover
   subprocess fails with ENOEXEC". Mitigation: add a pre-flight check or
   catch and re-message.
 
-### 5. SARIF output
+### 7. SARIF output
 
 **What.** Optional `--format sarif` for risk flags.
 
