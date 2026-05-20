@@ -25,6 +25,43 @@ of scope (see `docs/design.md` "Out-of-scope reminders").
 
 Ordered by likely value to v0.1 users, **not** by build difficulty.
 
+### Surface work — SHIPPED 2026-05-20
+
+These don't have stand-alone user-visible feature names; they're
+substrate that makes the items below cheaper to build (and that
+landed in response to dogfood-driven gaps). See CHANGELOG and
+`docs/design.md` decisions #25-27 for the full rationale.
+
+- **Dependency manifest probe** (`docs/design.md` #25). New
+  "## Dependency Changes" section in `AGENT_RUN_REPORT.md` when a
+  run touched `requirements.txt`, `pyproject.toml`, or `package.json`.
+  Multi-ecosystem parsers (pip / PEP 621 / Poetry / npm).
+  URL-credential scrubbing at the parser boundary so
+  `git+https://USER:TOKEN@host/...` never round-trips into the
+  report. Path safety: rejects `..` and absolute paths in
+  `scan_dependencies`. v1 covers Python + npm; Cargo / go.mod /
+  lockfiles deliberately deferred.
+- **`ReportBundle` aggregator + `write_run_artifacts` orchestrator**
+  (`docs/design.md` #26). `ReportBundle` consolidates render inputs
+  into one dataclass; `write_run_artifacts` is the shared post-run
+  pipeline (probe → manifest → bundle → render → write) called from
+  both wrap mode and hook mode. Any future renderer (SARIF #7,
+  PR comment as part of #3) consumes a Bundle; any future
+  orchestrator (PTY-backed #2) is a thin helper call site.
+  Chose this over a full event-stream layer because no current
+  consumer needs streaming.
+- **`RuleSet` rule registry** (`docs/design.md` #27). `PathMatchers`
+  and `RuleSet` dataclasses + `default_ruleset()` factory.
+  `scan_paths` / `scan_output` take an optional `ruleset=` kwarg
+  (defaults to built-in). Substrate for item #4 below — the YAML
+  loader just needs to produce a `RuleSet` and pass it in; no
+  scanner-internals churn required.
+- **Hook-mode orphan cleanup** (CHANGELOG `Hardening 2026-05-20`).
+  Any exception between `create_run_dir` and the report write now
+  removes the half-built run dir AND the session dir, so repeated
+  SessionEnd failures don't accumulate stale artifacts. Hook still
+  exits 0 unconditionally.
+
 ### 1. Always-on recording (Claude Code via hooks) — SHIPPED 2026-05-18
 
 **Status.** Shipped in the [Unreleased] section of CHANGELOG.md (will
@@ -165,6 +202,13 @@ don't know about." Without YAML, every team forks the source.
 
 **Constraint.** Basic rule mechanism stays free. Pre-built rule packs (PCI
 patterns, HIPAA patterns, FinTech patterns) could be paid.
+
+**Status (substrate SHIPPED 2026-05-20).** The `RuleSet` data
+structure and the `scan_paths(ruleset=...)` / `scan_output(ruleset=...)`
+plumbing landed (see "Surface work" above). What's left to ship: the
+YAML loader that reads `.agentcam/rules.yaml`, merges user rules with
+the built-in default, and passes the merged `RuleSet` through cli.py /
+hooks.py. Estimated ~20 lines + tests; see `docs/design.md` #27.
 
 ### 5. `agentcam compare <run-id-a> <run-id-b>`
 
