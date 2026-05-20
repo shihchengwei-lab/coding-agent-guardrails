@@ -46,8 +46,6 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from agentcam import __version__
-
 # Snapshot schema version. Bump when changing the persisted dict shape so
 # stale snapshots from older agentcam versions are detected on load and
 # silently discarded instead of producing a broken report.
@@ -226,9 +224,8 @@ def _do_session_end() -> int:
         compute_diff_fingerprint,
         resolve_git_dir,
     )
-    from agentcam.models import ReportBundle, RunManifest
     from agentcam.paths import create_run_dir
-    from agentcam.report import render_report, write_manifest
+    from agentcam.report import write_run_artifacts
     from agentcam.scanner import scan_paths
 
     payload = _read_hook_input()
@@ -312,7 +309,6 @@ def _do_session_end() -> int:
 
     # There's a diff — render a report under runs/<run_id>/
     ended_at = datetime.now(timezone.utc).astimezone()
-    duration = (ended_at - started_at).total_seconds()
     run_id, run_paths = create_run_dir(
         git_dir, started_at,
         name=f"claude-session-{_short_sid(session_id)}",
@@ -343,55 +339,26 @@ def _do_session_end() -> int:
         # we don't have in hook mode.
         risk_flags = scan_paths(state_after.changed_files)
 
-        # Dependency manifest probe runs in both modes; doesn't need
-        # the transcript, only git state + working tree.
-        from agentcam.dependency_probe import scan_dependencies
-        dependency_changes = scan_dependencies(
+        # Shared post-run pipeline: dep probe + manifest + bundle +
+        # render + write. Same helper called from wrap mode (cli.py).
+        write_run_artifacts(
+            state_before=state_before,
+            state_after=state_after,
+            risk_flags=risk_flags,
             cwd=cwd,
-            changed_manifest_paths=[
-                cf.path for cf in state_after.changed_files
-            ],
-        )
-
-        manifest = RunManifest(
-            schema_version="0.1",
+            git_dir=git_dir,
+            git_root=Path(git_root_str),
+            run_paths=run_paths,
             run_id=run_id.text,
             started_at=started_at,
             ended_at=ended_at,
-            duration_seconds=duration,
-            cwd=str(cwd),
-            git_root=git_root_str,
-            git_dir=str(git_dir),
-            branch=state_before.branch,
-            is_detached_head=state_before.is_detached_head,
-            head_before=state_before.head,
-            head_after=state_after.head,
-            pre_existing_op=(
-                state_before.pre_existing_op or state_after.pre_existing_op
-            ),
-            pre_run_dirty=bool(state_before.changed_files),
             command_argv_raw=["(claude code session)", session_id],
             command_argv_redacted=["(claude code session)", session_id],
             exit_detail=None,  # no subprocess in hook mode
             shell_used=False,
             terminal_forward_degraded=False,
-            platform=_platform.system().lower(),
-            agentcam_version=__version__,
-            paths=run_paths,
+            platform_label=_platform.system().lower(),
         )
-
-        bundle = ReportBundle(
-            manifest=manifest,
-            state_before=state_before,
-            state_after=state_after,
-            risk_flags=risk_flags,
-            dependency_changes=dependency_changes,
-        )
-        Path(run_paths.report_md).write_text(
-            render_report(bundle),
-            encoding="utf-8",
-        )
-        write_manifest(manifest, Path(run_paths.manifest_json))
     except Exception:
         # Half-written run dir is worse than no run dir — it confuses
         # the user (placeholder logs, no report, unclear what

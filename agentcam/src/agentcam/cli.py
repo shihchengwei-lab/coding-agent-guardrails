@@ -130,10 +130,9 @@ def _run_command(args) -> int:
         resolve_git_dir,
         resolve_git_root,
     )
-    from agentcam.models import ReportBundle, RunManifest
     from agentcam.paths import RunIdCollisionError, create_run_dir
     from agentcam.redaction import StreamingRedactor, redact_argv
-    from agentcam.report import render_report, write_manifest
+    from agentcam.report import write_run_artifacts
     from agentcam.runner import CommandNotFoundError, run_wrapped
     from agentcam.scanner import scan_output, scan_paths
 
@@ -267,63 +266,32 @@ def _run_command(args) -> int:
             )
             return 0
 
-    # 7) Scan paths + raw output for risk flags.
+    # 7) Scan paths + raw output for risk flags. Output scan is
+    # wrap-mode-only (hook mode has no transcript to scan).
     risk_flags = scan_paths(state_after.changed_files)
     risk_flags.extend(_scan_log(Path(run_paths.stdout_raw), "stdout.log"))
     risk_flags.extend(_scan_log(Path(run_paths.stderr_raw), "stderr.log"))
 
-    # 7.5) Dependency manifest probe. Cheap: short-circuits on basenames
-    # not in the registry, so passing the full changed_files list is fine.
-    from agentcam.dependency_probe import scan_dependencies
-    dependency_changes = scan_dependencies(
+    # 8-9) Shared post-run pipeline: dep probe + manifest + bundle +
+    # render + write. Same helper called from hook mode.
+    write_run_artifacts(
+        state_before=state_before,
+        state_after=state_after,
+        risk_flags=risk_flags,
         cwd=cwd,
-        changed_manifest_paths=[cf.path for cf in state_after.changed_files],
-    )
-
-    # 8) Assemble the manifest.
-    manifest = RunManifest(
-        schema_version="0.1",
+        git_dir=git_dir,
+        git_root=git_root,
+        run_paths=run_paths,
         run_id=run_id.text,
         started_at=started_at,
         ended_at=ended_at,
-        duration_seconds=duration,
-        cwd=str(cwd),
-        git_root=str(git_root),
-        git_dir=str(git_dir),
-        branch=state_before.branch,
-        is_detached_head=state_before.is_detached_head,
-        head_before=state_before.head,
-        head_after=state_after.head,
-        pre_existing_op=(
-            state_before.pre_existing_op or state_after.pre_existing_op
-        ),
-        pre_run_dirty=pre_run_dirty,
         command_argv_raw=list(run_argv),
         command_argv_redacted=redact_argv(list(run_argv)),
         exit_detail=run_result.exit_detail,
         shell_used=run_result.shell_used,
         terminal_forward_degraded=run_result.terminal_forward_degraded,
-        platform=platform.system().lower(),
-        agentcam_version=__version__,
-        paths=run_paths,
+        platform_label=platform.system().lower(),
     )
-
-    # 9) Bundle render inputs + write report + manifest. ReportBundle
-    # is the shared input shape any current or future renderer (SARIF,
-    # PR comment) will consume; render_report still accepts the legacy
-    # positional form internally for tests / older callers.
-    bundle = ReportBundle(
-        manifest=manifest,
-        state_before=state_before,
-        state_after=state_after,
-        risk_flags=risk_flags,
-        dependency_changes=dependency_changes,
-    )
-    Path(run_paths.report_md).write_text(
-        render_report(bundle),
-        encoding="utf-8",
-    )
-    write_manifest(manifest, Path(run_paths.manifest_json))
 
     # 10) Tell the user where to find the report (stderr so it doesn't pollute
     # programmatic stdout consumers).

@@ -7,6 +7,28 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Refactor (2026-05-20, shared `write_run_artifacts` orchestrator)
+
+- **New `agentcam.report.write_run_artifacts(...)`** consolidates the
+  post-run pipeline that both `cli.py` (wrap mode) and `hooks.py`
+  (hook mode) used to open-code: dependency probe → build manifest →
+  build Bundle → render report → write report.md + manifest.json.
+  Keyword-only signature, returns the Bundle so callers / tests can
+  inspect.
+- **`cli.py` step 7.5 + 8 + 9** collapse to one helper call. The
+  output-pattern scan over raw logs stays in `cli.py` (it's
+  wrap-mode-only).
+- **`hooks.py` `_do_session_end`** body shrinks accordingly; the
+  placeholder-log writes + the try/except/finally orphan cleanup
+  stay (those are hook-mode-specific). Dropped a stale `duration`
+  computation and the now-unused `__version__` import.
+- **Future PTY-mode wrapper** (roadmap #2) becomes a thin call site
+  on top of this helper — no third copy of the post-run pipeline.
+- No behavior change; the 270-test suite stays green. The helper
+  itself is exercised by the existing wrap-mode and hook-mode e2e
+  tests, so no separate unit test for it (its contract is the union
+  of those tests' expectations).
+
 ### Hardening (2026-05-20, hook-mode orphan cleanup on probe/render failure)
 
 - **`_do_session_end` now wraps the post-`create_run_dir` block in

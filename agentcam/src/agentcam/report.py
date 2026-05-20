@@ -10,8 +10,10 @@ Plan sections:
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
+from agentcam import __version__
 from agentcam.models import (
     ChangedFile,
     DependencyChange,
@@ -20,6 +22,7 @@ from agentcam.models import (
     ReportBundle,
     RiskFlag,
     RunManifest,
+    RunPaths,
 )
 from agentcam.scanner import is_secret_like_filename
 
@@ -86,6 +89,99 @@ def render_report(
         _render_local_artifacts(manifest),
     ]
     return "\n\n".join(s for s in sections if s)
+
+
+def write_run_artifacts(
+    *,
+    state_before: GitState,
+    state_after: GitState,
+    risk_flags: list[RiskFlag],
+    cwd: Path,
+    git_dir: Path,
+    git_root: Path,
+    run_paths: RunPaths,
+    run_id: str,
+    started_at: datetime,
+    ended_at: datetime,
+    command_argv_raw: list[str],
+    command_argv_redacted: list[str],
+    exit_detail: ExitDetail | None,
+    shell_used: bool,
+    terminal_forward_degraded: bool,
+    platform_label: str,
+) -> ReportBundle:
+    """Build manifest + Bundle, render report, write both artifacts.
+
+    Shared post-run orchestration used by wrap mode (``cli.py``) and
+    hook mode (``hooks.py``). The function:
+
+    1. runs the dependency-manifest probe against ``state_after.changed_files``
+    2. builds the :class:`RunManifest` from the supplied fields
+    3. builds the :class:`ReportBundle` (manifest + states + flags + deps)
+    4. writes ``AGENT_RUN_REPORT.md`` to ``run_paths.report_md``
+    5. writes ``manifest.json`` to ``run_paths.manifest_json``
+    6. returns the Bundle so callers (and tests) can inspect it
+
+    Caller responsibilities:
+    - Scan raw subprocess logs for output-pattern flags and combine
+      into ``risk_flags`` before calling (hook mode has no logs, so
+      passes a path-scan-only list).
+    - Write any placeholder log files needed by the report's "Logs"
+      section before calling (hook mode does this; wrap mode's tee
+      threads already wrote real logs).
+    - Wrap this call in try/except/finally if the call site has
+      cleanup obligations (e.g. hook mode's orphan run-dir cleanup).
+    """
+    from agentcam.dependency_probe import scan_dependencies
+
+    dependency_changes = scan_dependencies(
+        cwd=cwd,
+        changed_manifest_paths=[cf.path for cf in state_after.changed_files],
+    )
+
+    duration = (ended_at - started_at).total_seconds()
+    manifest = RunManifest(
+        schema_version="0.1",
+        run_id=run_id,
+        started_at=started_at,
+        ended_at=ended_at,
+        duration_seconds=duration,
+        cwd=str(cwd),
+        git_root=str(git_root),
+        git_dir=str(git_dir),
+        branch=state_before.branch,
+        is_detached_head=state_before.is_detached_head,
+        head_before=state_before.head,
+        head_after=state_after.head,
+        pre_existing_op=(
+            state_before.pre_existing_op or state_after.pre_existing_op
+        ),
+        pre_run_dirty=bool(state_before.changed_files),
+        command_argv_raw=command_argv_raw,
+        command_argv_redacted=command_argv_redacted,
+        exit_detail=exit_detail,
+        shell_used=shell_used,
+        terminal_forward_degraded=terminal_forward_degraded,
+        platform=platform_label,
+        agentcam_version=__version__,
+        paths=run_paths,
+    )
+
+    bundle = ReportBundle(
+        manifest=manifest,
+        state_before=state_before,
+        state_after=state_after,
+        risk_flags=list(risk_flags),
+        dependency_changes=dependency_changes,
+    )
+
+    Path(run_paths.report_md).write_text(
+        render_report(bundle),
+        encoding="utf-8",
+    )
+    write_manifest(manifest, Path(run_paths.manifest_json))
+
+    return bundle
 
 
 def serialize_manifest(m: RunManifest) -> dict:
