@@ -123,6 +123,17 @@ def write_run_artifacts(
     6. returns the Bundle so callers (and tests) can inspect it
 
     Caller responsibilities:
+    - Pass already-resolved, repo-trusted ``cwd`` / ``git_dir`` /
+      ``git_root`` paths. The helper performs no path validation; it
+      shells out to ``git show HEAD:<path>`` via ``cwd`` inside the
+      dep probe, so an attacker-controlled ``cwd`` would shift the
+      execution context. Callers obtain these from
+      ``resolve_git_dir`` / ``resolve_git_root`` before any wrap- or
+      hook-mode work begins.
+    - Pass a pre-created ``run_paths`` whose ``run_dir`` already
+      exists (callers use ``paths.create_run_dir`` for this). The
+      helper writes report.md and manifest.json directly to
+      ``run_paths`` without re-creating the parent.
     - Scan raw subprocess logs for output-pattern flags and combine
       into ``risk_flags`` before calling (hook mode has no logs, so
       passes a path-scan-only list).

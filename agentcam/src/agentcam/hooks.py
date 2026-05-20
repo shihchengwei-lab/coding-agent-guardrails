@@ -370,7 +370,12 @@ def _do_session_end() -> int:
         # session_dir served its purpose once state_after was
         # collected. Clean up regardless of report-write outcome so
         # repeated SessionEnd failures don't accumulate stale
-        # snapshots.
+        # snapshots. Best-effort only (ignore_errors=True) because
+        # the hook MUST exit 0; a filesystem hiccup here cannot be
+        # allowed to block Claude Code on the next SessionEnd.
+        # Codex review NIT: if this rmtree itself fails (locked file,
+        # antivirus, etc.), the stale session dir will persist until
+        # next manual cleanup -- accepted trade-off.
         shutil.rmtree(session_dir, ignore_errors=True)
 
     return 0
