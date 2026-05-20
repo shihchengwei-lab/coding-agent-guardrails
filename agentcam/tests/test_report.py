@@ -13,6 +13,7 @@ from agentcam.models import (
     ChangedFile,
     ExitDetail,
     GitState,
+    ReportBundle,
     RunManifest,
     RunPaths,
 )
@@ -382,3 +383,188 @@ class TestHighAbsolutePathLeak:
         # The redacted-log path should be shown as a relative POSIX-style
         # path under .git/agentcam/runs/, not the absolute version.
         assert ".git/agentcam/runs" in report
+
+
+# ---------------------------------------------------------------------------
+# Dependency Changes section
+# ---------------------------------------------------------------------------
+
+class TestDependencyChangesSection:
+    """Render output for the 'Dependency Changes' section."""
+
+    def _change(self, **kw):
+        from agentcam.models import DependencyChange
+        defaults = dict(
+            manifest_path="requirements.txt",
+            ecosystem="pip",
+            kind="added",
+            name="numpy",
+            old_version=None,
+            new_version="==2.0",
+        )
+        defaults.update(kw)
+        return DependencyChange(**defaults)
+
+    def test_section_suppressed_when_no_changes(self, tmp_path: Path):
+        # Empty list + None must both omit the section entirely.
+        m = _manifest(tmp_path)
+        report_none = render_report(m, _empty_state(), _empty_state(), [])
+        report_empty = render_report(
+            m, _empty_state(), _empty_state(), [], []
+        )
+        assert "Dependency Changes" not in report_none
+        assert "Dependency Changes" not in report_empty
+
+    def test_added_dep_rendered(self, tmp_path: Path):
+        m = _manifest(tmp_path)
+        report = render_report(
+            m, _empty_state(), _empty_state(), [],
+            [self._change()],
+        )
+        assert "## Dependency Changes" in report
+        assert "`requirements.txt` (pip)" in report
+        assert "added" in report
+        assert "`numpy`" in report
+        assert "`==2.0`" in report
+
+    def test_removed_dep_renders_em_dash_for_new(self, tmp_path: Path):
+        m = _manifest(tmp_path)
+        report = render_report(
+            m, _empty_state(), _empty_state(), [],
+            [self._change(kind="removed", old_version="==1", new_version=None)],
+        )
+        assert "removed" in report
+        assert "—" in report  # em-dash for absent side
+
+    def test_unpinned_version_label(self, tmp_path: Path):
+        m = _manifest(tmp_path)
+        report = render_report(
+            m, _empty_state(), _empty_state(), [],
+            [self._change(new_version="")],
+        )
+        assert "(unpinned)" in report
+
+    def test_dirty_caveat_shown_when_pre_run_dirty(self, tmp_path: Path):
+        m = _manifest(tmp_path, pre_run_dirty=True)
+        report = render_report(
+            m, _empty_state(dirty=True), _empty_state(dirty=True), [],
+            [self._change()],
+        )
+        assert "vs `HEAD`" in report
+
+    def test_dirty_caveat_absent_when_clean(self, tmp_path: Path):
+        m = _manifest(tmp_path, pre_run_dirty=False)
+        report = render_report(
+            m, _empty_state(), _empty_state(), [],
+            [self._change()],
+        )
+        assert "vs `HEAD`" not in report
+
+    def test_multiple_manifests_grouped(self, tmp_path: Path):
+        m = _manifest(tmp_path)
+        report = render_report(
+            m, _empty_state(), _empty_state(), [],
+            [
+                self._change(manifest_path="requirements.txt", name="numpy"),
+                self._change(
+                    manifest_path="package.json", ecosystem="npm",
+                    name="react", new_version="^18",
+                ),
+            ],
+        )
+        assert "`requirements.txt` (pip)" in report
+        assert "`package.json` (npm)" in report
+        assert "`numpy`" in report
+        assert "`react`" in report
+
+
+# ---------------------------------------------------------------------------
+# ReportBundle entry point
+# ---------------------------------------------------------------------------
+
+class TestReportBundle:
+    """The Bundle shape is the input contract any future renderer
+    (SARIF, PR comment) will consume. These tests pin two things:
+
+    1. render_report(bundle) and the legacy positional call produce
+       identical output for the same inputs.
+    2. Bundle defaults (empty risk_flags / dependency_changes) work.
+    """
+
+    def test_bundle_call_matches_legacy_positional(self, tmp_path: Path):
+        m = _manifest(tmp_path)
+        sb = _empty_state()
+        sa = _state_with(
+            ChangedFile(path="src/auth/login.py", status="unstaged_modified")
+        )
+        legacy = render_report(m, sb, sa, [])
+        bundle = ReportBundle(
+            manifest=m,
+            state_before=sb,
+            state_after=sa,
+            risk_flags=[],
+            dependency_changes=[],
+        )
+        assert render_report(bundle) == legacy
+
+    def test_bundle_with_defaults(self, tmp_path: Path):
+        # Construction with only the required fields must work; the
+        # two list fields default to empty.
+        m = _manifest(tmp_path)
+        bundle = ReportBundle(
+            manifest=m, state_before=_empty_state(),
+            state_after=_empty_state(),
+        )
+        # Doesn't crash; produces a valid report (no risk flags, no deps).
+        report = render_report(bundle)
+        assert "# Agent Run Report" in report
+        assert "Dependency Changes" not in report
+
+    def test_bundle_carries_risk_flags_and_deps(self, tmp_path: Path):
+        from agentcam.models import DependencyChange, RiskFlag
+        m = _manifest(tmp_path)
+        bundle = ReportBundle(
+            manifest=m,
+            state_before=_empty_state(),
+            state_after=_empty_state(),
+            risk_flags=[RiskFlag(level="HIGH", rule="r", evidence="e")],
+            dependency_changes=[DependencyChange(
+                manifest_path="requirements.txt", ecosystem="pip",
+                kind="added", name="numpy", old_version=None,
+                new_version="==2.0",
+            )],
+        )
+        report = render_report(bundle)
+        assert "## Risk Flags" in report
+        assert "## Dependency Changes" in report
+        assert "`numpy`" in report
+
+    def test_bundle_field_rebinding_raises(self, tmp_path: Path):
+        # Locks the "frozen at structure level" half of the boundary
+        # documented on ReportBundle. Rebinding a field MUST raise.
+        import dataclasses
+        import pytest
+        m = _manifest(tmp_path)
+        bundle = ReportBundle(
+            manifest=m, state_before=_empty_state(),
+            state_after=_empty_state(),
+        )
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            bundle.risk_flags = []  # type: ignore[misc]
+
+    def test_bundle_list_fields_mutable_by_design(self, tmp_path: Path):
+        # Locks the OTHER half of the boundary: the list fields are
+        # intentionally mutable (Python convention, parity with the
+        # upstream list[RiskFlag] / list[DependencyChange] producers).
+        # If anyone later switches to tuple for true immutability, this
+        # test must be updated -- making the design change explicit.
+        from agentcam.models import RiskFlag
+        m = _manifest(tmp_path)
+        bundle = ReportBundle(
+            manifest=m, state_before=_empty_state(),
+            state_after=_empty_state(),
+        )
+        bundle.risk_flags.append(
+            RiskFlag(level="HIGH", rule="x", evidence="y")
+        )
+        assert len(bundle.risk_flags) == 1

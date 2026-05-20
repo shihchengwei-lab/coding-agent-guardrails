@@ -7,6 +7,61 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Added (2026-05-20, Dependency manifest probe)
+
+- **`AGENT_RUN_REPORT.md` now has a "Dependency Changes" section** when
+  a run touched `requirements.txt`, `pyproject.toml`, or
+  `package.json`. Each entry lists kind (added / removed /
+  version_changed), package name, and before/after version specs;
+  grouped per `(ecosystem, manifest_path)`.
+- **Multi-ecosystem parsers**:
+  - pip `requirements.txt` (URL fragments like `#egg=name` survive —
+    inline comments require whitespace before `#`, matching pip's own
+    rule)
+  - `pyproject.toml` PEP 621 (`[project.dependencies]` +
+    `[project.optional-dependencies.<group>]`) and Poetry
+    (`[tool.poetry.dependencies]`,
+    `[tool.poetry.dev-dependencies]`,
+    `[tool.poetry.group.<group>.dependencies]`)
+  - npm `package.json` (`dependencies` + `devDependencies`)
+- **URL credentials in version specs are scrubbed at the parser
+  boundary** — `git+https://USER:TOKEN@host/r.git` becomes
+  `git+https://<redacted-credential>@host/r.git` before the spec ever
+  reaches `DependencyChange`, the report, or the manifest.
+- **Non-main deps are namespaced** so a package in main + an
+  extra/dev group with different specs doesn't silently overwrite —
+  e.g. `pytest [optional.test]`, `jest [devDependencies]`.
+- **Path safety**: `scan_dependencies` rejects `..` segments and
+  absolute paths so the probe cannot be coaxed into reading outside
+  the repo.
+- **+57 tests** in `tests/test_dependency_probe.py`. Hook mode and
+  wrap mode both run the probe.
+- See `docs/design.md` decision #25 for the full rationale (vs-HEAD
+  baseline, no Cargo/Go in v1, lockfile exclusion, etc.).
+
+### Added (2026-05-20, `ReportBundle` aggregator)
+
+- **`ReportBundle` dataclass** in `agentcam.models` consolidates the
+  inputs every renderer needs (manifest + before/after `GitState` +
+  risk_flags + dependency_changes) into a single value. Future
+  renderers planned for v0.2+ (SARIF #7, PR-comment #3) will consume
+  a Bundle, not a 5-arg positional call.
+- **`render_report` accepts either form** — the preferred
+  `render_report(bundle)` and the legacy
+  `render_report(manifest, state_before, state_after, risk_flags,
+  dependency_changes=None)` (kept so the existing test suite and any
+  external callers don't need a big-bang rewrite).
+- `cli.py` (wrap mode) and `hooks.py` (hook mode) now both build a
+  Bundle and call `render_report(bundle)`.
+- **Why a Bundle, not a full event-stream layer.** A
+  producer→`record(event)`→reducer→view design was scoped but
+  deliberately deferred: no current or planned consumer needs
+  streaming. SARIF and PR-comment are batch consumers; both work fine
+  off a Bundle. See decision #26.
+- **+5 tests**: 3 parity / defaults / pass-through, 2 lock-in tests
+  for the `frozen=True at structure level, lists mutable by
+  convention` boundary.
+
 ### Added (2026-05-18, Hook mode -- "always record" without the wrapper)
 
 - **`agentcam hook-session-start` / `agentcam hook-session-end`** --

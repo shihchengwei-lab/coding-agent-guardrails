@@ -755,6 +755,119 @@ known-shipped limitations.
 
 ---
 
+## 25. Dependency manifest probe: pip + npm + pyproject, vs-HEAD baseline
+
+**Decision.** `src/agentcam/dependency_probe.py` walks the changed-file
+list, identifies recognized manifests by basename, parses each at HEAD
+(`git show HEAD:<path>`) and at the working tree, then diffs the
+parsed dep maps. The renderer emits an optional "## Dependency
+Changes" section grouped by `(ecosystem, manifest_path)`. Parsers
+shipped in v1: `requirements.txt`, `pyproject.toml` (PEP 621 +
+Poetry), `package.json` (`dependencies` + `devDependencies`).
+
+**Why vs HEAD, not vs pre-run snapshot.** Reading manifest content at
+SessionStart (hook mode) or pre-subprocess (wrap mode) would be more
+accurate but requires capturing & persisting `dict[path, bytes]` in
+both code paths. vs-HEAD is one `git show` per changed manifest,
+stateless, and works for both modes uniformly. The accuracy gap
+appears only when `pre_run_dirty=True` — and we already surface that
+flag in the report header. The Dependency Changes section adds a
+one-line "vs HEAD" caveat when the working tree was dirty pre-run,
+so the user knows to interpret accordingly.
+
+**Why scrub URL credentials at the parser boundary.** Pip, npm, and
+Poetry all accept `git+https://USER:TOKEN@host/...` as a dep target.
+Without scrubbing, the credential would round-trip from the manifest
+into `DependencyChange.new_version`, then into the Markdown report —
+which gets shared, committed, pasted into PR comments. The scrub uses
+a regex on URL specs that replaces `user:pass@` with
+`<redacted-credential>@`, applied once at every parser entry. Defense
+in depth: even if a future renderer reads `DependencyChange` and dumps
+`new_version` directly, the credential cannot be there.
+
+**Why namespace optional / dev / group deps.** PEP 621 lets the same
+package appear in `[project.dependencies]` and
+`[project.optional-dependencies.test]` with different specs. Poetry
+has the same with `[tool.poetry.group.dev.dependencies]`. npm has
+`devDependencies`. A flat `{name: spec}` dict would silently overwrite
+on collision and miss the version change. Keys are namespaced with
+`" [optional.test]"`, `" [poetry.dev]"`, `" [devDependencies]"` —
+spaces and brackets cannot appear in PEP 508 / npm package names, so
+collisions with real keys are structurally impossible.
+
+**Why reject `..` and absolute paths in `scan_dependencies`.** The
+function is public; an external caller could pass externally-derived
+paths. Without the check, `_read_working_tree` would resolve
+`../requirements.txt` and `_git_show_head` would return None —
+producing a fake "all added" diff against an outside-repo file. The
+reject is silent (just skip), no error surface.
+
+**Why not Cargo.toml / go.mod / lockfiles yet.** Cargo and Go follow
+the same pattern and would be ~20 lines plus tests each; held back so
+the v1 surface stays reviewable in one sitting. Lockfiles
+(`package-lock.json`, `poetry.lock`, `uv.lock`) deliberately not
+parsed — most version bumps in lockfiles are transitive, low semantic
+value, and would drown out direct-dep changes.
+
+**Known limitations.**
+- `pre_run_dirty=True`: diff is vs HEAD, so any manifest edits the
+  user had staged or unstaged pre-run get attributed to the agent
+  run. Surfaced via the section caveat above.
+- Renamed manifests are treated as unrelated files: the old name is
+  diffed (vs HEAD) and reports "all removed"; the new name reports
+  "all added". No cross-rename matching in v1.
+- Hook-mode probe failure leaving orphan run dirs: addressed in a
+  separate cleanup pass (broader than this probe — see ROADMAP).
+
+---
+
+## 26. `ReportBundle` aggregator, not full event-stream layer
+
+**Decision.** `ReportBundle` (in `agentcam.models`) consolidates
+manifest + before/after `GitState` + risk_flags + dependency_changes
+into a single dataclass. `render_report` accepts either a Bundle (the
+preferred new shape) or the legacy 5-positional-arg call.
+`cli.py` / `hooks.py` build a Bundle and call `render_report(bundle)`;
+the legacy form is kept so the existing 25+ test cases don't need a
+big-bang rewrite.
+
+**Why a Bundle, not a full event stream.** An earlier design proposal
+specified an event-stream layer (producers call `record(event)`,
+events accumulate as a list, a reducer constructs the "report view"
+that renderers consume). That layer was deliberately scoped down to a
+Bundle. The motivating use cases for unlocking — SARIF output (#7),
+PR-comment renderer (#3) — are both batch consumers: they need a
+finished snapshot of risk_flags / dep_changes / state, not a stream.
+The event-stream layer's distinct capabilities (persist, replay,
+streaming consumers, multiple incremental consumers) have no current
+consumer. Building an unused mechanism violates the project's
+"don't refactor for cosmetics" rule. Bundle is the reducer's output
+minus the stream; if a future streaming use case appears (live
+dashboard, `agentcam tail`), the event layer can be added on top
+without disrupting Bundle.
+
+**Why dual signature on `render_report`.** The legacy positional form
+`(manifest, state_before, state_after, risk_flags,
+dependency_changes=None)` is dispatched-to by an `isinstance` check.
+External users (and 25+ existing tests) keep working. New code uses
+`render_report(bundle)`. A future cleanup commit can drop the legacy
+form once dependents migrate. `assert` on legacy-required args was
+replaced with explicit `raise TypeError` so the requirement survives
+`python -O`.
+
+**Why `frozen=True` but mutable list fields.** `ReportBundle` uses
+`frozen=True` so field rebinding (`bundle.risk_flags = ...`) raises.
+The `risk_flags` and `dependency_changes` fields are typed as `list`,
+not `tuple`, because (a) the upstream `RiskFlag` / `DependencyChange`
+producers already return lists, (b) Python convention here is list,
+(c) `tuple` would force every caller through a `tuple(...)` cast.
+Renderers must treat the lists as read-only by convention. Two
+lock-in tests in `tests/test_report.py::TestReportBundle` pin both
+halves of this boundary explicitly so a future list-vs-tuple
+discussion has to update both.
+
+---
+
 ## Out-of-scope reminders (do not add these without re-reading §10–§22)
 
 - Sandbox / process isolation

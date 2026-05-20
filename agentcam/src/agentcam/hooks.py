@@ -226,7 +226,7 @@ def _do_session_end() -> int:
         compute_diff_fingerprint,
         resolve_git_dir,
     )
-    from agentcam.models import RunManifest
+    from agentcam.models import ReportBundle, RunManifest
     from agentcam.paths import create_run_dir
     from agentcam.report import render_report, write_manifest
     from agentcam.scanner import scan_paths
@@ -331,6 +331,14 @@ def _do_session_end() -> int:
     # don't have in hook mode.
     risk_flags = scan_paths(state_after.changed_files)
 
+    # Dependency manifest probe runs in both modes; doesn't need the
+    # transcript, only git state + working tree.
+    from agentcam.dependency_probe import scan_dependencies
+    dependency_changes = scan_dependencies(
+        cwd=cwd,
+        changed_manifest_paths=[cf.path for cf in state_after.changed_files],
+    )
+
     manifest = RunManifest(
         schema_version="0.1",
         run_id=run_id.text,
@@ -358,8 +366,15 @@ def _do_session_end() -> int:
         paths=run_paths,
     )
 
+    bundle = ReportBundle(
+        manifest=manifest,
+        state_before=state_before,
+        state_after=state_after,
+        risk_flags=risk_flags,
+        dependency_changes=dependency_changes,
+    )
     Path(run_paths.report_md).write_text(
-        render_report(manifest, state_before, state_after, risk_flags),
+        render_report(bundle),
         encoding="utf-8",
     )
     write_manifest(manifest, Path(run_paths.manifest_json))

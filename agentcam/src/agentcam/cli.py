@@ -130,7 +130,7 @@ def _run_command(args) -> int:
         resolve_git_dir,
         resolve_git_root,
     )
-    from agentcam.models import RunManifest
+    from agentcam.models import ReportBundle, RunManifest
     from agentcam.paths import RunIdCollisionError, create_run_dir
     from agentcam.redaction import StreamingRedactor, redact_argv
     from agentcam.report import render_report, write_manifest
@@ -272,6 +272,14 @@ def _run_command(args) -> int:
     risk_flags.extend(_scan_log(Path(run_paths.stdout_raw), "stdout.log"))
     risk_flags.extend(_scan_log(Path(run_paths.stderr_raw), "stderr.log"))
 
+    # 7.5) Dependency manifest probe. Cheap: short-circuits on basenames
+    # not in the registry, so passing the full changed_files list is fine.
+    from agentcam.dependency_probe import scan_dependencies
+    dependency_changes = scan_dependencies(
+        cwd=cwd,
+        changed_manifest_paths=[cf.path for cf in state_after.changed_files],
+    )
+
     # 8) Assemble the manifest.
     manifest = RunManifest(
         schema_version="0.1",
@@ -300,9 +308,19 @@ def _run_command(args) -> int:
         paths=run_paths,
     )
 
-    # 9) Write report + manifest.
+    # 9) Bundle render inputs + write report + manifest. ReportBundle
+    # is the shared input shape any current or future renderer (SARIF,
+    # PR comment) will consume; render_report still accepts the legacy
+    # positional form internally for tests / older callers.
+    bundle = ReportBundle(
+        manifest=manifest,
+        state_before=state_before,
+        state_after=state_after,
+        risk_flags=risk_flags,
+        dependency_changes=dependency_changes,
+    )
     Path(run_paths.report_md).write_text(
-        render_report(manifest, state_before, state_after, risk_flags),
+        render_report(bundle),
         encoding="utf-8",
     )
     write_manifest(manifest, Path(run_paths.manifest_json))

@@ -33,6 +33,9 @@ InterpretationSource = Literal[
     "unknown",
 ]
 
+# Kind of dependency change emitted by dependency_probe.
+DependencyChangeKind = Literal["added", "removed", "version_changed"]
+
 
 @dataclass(frozen=True, slots=True)
 class RunId:
@@ -83,6 +86,26 @@ class RiskFlag:
     level: RiskLevel
     rule: str
     evidence: str
+
+
+@dataclass(frozen=True, slots=True)
+class DependencyChange:
+    """A single dependency added / removed / version-bumped between
+    HEAD and the working tree, as reported by dependency_probe.
+
+    ``ecosystem`` is a short label ('pip', 'python-project', 'npm', ...)
+    used to group entries in the report. ``old_version`` and
+    ``new_version`` are the verbatim version specs from the manifest
+    (e.g. ``"==2.0.0"``, ``"^18.0"``, ``""`` if unpinned); we do not
+    normalize them across ecosystems.
+    """
+
+    manifest_path: str
+    ecosystem: str
+    kind: DependencyChangeKind
+    name: str
+    old_version: str | None
+    new_version: str | None
 
 
 @dataclass
@@ -144,3 +167,36 @@ class RunManifest:
     platform: str
     agentcam_version: str
     paths: RunPaths
+
+
+@dataclass(frozen=True)
+class ReportBundle:
+    """Everything a renderer needs to produce one report.
+
+    Aggregates the manifest, before/after git snapshots, risk flags,
+    and dependency changes into a single value so multiple renderers
+    (Markdown today; SARIF / PR-comment later) can consume the same
+    object instead of each accepting a long arg list. See
+    ``docs/design.md`` decision 25 (forthcoming) for the rationale —
+    we intentionally stopped short of a full event-stream layer
+    because no current consumer needs streaming.
+
+    Defaults make construction tolerant: callers that don't have
+    risk_flags or dependency_changes for a particular code path
+    (e.g. hook mode renders without output-pattern flags) can omit
+    them.
+
+    Immutability boundary: ``frozen=True`` prevents field rebinding
+    (``bundle.risk_flags = ...`` raises), but the underlying lists
+    are still mutable (``bundle.risk_flags.append(x)`` works). This
+    is intentional — list is the Python convention here, and the
+    upstream :class:`RiskFlag` / :class:`DependencyChange` collections
+    are already plain lists. Renderers must treat the lists as
+    read-only by convention.
+    """
+
+    manifest: RunManifest
+    state_before: GitState
+    state_after: GitState
+    risk_flags: list[RiskFlag] = field(default_factory=list)
+    dependency_changes: list[DependencyChange] = field(default_factory=list)

@@ -14,8 +14,10 @@ from pathlib import Path
 
 from agentcam.models import (
     ChangedFile,
+    DependencyChange,
     ExitDetail,
     GitState,
+    ReportBundle,
     RiskFlag,
     RunManifest,
 )
@@ -27,21 +29,59 @@ from agentcam.scanner import is_secret_like_filename
 # ---------------------------------------------------------------------------
 
 def render_report(
-    manifest: RunManifest,
-    state_before: GitState,
-    state_after: GitState,
-    risk_flags: list[RiskFlag],
+    bundle_or_manifest: ReportBundle | RunManifest,
+    state_before: GitState | None = None,
+    state_after: GitState | None = None,
+    risk_flags: list[RiskFlag] | None = None,
+    dependency_changes: list[DependencyChange] | None = None,
 ) -> str:
-    """Render the full ``AGENT_RUN_REPORT.md`` as a string."""
+    """Render the full ``AGENT_RUN_REPORT.md`` as a string.
+
+    Two call shapes are accepted:
+
+    1. **Bundle form (preferred for new code)** —
+       ``render_report(bundle)`` where ``bundle`` is a
+       :class:`ReportBundle`. New renderers (SARIF, PR-comment) will
+       take a Bundle too, so consolidating on this shape keeps the
+       producer/consumer contract narrow.
+
+    2. **Legacy positional form** —
+       ``render_report(manifest, state_before, state_after,
+       risk_flags, dependency_changes=None)``. Kept so existing tests
+       and any external callers don't break in one big-bang change;
+       internally it just builds a Bundle and dispatches to the same
+       code path.
+    """
+    if isinstance(bundle_or_manifest, ReportBundle):
+        bundle = bundle_or_manifest
+    else:
+        # Legacy positional path. Use a proper TypeError instead of
+        # `assert` so the requirement survives ``python -O`` and
+        # surfaces clearly rather than as a downstream NoneType crash.
+        if state_before is None or state_after is None:
+            raise TypeError(
+                "render_report: legacy positional form requires both "
+                "state_before and state_after"
+            )
+        bundle = ReportBundle(
+            manifest=bundle_or_manifest,
+            state_before=state_before,
+            state_after=state_after,
+            risk_flags=list(risk_flags or []),
+            dependency_changes=list(dependency_changes or []),
+        )
+
+    manifest = bundle.manifest
     sections: list[str] = [
         _render_header(manifest),
-        _render_verdict(risk_flags),
-        _render_risk_flags(risk_flags),
-        _render_changed_files(state_after),
-        _render_diff_stat(state_after),
+        _render_verdict(bundle.risk_flags),
+        _render_risk_flags(bundle.risk_flags),
+        _render_changed_files(bundle.state_after),
+        _render_dependency_changes(bundle.dependency_changes, manifest),
+        _render_diff_stat(bundle.state_after),
         _render_exit_detail(manifest.exit_detail),
         _render_verification_placeholder(),
-        _render_rollback(manifest, state_after),
+        _render_rollback(manifest, bundle.state_after),
         _render_logs(manifest),
         _render_local_artifacts(manifest),
     ]
@@ -181,6 +221,59 @@ def _render_changed_files(state: GitState) -> str:
             display += f" (renamed from {old_display})"
         rows.append(f"| {cf.status} | {display} |")
     return "## Changed Files\n\n" + "\n".join(rows)
+
+
+def _render_dependency_changes(
+    changes: list[DependencyChange],
+    manifest: RunManifest,
+) -> str:
+    """Render the optional 'Dependency Changes' section.
+
+    Returns an empty string (suppresses the section) when there are no
+    changes — keeps the report tidy on runs that didn't touch any
+    manifest. When pre_run_dirty=True we add a one-line caveat because
+    the diff is computed vs HEAD, not vs the actual pre-run working
+    tree state.
+    """
+    if not changes:
+        return ""
+
+    # Group by (ecosystem, manifest_path) so the report reads well when
+    # multiple manifests are touched in one run.
+    grouped: dict[tuple[str, str], list[DependencyChange]] = {}
+    for c in changes:
+        grouped.setdefault((c.ecosystem, c.manifest_path), []).append(c)
+
+    parts: list[str] = ["## Dependency Changes"]
+    if manifest.pre_run_dirty:
+        parts.append(
+            "> Working tree was dirty before this run. Dependency diffs "
+            "are computed vs `HEAD`, so any manifest edits you had "
+            "staged or unstaged pre-run are attributed to this run."
+        )
+
+    for (ecosystem, path), entries in grouped.items():
+        rows = [
+            f"### `{path}` ({ecosystem})",
+            "",
+            "| Kind | Name | Before | After |",
+            "|---|---|---|---|",
+        ]
+        for e in entries:
+            before = _fmt_version(e.old_version)
+            after = _fmt_version(e.new_version)
+            rows.append(f"| {e.kind} | `{e.name}` | {before} | {after} |")
+        parts.append("\n".join(rows))
+
+    return "\n\n".join(parts)
+
+
+def _fmt_version(v: str | None) -> str:
+    if v is None:
+        return "—"
+    if v == "":
+        return "(unpinned)"
+    return f"`{v}`"
 
 
 def _render_diff_stat(state: GitState) -> str:
