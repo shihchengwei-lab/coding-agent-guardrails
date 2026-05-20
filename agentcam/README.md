@@ -170,9 +170,11 @@ if agentcam has an internal error.
 **Hook-mode reports do not include stdout/stderr.** Claude Code does
 not pipe its terminal output through hook subprocesses, so agentcam
 cannot capture it. The Logs section in a hook-mode report points to
-empty placeholder files; risk flags come from changed file paths only,
-not from scanning output for patterns like `rm -rf` or `git push
---force`. If you need stdout/stderr captured, use the wrapping path
+empty placeholder files; **output-pattern risk flags** (`rm -rf`,
+`git push --force`, etc.) are unavailable. **Path-based risk flags
+and the Dependency Changes section are unaffected** — both read
+git state and working-tree files, not the transcript. If you need
+stdout/stderr captured, use the wrapping path
 (`agentcam run -- claude "..."`) for that specific session.
 
 ---
@@ -245,6 +247,37 @@ not leak through the report.
 
 For the full rule list and rationale, see
 [`docs/design.md` § 7, § 12, § 15](docs/design.md).
+
+---
+
+## Dependency Changes section
+
+When a run touches `requirements.txt`, `pyproject.toml`, or
+`package.json`, the report adds a `## Dependency Changes` section
+grouped by `(ecosystem, manifest_path)`. Each row lists:
+
+- **Kind**: `added`, `removed`, or `version_changed`
+- **Name**: the package (non-main scopes are tagged in the name —
+  e.g. `pytest [optional.test]`, `jest [devDependencies]` — so a
+  package in both main and a dev/extra group doesn't collide)
+- **Before / After**: the verbatim version specs
+
+Comparison baseline is `git show HEAD:<manifest>` against the
+working-tree file; if the working tree was already dirty before the
+run (`pre_run_dirty: yes` in the header), a one-line caveat in the
+section notes that pre-run user edits are attributed to the run.
+
+**Credential safety.** URL specs like
+`git+https://USER:TOKEN@host/r.git` are scrubbed to
+`git+https://<redacted-credential>@host/r.git` at the parser
+boundary, so credentials in a manifest never reach the report,
+manifest.json, or the `DependencyChange` dataclass downstream
+renderers consume.
+
+v1 covers Python (`requirements.txt`, `pyproject.toml` for PEP 621
+and Poetry) and npm (`package.json` for `dependencies` +
+`devDependencies`). Cargo, go.mod, and lockfiles are deliberately
+deferred. See [`docs/design.md` § 25](docs/design.md).
 
 ---
 
@@ -363,14 +396,17 @@ The codebase is intentionally small (one source module per concern):
 
 ```
 src/agentcam/
-├── cli.py          # argparse + orchestrator
-├── runner.py       # threads-based tee + exit code interpretation
-├── git_state.py    # porcelain parser + git_dir resolver
-├── paths.py        # run_id + collision-safe directory creation
-├── redaction.py    # streaming secret redactor
-├── scanner.py      # path + output risk patterns
-├── report.py       # AGENT_RUN_REPORT.md generator
-└── models.py       # dataclass definitions
+├── cli.py               # argparse + wrap-mode orchestrator
+├── hooks.py             # Claude Code SessionStart / SessionEnd hooks
+├── runner.py            # threads-based tee + exit code interpretation
+├── git_state.py         # porcelain parser + git_dir resolver
+├── paths.py             # run_id + collision-safe directory creation
+├── redaction.py         # streaming secret redactor
+├── scanner.py           # path + output risk patterns (+ RuleSet)
+├── dependency_probe.py  # pip / pyproject / npm manifest diff
+├── report.py            # AGENT_RUN_REPORT.md generator + shared
+│                        # write_run_artifacts helper
+└── models.py            # dataclass definitions (incl. ReportBundle)
 ```
 
 Read [`docs/design.md`](docs/design.md) before changing anything — it

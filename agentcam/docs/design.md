@@ -927,7 +927,9 @@ iterating an empty tuple is a no-op.
 - VS Code / IDE integration
 - GitHub App / GitHub Action (deferred to v0.2 if and only if v0.1 picks
   up traction)
-- Custom YAML risk rules
+- Custom YAML risk rules — *substrate landed 2026-05-20 (`RuleSet`,
+  `default_ruleset()`, `scan_paths(ruleset=…)`). The YAML loader
+  itself is still v0.2; opt-in only, never default-on.*
 - Multi-run dashboard
 - Hosted SaaS dashboard
 

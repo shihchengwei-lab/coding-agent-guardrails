@@ -7,6 +7,24 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Documented (2026-05-20, post-surface-work alignment)
+
+- **README** now has a "Dependency Changes section" block describing
+  the new report section, the credential-scrubbing guarantee, the
+  vs-HEAD comparison baseline, and v1 ecosystem coverage.
+- **README Hook mode** clarified: only output-pattern risk flags are
+  unavailable in hook mode; path-based risk flags AND the new
+  Dependency Changes section work uniformly because they don't need
+  the transcript.
+- **README Hacking** module list updated: adds `hooks.py`,
+  `dependency_probe.py`, and notes the new `write_run_artifacts`
+  helper + `ReportBundle` + `RuleSet` additions.
+- **SECURITY.md** "Best-effort properties" #1 redaction list now
+  includes URL basic-auth credentials in dependency manifests
+  (`git+https://USER:TOKEN@host/...` → `<redacted-credential>@`).
+- **docs/design.md** "Out-of-scope reminders" Custom-YAML line now
+  notes the substrate landed and that only the loader remains.
+
 ### Refactor (2026-05-20, shared `write_run_artifacts` orchestrator)
 
 - **New `agentcam.report.write_run_artifacts(...)`** consolidates the

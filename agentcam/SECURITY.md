@@ -53,7 +53,12 @@ These are agentcam's design intent. None are warranted:
    (AWS / GitHub / OpenAI / Anthropic / Slack / npm / GitLab / Bearer /
    JWT / env-style assignments) and PEM private key blocks in the
    `*.redacted.log` files and in every Markdown surface of the report.
-   New secret formats may slip through. The raw log on disk preserves the
+   The dependency-manifest probe additionally scrubs URL basic-auth
+   credentials at the parser boundary: a `git+https://USER:TOKEN@host/...`
+   entry in `requirements.txt`, `pyproject.toml`, or `package.json`
+   becomes `git+https://<redacted-credential>@host/...` before the spec
+   reaches `DependencyChange`, the report, or `manifest.json`. New
+   secret formats may slip through. The raw log on disk preserves the
    original bytes for forensic review.
 
 2. **Self-pollution avoidance.** Output is written under
