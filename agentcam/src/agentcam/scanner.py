@@ -15,7 +15,7 @@ filesystem or git.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
 from agentcam.models import ChangedFile, RiskFlag, RiskLevel
@@ -173,14 +173,23 @@ def _is_internal_path(path: str) -> bool:
 # Path scanner
 # ---------------------------------------------------------------------------
 
-def scan_paths(changed: list[ChangedFile]) -> list[RiskFlag]:
+def scan_paths(
+    changed: list[ChangedFile],
+    *,
+    ruleset: "RuleSet | None" = None,
+) -> list[RiskFlag]:
     """Generate risk flags from a list of changed files.
 
     Skips files inside ``.git/agentcam/`` (our own output). For each file:
     - HIGH if status is ``staged_deleted`` / ``unstaged_deleted``
     - HIGH if filename is secret-like
     - HIGH/MEDIUM by path segment / prefix / basename / extension rules
+
+    ``ruleset`` selects which rules to apply; ``None`` means the
+    built-in default from :func:`default_ruleset`. The substrate for
+    roadmap #4 (YAML custom rules).
     """
+    rs = ruleset if ruleset is not None else default_ruleset()
     flags: list[RiskFlag] = []
 
     for cf in changed:
@@ -205,30 +214,31 @@ def scan_paths(changed: list[ChangedFile]) -> list[RiskFlag]:
                 evidence="<redacted-secret-filename>",
             ))
 
-        # Try matchers in HIGH then MEDIUM order. First hit per matcher class
-        # wins (we don't emit multiple flags for the same file from the same
-        # matcher class — keeps the report tidy).
-        if _emit_first_match(path, HIGH_PATH_SEGMENTS, "HIGH",
-                             evidence_path, flags, _seg_match):
-            pass
-        if _emit_first_match(path, HIGH_PATH_PREFIXES, "HIGH",
-                             evidence_path, flags, _path_matches_prefix):
-            pass
-        if _emit_first_match(path, HIGH_PATH_BASENAMES, "HIGH",
-                             evidence_path, flags, _path_matches_basename):
-            pass
-        if _emit_first_match(path, HIGH_PATH_EXTENSIONS, "HIGH",
-                             evidence_path, flags, _path_matches_extension):
-            pass
-        if _emit_first_match(path, MEDIUM_PATH_SEGMENTS, "MEDIUM",
-                             evidence_path, flags, _seg_match):
-            pass
-        if _emit_first_match(path, MEDIUM_PATH_BASENAMES, "MEDIUM",
-                             evidence_path, flags, _path_matches_basename):
-            pass
-        if _emit_first_match(path, MEDIUM_PATH_PREFIXES, "MEDIUM",
-                             evidence_path, flags, _path_matches_prefix):
-            pass
+        # Try matchers in HIGH then MEDIUM order. First hit per matcher
+        # class wins (keeps the report tidy). The matcher-class split is
+        # preserved deliberately -- collapsing into a single list per
+        # severity would change the dedup semantic. See PathMatchers
+        # docstring.
+        _emit_first_match(path, rs.high_paths.segments, "HIGH",
+                          evidence_path, flags, _seg_match)
+        _emit_first_match(path, rs.high_paths.prefixes, "HIGH",
+                          evidence_path, flags, _path_matches_prefix)
+        _emit_first_match(path, rs.high_paths.basenames, "HIGH",
+                          evidence_path, flags, _path_matches_basename)
+        _emit_first_match(path, rs.high_paths.extensions, "HIGH",
+                          evidence_path, flags, _path_matches_extension)
+        _emit_first_match(path, rs.medium_paths.segments, "MEDIUM",
+                          evidence_path, flags, _seg_match)
+        _emit_first_match(path, rs.medium_paths.basenames, "MEDIUM",
+                          evidence_path, flags, _path_matches_basename)
+        _emit_first_match(path, rs.medium_paths.prefixes, "MEDIUM",
+                          evidence_path, flags, _path_matches_prefix)
+        # Built-in medium-extensions is empty; loop kept as a forward-
+        # compat slot so custom RuleSets (e.g. YAML-loaded user rules)
+        # can register medium-severity extension matchers without
+        # another scan_paths edit.
+        _emit_first_match(path, rs.medium_paths.extensions, "MEDIUM",
+                          evidence_path, flags, _path_matches_extension)
 
     return flags
 
@@ -317,19 +327,27 @@ def _scan_output_text(
     return hits
 
 
-def scan_output(raw_text: str, *, stream_label: str) -> list[RiskFlag]:
+def scan_output(
+    raw_text: str,
+    *,
+    stream_label: str,
+    ruleset: "RuleSet | None" = None,
+) -> list[RiskFlag]:
     """Scan a raw log stream for HIGH / MEDIUM output patterns.
 
-    ``stream_label`` is e.g. ``"stdout.log"`` or ``"stderr.log"``; it appears
-    in evidence. Evidence intentionally never contains the raw matched text.
+    ``stream_label`` is e.g. ``"stdout.log"`` or ``"stderr.log"``; it
+    appears in evidence. Evidence intentionally never contains the raw
+    matched text. ``ruleset`` selects which output patterns to apply;
+    ``None`` means the built-in default.
     """
+    rs = ruleset if ruleset is not None else default_ruleset()
     flags: list[RiskFlag] = []
     flags.extend(
-        _consolidate(_scan_output_text(raw_text, HIGH_OUTPUT_PATTERNS),
+        _consolidate(_scan_output_text(raw_text, list(rs.high_output)),
                      stream_label, "HIGH")
     )
     flags.extend(
-        _consolidate(_scan_output_text(raw_text, MEDIUM_OUTPUT_PATTERNS),
+        _consolidate(_scan_output_text(raw_text, list(rs.medium_output)),
                      stream_label, "MEDIUM")
     )
     return flags
@@ -361,3 +379,69 @@ def _consolidate(
             evidence=evidence,
         ))
     return flags
+
+
+# ---------------------------------------------------------------------------
+# Rule registry (the substrate YAML custom rules will plug into)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True, slots=True)
+class PathMatchers:
+    """One severity's bundle of path matchers, grouped by matcher kind.
+
+    Kept split (not a single ``list[PathRule]`` discriminated union)
+    so the existing scan_paths behavior is preserved bit-for-bit: each
+    matcher kind can independently emit one flag per file, so a single
+    file matching both a segment rule AND an extension rule still
+    produces two flags. Folding into a single list would change that
+    dedup semantic — see ``docs/design.md`` (forthcoming) #26.
+    """
+
+    segments: tuple[tuple[str, str], ...] = ()
+    prefixes: tuple[tuple[str, str], ...] = ()
+    basenames: tuple[tuple[str, str], ...] = ()
+    extensions: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class RuleSet:
+    """A complete set of scanning rules.
+
+    Built-in default is :data:`_BUILTIN_RULESET`; obtain via
+    :func:`default_ruleset`. YAML loading (roadmap #4) will produce a
+    merged :class:`RuleSet` with user rules layered on top of the
+    built-in.
+    """
+
+    high_paths: PathMatchers = field(default_factory=PathMatchers)
+    medium_paths: PathMatchers = field(default_factory=PathMatchers)
+    high_output: tuple[tuple[re.Pattern[str], str], ...] = ()
+    medium_output: tuple[tuple[re.Pattern[str], str], ...] = ()
+
+
+_BUILTIN_RULESET = RuleSet(
+    high_paths=PathMatchers(
+        segments=tuple(HIGH_PATH_SEGMENTS),
+        prefixes=tuple(HIGH_PATH_PREFIXES),
+        basenames=tuple(HIGH_PATH_BASENAMES),
+        extensions=tuple(HIGH_PATH_EXTENSIONS),
+    ),
+    medium_paths=PathMatchers(
+        segments=tuple(MEDIUM_PATH_SEGMENTS),
+        prefixes=tuple(MEDIUM_PATH_PREFIXES),
+        basenames=tuple(MEDIUM_PATH_BASENAMES),
+        extensions=(),
+    ),
+    high_output=tuple(HIGH_OUTPUT_PATTERNS),
+    medium_output=tuple(MEDIUM_OUTPUT_PATTERNS),
+)
+
+
+def default_ruleset() -> RuleSet:
+    """Return the built-in :class:`RuleSet` shipped with agentcam.
+
+    A function (not a constant export) so future call sites can be
+    intercepted -- e.g. a user-config layer could compose this with
+    YAML-loaded user rules without monkey-patching module state.
+    """
+    return _BUILTIN_RULESET

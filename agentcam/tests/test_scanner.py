@@ -15,6 +15,9 @@ from agentcam.models import ChangedFile, RiskFlag
 from agentcam.scanner import (
     HIGH_OUTPUT_PATTERNS,
     HIGH_PATH_SEGMENTS,
+    PathMatchers,
+    RuleSet,
+    default_ruleset,
     is_secret_like_filename,
     path_matches_segment,
     scan_output,
@@ -312,3 +315,91 @@ class TestCriticalCaseInsensitivity:
 
     def test_uppercase_npmrc(self):
         assert is_secret_like_filename(".NPMRC")
+
+
+# ---------------------------------------------------------------------------
+# RuleSet (substrate for roadmap #4 YAML custom rules)
+# ---------------------------------------------------------------------------
+
+class TestCustomRuleSet:
+    """Pin the contract that scan_paths / scan_output accept a custom
+    RuleSet and the built-in path is unchanged when ruleset=None.
+    """
+
+    def test_default_ruleset_returns_singleton(self):
+        # default_ruleset() should return the same object every call
+        # so callers can identity-check or memoize against it.
+        assert default_ruleset() is default_ruleset()
+
+    def test_scan_paths_with_none_uses_builtin(self):
+        # ruleset=None must produce the same flags as the previous
+        # constants-only call shape. Regression guard for builtin parity.
+        files = [
+            ChangedFile(path="src/auth/login.py", status="unstaged_modified"),
+            ChangedFile(path="terraform/main.tf", status="staged"),
+        ]
+        flags_implicit = scan_paths(files)
+        flags_explicit = scan_paths(files, ruleset=default_ruleset())
+        assert flags_implicit == flags_explicit
+
+    def test_scan_paths_custom_segment_rule_fires(self):
+        # A user-supplied segment rule must produce a flag against
+        # files that don't match any built-in rule.
+        custom = RuleSet(
+            high_paths=PathMatchers(
+                segments=(("payment", "payment processing path"),),
+            ),
+        )
+        flags = scan_paths(
+            [ChangedFile(path="src/payment/charge.py",
+                         status="unstaged_modified")],
+            ruleset=custom,
+        )
+        assert any(
+            f.rule == "payment processing path" and f.level == "HIGH"
+            for f in flags
+        )
+
+    def test_scan_paths_empty_ruleset_emits_nothing_path_based(self):
+        # An empty (but valid) RuleSet should disable all path-rule
+        # flags. The non-rule-based HIGH flags (tracked-file-deleted,
+        # secret-like filename) still fire.
+        empty = RuleSet()
+        files = [
+            ChangedFile(path="src/auth/login.py", status="unstaged_modified"),
+        ]
+        flags = scan_paths(files, ruleset=empty)
+        assert flags == []  # neither deleted nor secret-like; no rule => no flags
+
+    def test_scan_output_custom_pattern_fires(self):
+        import re as _re
+        custom = RuleSet(
+            high_output=(
+                (_re.compile(r"\bDROP TABLE\b"), "destructive sql"),
+            ),
+        )
+        flags = scan_output(
+            "running DROP TABLE users;",
+            stream_label="stdout.log",
+            ruleset=custom,
+        )
+        assert any(
+            "destructive sql" in f.rule and f.level == "HIGH" for f in flags
+        )
+
+    def test_scan_output_empty_ruleset_emits_nothing(self):
+        empty = RuleSet()
+        flags = scan_output(
+            "git reset --hard",  # would normally fire a HIGH builtin
+            stream_label="stdout.log",
+            ruleset=empty,
+        )
+        assert flags == []
+
+    def test_builtin_ruleset_covers_existing_constants(self):
+        # The migration must not silently drop rules. Confirm the
+        # built-in RuleSet contains the same segment count as the
+        # legacy HIGH_PATH_SEGMENTS list.
+        rs = default_ruleset()
+        assert len(rs.high_paths.segments) == len(HIGH_PATH_SEGMENTS)
+        assert len(rs.high_output) == len(HIGH_OUTPUT_PATTERNS)

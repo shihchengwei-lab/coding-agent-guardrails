@@ -868,6 +868,56 @@ discussion has to update both.
 
 ---
 
+## 27. `RuleSet` substrate for custom risk rules (not the YAML loader)
+
+**Decision.** `PathMatchers` and `RuleSet` dataclasses in `scanner.py`
+hold the rule data; `_BUILTIN_RULESET` (built once from the existing
+module constants) is the default; `default_ruleset()` exposes it.
+`scan_paths` / `scan_output` accept an optional `ruleset=` kwarg that
+falls back to the default. Roadmap #4 (custom YAML rules) lands as a
+separate change: a YAML loader producing a `RuleSet`, plus wiring at
+the cli.py / hooks.py level to merge user rules with the default.
+
+**Why land the substrate before the loader.** The YAML loader's shape
+depends on what `RuleSet` looks like. Inverting that order means the
+loader prescribes the internal data layout, and existing tests would
+get coupled to YAML format. Landing the substrate first lets the
+loader be added with zero scanner-internals churn.
+
+**Why preserve the matcher-class split** (`segments` / `prefixes` /
+`basenames` / `extensions` as four separate tuples per severity)
+**instead of one unified list with a `matcher` discriminator field.**
+The existing `scan_paths` emits at most one flag PER MATCHER CLASS
+per file — so a `.tf` file under `terraform/` legitimately produces
+two HIGH flags (one from the extension rule, one from the segment
+rule). Collapsing to a single list per severity with "first-hit
+wins" would change that dedup semantic, breaking the report output
+users would have seen in v0.1. The roadmap #4 YAML schema can still
+present rules as a single `high_paths:` list with per-entry matcher
+kind — the YAML loader will dispatch into the correct `PathMatchers`
+tuple at load time.
+
+**Why keep the legacy module constants.** `tests/test_scanner.py`
+imports `HIGH_PATH_SEGMENTS`, `HIGH_OUTPUT_PATTERNS` directly, and
+any external user code might too. Removing them in the same change
+as the extraction would be a needless breaking surface. The
+constants are the inputs to `_BUILTIN_RULESET`, not a parallel rule
+store; future v0.3 can mark them deprecated and eventually remove.
+
+**Why frozen + tuples throughout.** The `ReportBundle` boundary case
+(decision 26) called out that frozen-with-list is leaky. For
+`RuleSet` / `PathMatchers` the right call is tuples — these are pure
+configuration data that should never be mutated post-construction.
+
+**Why add an extra matcher loop for `medium_paths.extensions`** even
+though `_BUILTIN_RULESET.medium_paths.extensions` is currently
+empty. The loop is a forward-compat slot so a YAML-loaded user
+ruleset can register medium-severity extension matchers without
+another `scan_paths` edit. Built-in behavior is unchanged because
+iterating an empty tuple is a no-op.
+
+---
+
 ## Out-of-scope reminders (do not add these without re-reading §10–§22)
 
 - Sandbox / process isolation

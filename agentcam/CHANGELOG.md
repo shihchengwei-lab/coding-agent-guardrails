@@ -7,6 +7,32 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Added (2026-05-20, `RuleSet` substrate for custom risk rules)
+
+- **`PathMatchers` and `RuleSet` dataclasses** in `scanner.py`. A
+  `RuleSet` carries HIGH/MEDIUM path matchers (segments / prefixes /
+  basenames / extensions — kept split to preserve the existing "one
+  flag per matcher class per file" dedup semantic) plus HIGH/MEDIUM
+  output patterns. Frozen + tuples throughout.
+- **`scan_paths(changed, *, ruleset=None)` and
+  `scan_output(text, *, stream_label, ruleset=None)`** now accept a
+  ruleset; `None` falls back to `default_ruleset()` which returns the
+  built-in singleton. cli.py / hooks.py are unchanged (default works).
+- **Substrate for roadmap #4** (custom YAML risk rules). A YAML loader
+  is the natural next step — it just needs to produce a `RuleSet` and
+  pass it in. The data shapes and internal call sites are ready; the
+  loader itself is not in this release.
+- **Backward compat**: the legacy module-level constants
+  (`HIGH_PATH_SEGMENTS`, `HIGH_OUTPUT_PATTERNS`, etc.) are kept as the
+  inputs to `_BUILTIN_RULESET`; external code importing them keeps
+  working.
+- **+7 tests** in `tests/test_scanner.py` (`TestCustomRuleSet`):
+  default singleton identity, builtin parity, custom segment/output
+  rules, empty-ruleset disables rule-based flags, count parity vs
+  legacy constants.
+- See `docs/design.md` decision #27 for the full rationale (why split
+  matcher classes, why ship substrate before the YAML loader, etc.).
+
 ### Added (2026-05-20, Dependency manifest probe)
 
 - **`AGENT_RUN_REPORT.md` now has a "Dependency Changes" section** when
