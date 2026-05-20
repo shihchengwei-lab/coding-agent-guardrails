@@ -1,0 +1,24 @@
+# Normalize line endings so the blob is always LF regardless of who
+# committed the file. Windows checkouts still see CRLF in the working
+# tree (git auto-converts on checkout), but the stored bytes match
+# what Linux / macOS contributors see -- no spurious CRLF/LF diffs
+# in CI, no "next time Git touches it" warnings on commit.
+
+* text=auto eol=lf
+
+# Pin Python / Markdown / YAML / TOML to LF explicitly so future
+# auto-detect changes don't surprise anyone.
+*.py    text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.toml  text eol=lf
+*.txt   text eol=lf
+*.json  text eol=lf
+
+# Mark binary so git never tries to diff or convert these.
+*.gif   binary
+*.png   binary
+*.jpg   binary
+*.whl   binary
+*.tar.gz binary
