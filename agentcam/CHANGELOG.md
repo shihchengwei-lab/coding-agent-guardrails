@@ -7,6 +7,24 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Hardening (2026-05-20, hook-mode orphan cleanup on probe/render failure)
+
+- **`_do_session_end` now wraps the post-`create_run_dir` block in
+  try/except/finally.** If anything between creating the run dir and
+  writing the manifest raises (probe failure, render error, disk full
+  mid-write), the half-built run dir is removed (no orphan
+  placeholder logs without a report) and the session dir is removed
+  regardless (so repeated SessionEnd failures don't accumulate stale
+  snapshots). Failures still re-raise into the outer catch so the
+  stderr-log line fires.
+- Hook still exits 0 unconditionally — Claude Code never blocked.
+- Codex review (post-dep-probe) flagged this as MEDIUM #5; landed
+  separately because it's broader than the probe (any future
+  post-create_run_dir failure benefits).
+- +1 regression test (`TestOrphanCleanupOnFailure`) that injects a
+  `scan_dependencies` failure via monkeypatch and asserts both the
+  run dir and the session dir are gone afterward.
+
 ### Added (2026-05-20, `RuleSet` substrate for custom risk rules)
 
 - **`PathMatchers` and `RuleSet` dataclasses** in `scanner.py`. A

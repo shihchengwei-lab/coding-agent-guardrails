@@ -348,3 +348,60 @@ class TestCodexR1Regressions:
         assert not runs.exists() or not any(runs.iterdir())
         # Critical: session dir cleaned up, not orphaned.
         assert not sdir.exists()
+
+
+# ---------------------------------------------------------------------------
+# Orphan cleanup on probe / render failure (Codex review MEDIUM #5)
+# ---------------------------------------------------------------------------
+
+class TestOrphanCleanupOnFailure:
+    """If anything between create_run_dir and write_manifest raises,
+    the hook must:
+    1. always exit 0 (never block Claude Code)
+    2. remove the half-built run dir (no orphan placeholder logs)
+    3. remove the session dir (so repeated failures don't accumulate)
+    """
+
+    def test_probe_failure_cleans_run_dir_and_session_dir(
+        self, tmp_git_repo: Path, monkeypatch,
+    ):
+        # We bypass subprocess + stdin by calling the hook entry
+        # points directly with a patched _read_hook_input. This lets
+        # us inject a probe failure via monkeypatch.
+        from agentcam import hooks
+        from agentcam import dependency_probe
+
+        sid = "orphan-test-sid"
+        payload = {"session_id": sid, "cwd": str(tmp_git_repo)}
+        monkeypatch.setattr(hooks, "_read_hook_input", lambda: payload)
+
+        # SessionStart: snapshot baseline.
+        rc = hooks.cmd_hook_session_start()
+        assert rc == 0
+        sdir = _session_dir(tmp_git_repo, sid)
+        assert sdir.exists()
+
+        # Make a real change so SessionEnd takes the report-writing
+        # branch (not the no-diff cleanup branch).
+        (tmp_git_repo / "agent_did_work.txt").write_text("x\n")
+
+        # Inject failure in the probe.
+        def boom(**kw):
+            raise RuntimeError("simulated probe failure")
+        monkeypatch.setattr(dependency_probe, "scan_dependencies", boom)
+
+        # SessionEnd: should swallow the error, clean both dirs.
+        rc = hooks.cmd_hook_session_end()
+        assert rc == 0  # hook must NEVER block Claude Code
+
+        # Session dir gone.
+        assert not sdir.exists(), (
+            "session dir must be cleaned even on failure"
+        )
+
+        # Run dir either never created or already removed -- no
+        # orphan placeholder logs.
+        runs = _runs_dir(tmp_git_repo)
+        assert not runs.exists() or not any(runs.iterdir()), (
+            "run dir must not be left as orphan with placeholder logs"
+        )
