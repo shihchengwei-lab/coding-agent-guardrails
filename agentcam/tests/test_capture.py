@@ -7,9 +7,12 @@ Two angles:
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+
+import pytest
 
 from agentcam.models import (
     CaptureCapability,
@@ -144,20 +147,10 @@ class TestFactories:
 
     def test_capture_capability_is_frozen(self):
         c = capture_for_wrap_pipe(empty_run_policy="auto_delete_clean_no_diff")
-        import dataclasses
-        try:
-            object.__setattr__  # noqa: B018
-            # frozen dataclass should refuse field rebinding.
-            try:
-                c.mode = "wrap_pty"  # type: ignore[misc]
-            except dataclasses.FrozenInstanceError:
-                return
-            raise AssertionError(
-                "CaptureCapability should be frozen so renderers cannot "
-                "mutate the reported visibility mid-render."
-            )
-        except dataclasses.FrozenInstanceError:
-            pass
+        # Frozen dataclass refuses field rebinding so renderers can't
+        # mutate the reported visibility mid-render.
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            c.mode = "wrap_pty"  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------

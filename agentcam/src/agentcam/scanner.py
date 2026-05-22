@@ -14,6 +14,8 @@ filesystem or git.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
@@ -451,10 +453,6 @@ def default_ruleset() -> RuleSet:
 # Ruleset provenance (decision #29)
 # ---------------------------------------------------------------------------
 
-import hashlib
-import json as _json
-
-
 # Stable identifier for the built-in rule set shipped with this release.
 # Keep this id in sync with the agentcam release line if you ever ship a
 # parallel ruleset (e.g. an "agentcam-strict" preset); the *version* on
@@ -500,7 +498,7 @@ def compute_ruleset_sha256(rs: "RuleSet") -> str:
     every report.
     """
     canonical = _canonical_ruleset(rs)
-    blob = _json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+    blob = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
