@@ -919,6 +919,77 @@ ruleset can register medium-severity extension matchers without
 another `scan_paths` edit. Built-in behavior is unchanged because
 iterating an empty tuple is a no-op.
 
+## 30. No-diff preservation when output risk evidence exists
+
+**Decision.** Decision #23 said "no-diff successful runs auto-delete
+their run dir". This decision adds an exception: if the run produced
+no git-visible diff AND exited 0, but the output scanner observed
+HIGH or MEDIUM patterns in stdout/stderr, the run is preserved. The
+`capture.empty_run_policy` field flips from
+`"auto_delete_clean_no_diff"` to `"preserve_visible_risk"`, and a
+stderr line tells the user "no git-visible changes, but output risk
+flags were observed; report kept".
+
+**Why preserve.** Decision #23's premise was "if nothing changed,
+nothing happened that's worth recording". That's the right call when
+the only signal is git state. But the output scanner is a second
+signal — "the agent printed `git reset --hard`" is the kind of thing
+a flight recorder exists to keep, even if the agent didn't actually
+run it. Auto-deleting in that case loses forensically useful
+evidence.
+
+**Why output flags only, not arbitrary stderr.** Output scanning
+already filters with the HIGH/MEDIUM rule set; this decision just
+escalates "scanner found something" into "do not delete". Using raw
+stderr presence as the trigger would preserve every run that emitted
+a single line — too noisy.
+
+**Why limited to exit_ok runs.** Failed runs (exit != 0) are already
+preserved by #23. The new logic only changes behavior for runs that
+would otherwise have been auto-deleted, which is `no_git_change AND
+exit_ok`.
+
+**Why `--keep-empty` still wins.** `--keep-empty` is an explicit
+user directive: "keep this regardless". The capture metadata records
+`"keep_empty_requested"`, not `"preserve_visible_risk"`, even if
+output risk was also present. The user's flag is the more specific
+signal.
+
+**Why output scanning moved before the cleanup decision in `cli.py`.**
+Pre-#30, `_scan_log` ran *after* the cleanup conditional, so the
+scanner result couldn't influence cleanup. Reordering puts the scan
+before the cleanup decision so the result informs both the "should
+we delete" choice and the policy label written into the manifest.
+The two scanners (output + path) compose into the same `risk_flags`
+list passed to `write_run_artifacts`; no consumer downstream sees a
+behavior change.
+
+**Why no separate `empty_run` block on the manifest, despite the
+brief showing one.** `capture.empty_run_policy` already carries the
+per-run decision (Feature 2 allowed `"preserve_visible_risk"` from
+the start). A parallel `empty_run.policy` field would either
+duplicate the same string or invite drift between the two fields.
+Single source of truth: `capture.empty_run_policy`.
+
+**Why no hook-mode change.** Hook mode has no stdout/stderr stream
+(see #24), so there can be no output risk flags. Hook mode keeps
+the original #23 cleanup behavior unchanged. `capture.empty_run_policy`
+in hook mode stays `"auto_delete_clean_no_diff"`.
+
+**Known limitations.**
+- *Path scanner output is NOT a preservation trigger.* If the run
+  changed no files but path-scan somehow returned a flag (it
+  shouldn't — `scan_paths` only scans `state_after.changed_files`),
+  preservation does not fire. Not a real-world case today; called
+  out so future refactors don't accidentally make it one.
+- *Preservation triggers on any HIGH/MEDIUM output match, including
+  output-scanner MEDIUM patterns like "tests failed".* That is
+  intentional: a failed-tests message from an agent that produced
+  no diff is still worth keeping — the user can see what the agent
+  attempted.
+
+---
+
 ## 29. Ruleset provenance in manifest + report
 
 **Decision.** Each `manifest.json` carries a `ruleset` block, and each

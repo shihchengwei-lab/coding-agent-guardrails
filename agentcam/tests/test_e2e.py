@@ -495,3 +495,62 @@ class TestRulesetProvenance:
         report = _report(tmp_git_repo)
         assert "## Scanner Ruleset" in report
         assert "agentcam-default" in report
+
+
+# ---------------------------------------------------------------------------
+# No-diff preservation when output risk evidence exists
+# (Feature 6 / design.md #30)
+# ---------------------------------------------------------------------------
+
+class TestNoDiffPreservation:
+    """The default no-diff cleanup deletes clean pure-alignment runs, but
+    a no-diff run that emitted an output-risk pattern (`rm -rf`, `git
+    push --force`, etc.) must be preserved -- the user needs to know
+    the agent printed something dangerous, even though it didn't land
+    in the working tree."""
+
+    def test_no_diff_with_output_risk_preserved(self, tmp_git_repo: Path):
+        # Agent makes NO git-visible change but prints a high-risk
+        # output pattern. Pre-Feature-6 this would be auto-deleted as
+        # a clean no-diff. Post-Feature-6 it must be preserved.
+        runs_dir = tmp_git_repo / ".git" / "agentcam" / "runs"
+        proc = _agentcam(
+            tmp_git_repo, "run", "--",
+            sys.executable, "-c",
+            "print('about to git reset --hard origin/main if you say so')",
+        )
+        assert proc.returncode == 0
+        # Run dir must exist with a report.
+        assert runs_dir.exists() and any(runs_dir.iterdir()), (
+            "no-diff run with output risk flags must be preserved"
+        )
+        report = _report(tmp_git_repo)
+        assert "git reset --hard" in report  # the rule label
+        # capture metadata records the preservation reason.
+        cap = _manifest(tmp_git_repo)["capture"]
+        assert cap["empty_run_policy"] == "preserve_visible_risk"
+        # Report explains the preservation in human terms.
+        assert "preserve_visible_risk" in report or "output risk" in report
+
+    def test_clean_no_diff_still_auto_deleted(self, tmp_git_repo: Path):
+        # Regression: pure-alignment, no risk patterns → still deleted.
+        runs_dir = tmp_git_repo / ".git" / "agentcam" / "runs"
+        proc = _agentcam(
+            tmp_git_repo, "run", "--",
+            sys.executable, "-c", "print('hello world')",
+        )
+        assert proc.returncode == 0
+        assert not runs_dir.exists() or not any(runs_dir.iterdir())
+
+    def test_keep_empty_still_kept_and_policy_overrides(
+        self, tmp_git_repo: Path,
+    ):
+        # --keep-empty wins regardless of risk evidence. Policy label
+        # is keep_empty_requested, not preserve_visible_risk.
+        proc = _agentcam(
+            tmp_git_repo, "run", "--keep-empty", "--",
+            sys.executable, "-c", "print('git push --force or so')",
+        )
+        assert proc.returncode == 0
+        cap = _manifest(tmp_git_repo)["capture"]
+        assert cap["empty_run_policy"] == "keep_empty_requested"

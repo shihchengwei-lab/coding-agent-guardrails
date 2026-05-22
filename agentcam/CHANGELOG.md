@@ -7,6 +7,35 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Changed (2026-05-22, no-diff preservation when output risk visible)
+
+- **`agentcam run` now preserves no-diff successful runs when the
+  output scanner observed HIGH or MEDIUM patterns**, instead of
+  auto-deleting them. Wraps decision #23 with the natural exception:
+  "the agent shouted `rm -rf /` but didn't run it" is still
+  forensically useful and must be kept.
+- **Output scanning moved before the no-diff cleanup decision in
+  `cli.py`** so the scanner result can influence cleanup. Composes
+  into the same `risk_flags` list passed downstream; no consumer
+  sees a behavior change other than "the run dir is now sometimes
+  preserved".
+- **`capture.empty_run_policy` flips to `"preserve_visible_risk"`**
+  in the preserved case (the value was already in Feature 2's
+  allowed set; this is its first production user). User-facing
+  stderr: `agentcam: no git-visible changes, but output risk flags
+  were observed; report kept`.
+- **`--keep-empty` still wins**: it's an explicit user directive,
+  so the policy is `"keep_empty_requested"` even if output risk is
+  also present.
+- **Hook mode unchanged.** Hook mode has no stdout/stderr stream
+  (#24), so output risk flags cannot trigger preservation there.
+- **+3 e2e tests** in `tests/test_e2e.py::TestNoDiffPreservation`:
+  no-diff + output risk preserved with policy label;
+  clean no-diff still auto-deletes; --keep-empty overrides risk
+  preservation. Existing `TestNoDiffCleanup` suite continues to
+  pass unchanged.
+- See `docs/design.md` decision #30 for the full rationale.
+
 ### Added (2026-05-22, ruleset provenance)
 
 - **`manifest.json` now carries a `ruleset` block** identifying which

@@ -224,21 +224,49 @@ def _run_command(args) -> int:
         compute_diff_fingerprint(cwd) if not args.keep_empty else ""
     )
 
-    # 6.5) "No-diff = no report": if the run made no git-visible changes
-    # AND succeeded, delete the run dir. Pure-alignment sessions (agent
-    # and user discussed but did not change code) don't clutter
-    # .git/agentcam/runs/. Errors and any state change still produce a
-    # report. Opt out per-invocation with --keep-empty.
+    # 7) Scan paths + raw output for risk flags. Output scan is
+    # wrap-mode-only (hook mode has no transcript to scan).
+    # Order intentional: output scanning happens BEFORE the no-diff
+    # cleanup decision so a session that printed `rm -rf` without
+    # changing the working tree is preserved -- the user needs to see
+    # what was emitted even though no diff landed
+    # (see docs/design.md #30).
+    output_risk_flags = (
+        _scan_log(Path(run_paths.stdout_raw), "stdout.log")
+        + _scan_log(Path(run_paths.stderr_raw), "stderr.log")
+    )
+    path_risk_flags = scan_paths(state_after.changed_files)
+    risk_flags = path_risk_flags + output_risk_flags
+
+    # 6.5) "No-diff = no report": if the run made no git-visible
+    # changes AND succeeded AND no output risk evidence, delete the
+    # run dir. Output risk evidence is preserved even with no git
+    # diff -- "agent shouted `rm -rf /` but didn't run it" is still
+    # the kind of thing a flight recorder should keep.
+    exit_ok = run_result.exit_detail.wrapper_exit == 0
     if args.keep_empty:
-        no_git_change = False  # cleanup disabled — skip the comparison
+        no_git_change_raw = False  # cleanup disabled — skip comparison
+        empty_run_policy = "keep_empty_requested"
     else:
-        no_git_change = (
+        no_git_change_raw = (
             state_before.head == state_after.head
             and state_before.porcelain_raw == state_after.porcelain_raw
             and fingerprint_before == fingerprint_after
         )
-    exit_ok = run_result.exit_detail.wrapper_exit == 0
-    if no_git_change and exit_ok:
+        if no_git_change_raw and exit_ok and output_risk_flags:
+            empty_run_policy = "preserve_visible_risk"
+        else:
+            empty_run_policy = "auto_delete_clean_no_diff"
+
+    # Cleanup fires only when nothing in this run is worth keeping:
+    # no git change AND succeeded AND no output risk evidence.
+    cleanup_fires = (
+        no_git_change_raw
+        and exit_ok
+        and not output_risk_flags
+        and not args.keep_empty
+    )
+    if cleanup_fires:
         import shutil
         try:
             shutil.rmtree(run_paths.run_dir)
@@ -271,23 +299,25 @@ def _run_command(args) -> int:
             )
             return 0
 
-    # 7) Scan paths + raw output for risk flags. Output scan is
-    # wrap-mode-only (hook mode has no transcript to scan).
-    risk_flags = scan_paths(state_after.changed_files)
-    risk_flags.extend(_scan_log(Path(run_paths.stdout_raw), "stdout.log"))
-    risk_flags.extend(_scan_log(Path(run_paths.stderr_raw), "stderr.log"))
+    # If the run had no git diff but is being preserved due to risk
+    # evidence, tell the user up front -- otherwise the "report at
+    # ..." message at step 10 alone might make it look like a normal
+    # diff-bearing run.
+    if empty_run_policy == "preserve_visible_risk":
+        print(
+            "agentcam: no git-visible changes, but output risk flags "
+            "were observed; report kept (use --keep-empty for full "
+            "history, or review the report below).",
+            file=sys.stderr,
+        )
 
     # 8-9) Shared post-run pipeline: dep probe + manifest + bundle +
     # render + write. Same helper called from hook mode. `capture`
-    # records what observation surface was active for this run -- see
-    # docs/design.md #28.
-    capture = capture_for_wrap_pipe(
-        empty_run_policy=(
-            "keep_empty_requested"
-            if args.keep_empty
-            else "auto_delete_clean_no_diff"
-        ),
-    )
+    # records what observation surface was active for this run --
+    # `empty_run_policy` distinguishes a normal run from one preserved
+    # only because the scanner saw a risky output pattern. See
+    # docs/design.md #28 + #30.
+    capture = capture_for_wrap_pipe(empty_run_policy=empty_run_policy)
     write_run_artifacts(
         state_before=state_before,
         state_after=state_after,
