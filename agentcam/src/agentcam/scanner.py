@@ -463,22 +463,33 @@ BUILTIN_RULESET_ID = "agentcam-default"
 def _canonical_ruleset(rs: "RuleSet") -> dict:
     """Project a :class:`RuleSet` to a JSON-serializable canonical form.
 
-    Sorted lists everywhere so two rule sets with the same content but
-    different declaration order hash equal. Otherwise reordering a
-    tuple for readability would silently change the hash and confuse
-    ``agentcam compare``.
+    Matcher tuples are preserved in declaration order, NOT sorted. The
+    reason: ``scan_paths`` emits one flag per matcher class per file
+    via first-match-wins (see ``_emit_first_match``). So
+    ``src/auth/login.py`` reports either ``auth path`` or
+    ``login path`` depending on which segment comes first in the
+    tuple — reordering changes scanner behavior, so the hash must
+    track order. Same logic for ``_outputs``.
+
+    ``re.Pattern.flags`` is included so changing ``IGNORECASE`` or
+    ``MULTILINE`` on a built-in pattern propagates into the hash;
+    otherwise two rulesets that scan differently could share a hash.
+
+    Sorted-keys at the JSON layer (`json.dumps(..., sort_keys=True)`
+    in :func:`compute_ruleset_sha256`) still applies to the
+    top-level keys (`high_paths` / `medium_paths` / ...). Only the
+    matcher *content* preserves order.
     """
     def _pm(matchers: PathMatchers) -> dict:
         return {
-            "segments": sorted([list(t) for t in matchers.segments]),
-            "prefixes": sorted([list(t) for t in matchers.prefixes]),
-            "basenames": sorted([list(t) for t in matchers.basenames]),
-            "extensions": sorted([list(t) for t in matchers.extensions]),
+            "segments": [list(t) for t in matchers.segments],
+            "prefixes": [list(t) for t in matchers.prefixes],
+            "basenames": [list(t) for t in matchers.basenames],
+            "extensions": [list(t) for t in matchers.extensions],
         }
 
     def _outputs(rows) -> list:
-        # re.Pattern → its .pattern string, then sorted by (pattern, label).
-        return sorted([[pat.pattern, label] for pat, label in rows])
+        return [[pat.pattern, pat.flags, label] for pat, label in rows]
 
     return {
         "high_paths": _pm(rs.high_paths),
@@ -491,11 +502,13 @@ def _canonical_ruleset(rs: "RuleSet") -> dict:
 def compute_ruleset_sha256(rs: "RuleSet") -> str:
     """Deterministic ``sha256:<hex>`` over the canonical form of ``rs``.
 
-    Stability guarantee: feeding the same logical rule set in any
-    declaration order yields the same hash. Adding/removing/renaming a
-    rule changes the hash. Used by :func:`provenance_for_builtin_ruleset`
-    and by future YAML-loader integration to put a single fingerprint on
-    every report.
+    Stability guarantee: a rule set whose effective scanner behavior
+    is identical (same matchers in the same declaration order, same
+    pattern strings AND flags) hashes the same across runs. Adding,
+    removing, reordering, or re-flagging a rule changes the hash.
+    Used by :func:`provenance_for_builtin_ruleset` and by future
+    YAML-loader integration to put a single behavior-tracking
+    fingerprint on every report.
     """
     canonical = _canonical_ruleset(rs)
     blob = json.dumps(canonical, sort_keys=True, separators=(",", ":"))

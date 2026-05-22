@@ -139,15 +139,16 @@ class TestRulesetHash:
         )
         assert compute_ruleset_sha256(base) != compute_ruleset_sha256(modified)
 
-    def test_hash_independent_of_segment_input_order(self):
-        # Canonical form sorts before hashing so two rule lists with
-        # the same content but different order hash equal. Otherwise
-        # future migrations that reorder tuples for readability would
-        # silently change the hash and confuse `agentcam compare`.
+    def test_hash_changes_when_segment_order_changes(self):
+        # Codex P2 finding: scan_paths emits first-match-per-matcher-class,
+        # so two rulesets with the same segments in different order
+        # produce DIFFERENT flags (auth/login.py reports either
+        # "auth path" or "login path" depending on which segment comes
+        # first). The hash must reflect scanner behavior, not just
+        # rule content -- otherwise reordering would silently break
+        # `agentcam compare` parity.
         base = default_ruleset()
-        reordered_segments = tuple(
-            sorted(base.high_paths.segments, reverse=True)
-        )
+        reordered_segments = tuple(reversed(base.high_paths.segments))
         reshuffled = RuleSet(
             high_paths=PathMatchers(
                 segments=reordered_segments,
@@ -159,7 +160,27 @@ class TestRulesetHash:
             high_output=base.high_output,
             medium_output=base.medium_output,
         )
-        assert compute_ruleset_sha256(base) == compute_ruleset_sha256(reshuffled)
+        assert compute_ruleset_sha256(base) != compute_ruleset_sha256(reshuffled)
+
+    def test_hash_changes_when_pattern_flags_change(self):
+        # Codex P2 finding: re.Pattern.flags must be part of the
+        # canonical form. A pattern recompiled with a different flag
+        # set (IGNORECASE on vs off) scans differently and must hash
+        # differently.
+        import re
+        base = default_ruleset()
+        # Take the first high_output pattern, recompile with a
+        # different flag set, and re-bundle.
+        orig_pat, orig_label = base.high_output[0]
+        new_flags = orig_pat.flags ^ re.IGNORECASE  # flip IGNORECASE bit
+        new_pat = re.compile(orig_pat.pattern, new_flags)
+        modified = RuleSet(
+            high_paths=base.high_paths,
+            medium_paths=base.medium_paths,
+            high_output=((new_pat, orig_label),) + base.high_output[1:],
+            medium_output=base.medium_output,
+        )
+        assert compute_ruleset_sha256(base) != compute_ruleset_sha256(modified)
 
 
 # ---------------------------------------------------------------------------

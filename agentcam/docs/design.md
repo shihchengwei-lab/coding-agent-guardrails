@@ -1091,17 +1091,30 @@ rules existed, which all explicitly say `"builtin_only"`.
 **Why a stable canonical form, not raw struct hashing.** Python
 `hash()` of a `RuleSet` would change across interpreter sessions
 (salted hash). `pickle` hashing would change with pickle protocol
-version. Projecting to a canonical JSON object (sorted lists, regex
-`.pattern` extracted, tuples → lists) gives a hash that depends only
-on the rule *content*, not on declaration order or Python's internal
-representation. That's the property `agentcam compare` needs.
+version. Projecting to a canonical JSON object (regex `.pattern`
+and `.flags` extracted, tuples → lists, top-level keys sorted)
+gives a hash that depends only on the parts of the rule set the
+scanner actually consults, with no interpreter or pickle-version
+coupling.
 
-**Why sort before hashing.** The existing `_BUILTIN_RULESET` declares
-matchers in a readability order, not a sorted order. A future
-maintainer reordering a tuple for legibility (e.g. grouping all auth-
-adjacent segments together) would silently change the hash if we
-hashed declaration order — and break every previously-shipped
-report's "the built-in hash matches" check.
+**Why declaration order IS part of the canonical form** (Codex
+review 2026-05-22). `scan_paths` emits at most one flag per matcher
+class per file via first-match-wins (``_emit_first_match``).
+``src/auth/login.py`` reports either ``auth path`` or ``login path``
+depending on which segment comes first in the tuple. The hash must
+track that, otherwise a future maintainer reordering for readability
+would silently change scanner output while the manifest's
+``merged_rules_sha256`` claimed nothing had changed — defeating the
+whole point of putting the hash on the report. Order matters; the
+canonical form preserves it.
+
+**Why `re.Pattern.flags` is part of the canonical form** (same Codex
+finding). Two patterns with the same `.pattern` string but
+different flag bits (e.g. ``IGNORECASE`` on vs off) scan differently
+— `(?i)foo` and `foo` match different inputs. Hashing only
+`.pattern` would let a flag change silently coexist with the same
+hash. Including `pat.flags` (an int) in the canonical row closes
+that hole.
 
 **Why ship the substrate without the YAML loader.** Same playbook as
 #27 (`RuleSet` substrate before the YAML loader): land the data
