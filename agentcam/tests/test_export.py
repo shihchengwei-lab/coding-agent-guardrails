@@ -115,16 +115,18 @@ class TestExportHappyPath:
 
 class TestManifestRedaction:
     def test_manifest_redacts_token_in_argv(self, tmp_git_repo: Path):
-        # Run an agent command whose argv contains a token shape.
+        # Codex P3 finding: the original version of this test claimed
+        # to exercise a token-in-argv scenario but didn't actually
+        # pass a token, so the assertion was vacuous. Now we put a
+        # real-shape token in argv and assert it is NOT in the
+        # redacted manifest blob anywhere (raw argv slot, redacted
+        # argv slot, any string value).
+        fake_token = "sk-VeryFakeReviewerTokenForTestOnly0123456789"
         proc = _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c",
             "open('x.txt','w').write('x')",
-            # Token-shaped arg embedded in argv. redact_argv already
-            # redacts this in the live manifest's command_argv_redacted;
-            # the bundle's manifest.redacted.json must not contain it
-            # in any field at all (i.e. raw should be dropped or
-            # redacted too).
+            "--api-key", fake_token,
         )
         assert proc.returncode == 0
         rid = _run_dir(tmp_git_repo).name
@@ -133,20 +135,24 @@ class TestManifestRedaction:
 
         with zipfile.ZipFile(out) as zf:
             with zf.open("manifest.redacted.json") as fp:
-                redacted = json.loads(fp.read().decode("utf-8"))
-        text_dump = json.dumps(redacted)
-        # The raw argv field must not be a verbatim copy of a secret-
-        # bearing argv. We use the structurally-true assertion: if
-        # command_argv_raw is present at all, it must be the same as
-        # command_argv_redacted (i.e. raw has been scrubbed too).
-        if "command_argv_raw" in redacted:
-            assert (
-                redacted["command_argv_raw"]
-                == redacted["command_argv_redacted"]
-            ), (
-                "redacted manifest must not preserve the unredacted "
-                "argv next to the redacted one"
-            )
+                blob = fp.read().decode("utf-8")
+            redacted = json.loads(blob)
+
+        # Primary assertion: the unredacted token must not appear
+        # ANYWHERE in the bundle's manifest blob -- not in argv_raw,
+        # not in argv_redacted, not in any other string value.
+        assert fake_token not in blob, (
+            "redacted manifest leaks the raw token from argv"
+        )
+        # Defense-in-depth: raw and redacted argv lists must match
+        # post-bundling (redact_manifest forces raw to mirror redacted).
+        assert (
+            redacted["command_argv_raw"]
+            == redacted["command_argv_redacted"]
+        ), (
+            "redacted manifest must not preserve the unredacted "
+            "argv next to the redacted one"
+        )
 
     def test_manifest_redacted_no_inline_token_leak(
         self, tmp_git_repo: Path,
@@ -191,6 +197,25 @@ class TestBundleMetadata:
                     f"{fname}: checksum {expected_hex} does not match "
                     f"actual {actual}"
                 )
+
+    def test_checksums_covers_export_notes(self, tmp_git_repo: Path):
+        # Codex P2 finding: EXPORT_NOTES.md was being added AFTER
+        # checksums.txt was computed, so the notes were unverifiable
+        # despite the notes themselves claiming "checksums cover every
+        # other file in the bundle". Lock in the corrected order.
+        rid = _make_one_run(tmp_git_repo)
+        out = tmp_git_repo / "share.zip"
+        _agentcam(tmp_git_repo, "export", rid, "--output", str(out))
+        with zipfile.ZipFile(out) as zf:
+            leaves = {Path(n).name for n in zf.namelist()}
+            checksums_text = zf.read("checksums.txt").decode("utf-8")
+        assert "EXPORT_NOTES.md" in leaves
+        assert "EXPORT_NOTES.md" in checksums_text, (
+            "EXPORT_NOTES.md must appear in checksums.txt"
+        )
+        # checksums.txt itself is the one file we don't checksum (would
+        # be self-referential).
+        assert "checksums.txt" not in checksums_text
 
     def test_export_notes_present_and_explains_redaction(
         self, tmp_git_repo: Path,

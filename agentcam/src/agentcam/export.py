@@ -170,12 +170,16 @@ def build_bundle_files(
         if stderr_raw.exists():
             files["stderr.log"] = stderr_raw.read_bytes()
 
-    # Checksums + notes are computed last so they can reference everything
-    # else by name.
-    files["checksums.txt"] = _checksums_for(files)
+    # EXPORT_NOTES first so checksums.txt can cover it. Order matters:
+    # Codex review caught that the previous order (checksums first,
+    # notes second) left EXPORT_NOTES unverifiable, even though the
+    # notes themselves claim "checksums cover every other file".
+    # checksums.txt itself is the only file not in the table -- it's
+    # self-referential, so listing it would require a second pass.
     files["EXPORT_NOTES.md"] = _export_notes(
         run_dir=run_dir, files=files, include_raw=include_raw,
     ).encode("utf-8")
+    files["checksums.txt"] = _checksums_for(files)
     return files
 
 
