@@ -7,6 +7,41 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Added (2026-05-22, `agentcam export` redacted share bundle)
+
+- **New `agentcam export <run_id>` CLI subcommand** producing a flat
+  ZIP at `./agentcam-export-<run_id>.zip` (or `--output <path>`).
+  Bundle contents:
+  - `AGENT_RUN_REPORT.md`
+  - `manifest.redacted.json` (every string value passes through
+    `redaction.redact_text`; `command_argv_raw` is overwritten with
+    the already-redacted form, so raw argv never leaves the
+    originating machine)
+  - `stdout.redacted.log` / `stderr.redacted.log`
+  - `checksums.txt` (sha256 over every other bundle file)
+  - `EXPORT_NOTES.md` (what's in, what's out, redaction caveats)
+- **Raw logs excluded by default.** `--include-raw` is the
+  documented opt-in for users who understand the risk and need the
+  raw streams in the bundle.
+- **`agentcam export latest`** shortcut selects the most recently
+  modified run.
+- **`--force` to overwrite an existing output**, otherwise refuses.
+  **Path-traversal defense**: a regex screen on `run_id`
+  (single-segment alphanumerics + `.`, `_`, `-`) plus a
+  resolved-parent check that catches smuggled `..` or symlinks
+  planted under `runs/`.
+- **Atomic write** via `.tmp` + `os.replace` so a crash mid-zip
+  cannot leave a half-finished `.zip` that looks complete.
+- **Does not upload, telemetry, or phone home.** Stays local; the
+  user chooses the channel.
+- **+16 tests** in `tests/test_export.py` covering happy paths,
+  raw-exclusion / opt-in, latest shortcut, error paths (unknown id,
+  no git repo, no runs, existing output without --force, with
+  --force, path-traversal rejection), checksum validity, manifest
+  redaction (argv mirror + no token leak), EXPORT_NOTES content.
+- New module `src/agentcam/export.py`. See `docs/design.md`
+  decision #31 for the full rationale.
+
 ### Changed (2026-05-22, no-diff preservation when output risk visible)
 
 - **`agentcam run` now preserves no-diff successful runs when the

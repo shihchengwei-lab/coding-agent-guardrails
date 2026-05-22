@@ -919,6 +919,85 @@ ruleset can register medium-severity extension matchers without
 another `scan_paths` edit. Built-in behavior is unchanged because
 iterating an empty tuple is a no-op.
 
+## 31. `agentcam export <run_id>` for share-safe bundles
+
+**Decision.** A new local-only CLI subcommand
+`agentcam export <run_id>` builds a flat ZIP at
+`./agentcam-export-<run_id>.zip` containing:
+
+- `AGENT_RUN_REPORT.md`
+- `manifest.redacted.json` (every string value passes through
+  `redaction.redact_text`; `command_argv_raw` is overwritten with
+  the already-redacted form)
+- `stdout.redacted.log` / `stderr.redacted.log`
+- `checksums.txt` (sha256 over every other bundle file)
+- `EXPORT_NOTES.md`
+
+Raw `stdout.log` / `stderr.log` are excluded by default. `--include-raw`
+is the documented opt-in for users who understand the risk.
+
+**Why a CLI subcommand, not a "share button" or upload.** Decisions
+#19, #20, #22 reject hosted SaaS and any default-on upload. Sharing
+is a developer-driven flow: build a zip locally, send it via whatever
+channel the user already trusts. agentcam writes the file; agentcam
+does not send it.
+
+**Why a redacted manifest, not a copy of `manifest.json`.** The live
+manifest already passes argv through `redact_argv` for
+`command_argv_redacted`, but `command_argv_raw` is preserved on disk
+for forensic review on the originating machine. A share bundle has
+different threat properties: the recipient is no longer the user who
+ran the agent, so anything in the manifest that's "okay locally" must
+be re-considered. Forcing `command_argv_raw == command_argv_redacted`
+in the bundle is the simplest defense against argv-shaped secrets that
+slip past `redact_text` (e.g. a custom token format).
+
+**Why a flat ZIP, not a directory tree.** Brief shows a nested
+`agentcam-export-<run_id>/...` layout. A flat zip works the same way
+on every OS when double-clicked (no nested-dir extraction), and a
+`zipfile.ZIP_DEFLATED` flat archive deflates better than a tree
+because all paths share the same parent. Tests assert on leaf names
+only, so either layout would pass — flat won on Windows-friendliness.
+
+**Why path-traversal defense lives in `resolve_run_dir`, not in the
+CLI layer.** The CLI parses `run_id` as a string, then hands it to
+the resolver. Defense-in-depth: a regex screen catches obvious junk
+(`/`, `\\`, anything outside `[A-Za-z0-9._-]`), and a
+resolved-parent check catches the smarter cases (symlinks planted
+under `runs/`, smuggled `..` strings that pass the regex). The
+resolved-parent check is the actual security guarantee; the regex
+is just to fail fast with a clear error.
+
+**Why "latest" as a special string instead of `--latest`.** A
+literal `latest` slug cannot collide with a real run_id (real ids
+start with a date string `YYYYMMDD-...`). The string form keeps the
+CLI grammar uniform: `agentcam export <run_id>` always takes one
+positional, and the user reasoning becomes "this string identifies
+the run", whether it's a real id or the meta-id "latest".
+
+**Why atomic write (`.tmp` + `replace`).** A crash mid-zip would
+otherwise leave a partial `.zip` file on disk that looks complete
+until the user tries to extract it. The tmp-then-replace pattern
+gives an all-or-nothing visible state.
+
+**Known limitations.**
+- *Manifest paths still leak repo location.* Absolute paths in
+  `cwd`, `git_root`, `git_dir`, `paths.*` are preserved verbatim;
+  they reveal the user's directory layout (e.g.
+  `/home/alice/projects/foo`). For most users this is acceptable —
+  the bundle is named for sharing with someone they already trust.
+  A future improvement could relativize paths under `git_root` before
+  bundling; deferred until evidence that a leak hurts.
+- *Bundle includes redacted-but-not-bytewise-stripped logs.* If a
+  secret escapes the redactor (best-effort), it can land in
+  `stdout.redacted.log`. `EXPORT_NOTES.md` says this explicitly so
+  the user reviews before sending publicly.
+- *No content negotiation.* Future formats (SARIF, PR-comment) will
+  be separate subcommands or flags; `agentcam export` stays the
+  developer-share path.
+
+---
+
 ## 30. No-diff preservation when output risk evidence exists
 
 **Decision.** Decision #23 said "no-diff successful runs auto-delete

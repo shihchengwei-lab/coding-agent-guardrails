@@ -83,6 +83,46 @@ def build_parser() -> argparse.ArgumentParser:
         help="The command to run, after a `--` separator.",
     )
 
+    export = sub.add_parser(
+        "export",
+        help="Build a share-safe redacted ZIP bundle for one run.",
+        description=(
+            "Produces agentcam-export-<run_id>.zip in the current "
+            "directory by default. Bundle includes report, redacted "
+            "manifest, redacted logs, sha256 checksums, and export "
+            "notes. Raw logs are excluded unless --include-raw is given."
+        ),
+    )
+    export.add_argument(
+        "run_id",
+        help=(
+            "Run id under .git/agentcam/runs/, or the literal "
+            "'latest' to select the most recently modified run."
+        ),
+    )
+    export.add_argument(
+        "--output",
+        default=None,
+        help=(
+            "Destination zip path. Defaults to "
+            "./agentcam-export-<run_id>.zip in the current directory."
+        ),
+    )
+    export.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite the output path if it already exists.",
+    )
+    export.add_argument(
+        "--include-raw",
+        action="store_true",
+        help=(
+            "Include raw stdout.log / stderr.log in the bundle. Raw "
+            "logs may contain secrets the redactor missed; off by "
+            "default for safer sharing."
+        ),
+    )
+
     return parser
 
 
@@ -112,8 +152,61 @@ def main(argv: list[str] | None = None) -> int:
         from agentcam.hooks import cmd_hook_session_end
         return cmd_hook_session_end()
 
+    if args.cmd == "export":
+        return _export_command(args)
+
     parser.error(f"unknown subcommand: {args.cmd}")
     return 2  # unreachable; parser.error exits
+
+
+def _export_command(args) -> int:
+    from agentcam.export import ExportError, export, resolve_run_dir
+    from agentcam.git_state import NotAGitRepoError, resolve_git_dir
+
+    cwd = Path.cwd()
+    try:
+        git_dir = resolve_git_dir(cwd)
+    except NotAGitRepoError:
+        print(
+            "agentcam: not in a git repository. agentcam export needs "
+            "to find runs under <git_dir>/agentcam/runs/.",
+            file=sys.stderr,
+        )
+        return 2
+    except Exception as e:  # noqa: BLE001
+        print(f"agentcam: git error: {e}", file=sys.stderr)
+        return 2
+
+    # Resolve the run early so we can name the default output zip
+    # after the *effective* run_id ('latest' becomes a real id here).
+    try:
+        run_dir = resolve_run_dir(git_dir, args.run_id)
+    except ExportError as e:
+        print(f"agentcam: {e}", file=sys.stderr)
+        return 2
+
+    if args.output:
+        out_path = Path(args.output)
+    else:
+        out_path = cwd / f"agentcam-export-{run_dir.name}.zip"
+
+    try:
+        export(
+            git_dir=git_dir,
+            run_id=run_dir.name,  # already-resolved id; bypass 'latest'
+            output_path=out_path,
+            force=args.force,
+            include_raw=args.include_raw,
+        )
+    except ExportError as e:
+        print(f"agentcam: {e}", file=sys.stderr)
+        return 2
+
+    print(
+        f"agentcam: export written to {out_path}",
+        file=sys.stderr,
+    )
+    return 0
 
 
 # ---------------------------------------------------------------------------

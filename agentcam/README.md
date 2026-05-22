@@ -210,6 +210,29 @@ output by accident.
 
 ---
 
+## Sharing a run
+
+To share one run with a colleague or attach it to a bug report,
+use `agentcam export`:
+
+```bash
+agentcam export <run_id>
+# → ./agentcam-export-<run_id>.zip
+
+agentcam export latest                 # shortcut for the most recent run
+agentcam export latest --output ./bug-1234.zip
+```
+
+The default bundle contains the Markdown report, a redacted manifest,
+the redacted logs, sha256 checksums, and an `EXPORT_NOTES.md`
+explaining what's inside. **Raw logs are excluded by default.** Pass
+`--include-raw` if you understand the risk (raw logs may carry
+secrets the redactor missed) and need them anyway. agentcam export
+does not upload anything — the zip is written locally; you decide
+where it goes.
+
+---
+
 ## Risk flags (heuristics)
 
 Two levels: **HIGH** and **MEDIUM**. There is no LOW — filename-only
@@ -410,17 +433,20 @@ The codebase is intentionally small (one source module per concern):
 
 ```
 src/agentcam/
-├── cli.py               # argparse + wrap-mode orchestrator
+├── cli.py               # argparse + wrap-mode orchestrator + export
 ├── hooks.py             # Claude Code SessionStart / SessionEnd hooks
 ├── runner.py            # threads-based tee + exit code interpretation
 ├── git_state.py         # porcelain parser + git_dir resolver
 ├── paths.py             # run_id + collision-safe directory creation
 ├── redaction.py         # streaming secret redactor
-├── scanner.py           # path + output risk patterns (+ RuleSet)
+├── scanner.py           # path + output risk patterns (+ RuleSet
+│                        # + ruleset provenance hashing)
 ├── dependency_probe.py  # pip / pyproject / npm manifest diff
 ├── report.py            # AGENT_RUN_REPORT.md generator + shared
 │                        # write_run_artifacts helper
-└── models.py            # dataclass definitions (incl. ReportBundle)
+├── export.py            # `agentcam export` redacted bundle builder
+└── models.py            # dataclass definitions (ReportBundle,
+                         # CaptureCapability, RulesetProvenance)
 ```
 
 Read [`docs/design.md`](docs/design.md) before changing anything — it
