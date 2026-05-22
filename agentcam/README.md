@@ -317,12 +317,20 @@ or any other remote service — pushing to a remote is an independent
 action that agentcam does not see, and reports are generated regardless
 of whether the repo has ever been pushed.
 
-agentcam makes no network calls. It does not phone home. There is no
-account, no upload, no opt-in or opt-out toggle for telemetry — because
-there is no telemetry to toggle.
+agentcam itself makes no network calls and does not phone home. There is
+no account, no upload, no opt-in or opt-out toggle for telemetry —
+because there is no telemetry to toggle.
 
-If you ever observe an outbound connection from agentcam, that's a bug;
-please file an issue.
+This does **not** mean agentcam monitors the network activity of the
+wrapped agent or subprocess. If the wrapped command, an agent SDK, a
+browser subprocess, a shell script, or an MCP client makes an outbound
+network request, agentcam does not currently observe, block, or record
+that request. agentcam can only attest that its own process is silent on
+the network; it cannot attest that a given agent run produced no
+external traffic.
+
+If you ever observe an outbound connection from agentcam itself, that's
+a bug; please file an issue.
 
 ---
 
@@ -336,6 +344,12 @@ please file an issue.
   stdout / stderr and what changes in the git working tree. The agent's
   internal tool calls (file reads, web requests, model calls) are
   invisible.
+- **Does not monitor wrapped-agent network activity.** agentcam itself
+  makes no network calls, but it also does not observe, block, or
+  record outbound requests made by the wrapped command, subprocesses,
+  model SDKs, browser tools, shell scripts, or MCP clients. "agentcam
+  is silent on the network" is not the same as "this agent run produced
+  no external traffic."
 - **Best-effort redaction.** New secret formats may slip through. Do not
   rely on agentcam alone for credential hygiene.
 - **Hook mode captures no stdout/stderr.** Claude Code does not pipe

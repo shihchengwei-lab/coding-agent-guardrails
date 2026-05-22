@@ -932,6 +932,14 @@ iterating an empty tuple is a no-op.
   itself is still v0.2; opt-in only, never default-on.*
 - Multi-run dashboard
 - Hosted SaaS dashboard
+- Wrapped-agent network monitoring (packet capture, DNS log, MCP
+  gateway, eBPF, network allowlist / approval UI). agentcam's
+  "makes no network calls" claim covers the agentcam process itself
+  only — it is not a security guarantee about the wrapped command,
+  agent SDK, browser subprocess, shell script, or MCP client. README
+  "Known limitations" carries the user-facing version of this
+  boundary; do not let docs reword it into something that implies
+  agentcam can attest to a quiet-network run.
 
 If a feature request hits any of these, the answer is "v0.2+, document the
 ask in an issue." See README "Known limitations" for the user-facing
