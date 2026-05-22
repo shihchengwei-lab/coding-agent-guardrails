@@ -608,10 +608,13 @@ Claude Code's own stdout/stderr — they're piped to the terminal, not
 to the hook subprocess. The hook only sees the JSON payload Claude
 Code chose to expose (`session_id`, `cwd`, `transcript_path`). To
 capture transcript text we would have to parse `transcript_path`
-(JSONL file), which is a v0.3+ improvement. Hook mode reports show
-empty placeholder log files; the Logs section in the report wording
-will be misleading until a `capture_mode: hook` manifest field
-exists.
+(JSONL file), which is the "Claude Code transcript ingestion" v0.3+
+roadmap entry — do **not** implement it as part of any other
+feature; it has its own acceptance criteria, redaction surface, and
+out-of-scope list. The 2026-05-22 capture-metadata work (decision
+#28) records `transcript = "available_not_ingested"` when Claude
+exposes the path, so readers know agentcam saw the path but
+deliberately did not read it.
 
 **Known limitations.**
 - *Sanitized session-id collision*: two distinct raw IDs that

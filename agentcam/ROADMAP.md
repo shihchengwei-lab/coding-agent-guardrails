@@ -248,6 +248,67 @@ add; opens an enterprise door without changing the CLI's positioning.
 
 ## v0.3+ candidates (later)
 
+### Claude Code transcript ingestion for hook mode
+
+**What.** Parse Claude Code's `transcript_path` from the SessionStart /
+SessionEnd hook payload and produce a local, redacted, best-effort
+transcript-derived evidence summary for hook-mode reports. The
+existing 2026-05-22 `capture` block already records
+`transcript = "available_not_ingested"` when Claude exposes the path;
+this entry is the next step — actually reading it.
+
+**Why.** Hook mode cannot capture Claude Code's stdout/stderr (no
+terminal output reaches the hook subprocess). Transcript ingestion is
+the only currently documented path toward richer hook-mode visibility
+without blocking Claude Code or replacing the user-facing TUI. PTY-
+backed wrapping (v0.2 item #2) addresses the same gap for *other*
+agents but does not help Claude hook-mode users — they're not using
+the wrap path at all.
+
+**Free or paid.** Free / OSS. The parser is small; risk-rule packs
+built on top would be the paid layer (consistent with #4).
+
+**Timing.** Open. File an issue with a concrete use case (e.g. "I want
+to see which files my Claude session asked to read, even when no diff
+landed"); it'll be considered.
+
+**Proposed scope.**
+
+- Best-effort JSONL parser (Claude Code transcript format)
+- Local-only — agentcam never copies the transcript file
+- Redacted output only by default; raw transcript text never enters
+  the report
+- Tolerate missing / unreadable / changed transcript format —
+  parser failure must not block Claude Code and must not prevent
+  git-diff report generation
+- Report ingestion status in the existing `capture.transcript` field
+  (flips from `"available_not_ingested"` to `"ingested_redacted"`)
+- No upload, no aggregation, no LLM summarization
+
+**Acceptance criteria (when built).**
+
+- Hook mode reads `transcript_path` if present and parseable.
+- Missing / inaccessible / malformed transcript degrades to
+  `capture.transcript = "unknown"` (or stays at
+  `"available_not_ingested"` if the parse was attempted and skipped);
+  never a hard failure.
+- Parser failure does not block Claude Code (hook still exits 0) and
+  does not prevent the existing git-diff report from generating.
+- Report shows transcript ingestion status in the Capture Visibility
+  section.
+- Raw transcript is not copied into `runs/<run_id>/` by default.
+- Any derived transcript evidence passes through the existing
+  redaction pipeline.
+- Tests cover: missing transcript path, malformed JSONL, oversized
+  file, basic valid transcript, redaction of secret-shaped content
+  inside a transcript line.
+
+**Out of scope for this entry even if built.** Per-turn report (one
+report per user prompt — UserPromptSubmit vs SessionStart, see
+`docs/design.md` §24), full event-stream layer, tool-call
+reconstruction claims, file-read reconstruction claims, model-call
+reconstruction claims, LLM-based summarization of transcript text.
+
 ### 5. Heuristic verification (`Tests observed`, `Build observed`, `Lint observed`)
 
 Currently always `unknown` (`docs/design.md` § 9). Could be done by parsing

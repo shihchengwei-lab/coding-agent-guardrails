@@ -7,6 +7,21 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Roadmap (2026-05-22, Claude Code transcript ingestion entry)
+
+- **`ROADMAP.md` `v0.3+ candidates` now lists "Claude Code transcript
+  ingestion for hook mode"** with What / Why / Proposed scope /
+  Acceptance criteria. Explicitly carries the local-only,
+  redacted-only, non-blocking constraints and the
+  no-LLM-summarization out-of-scope line.
+- **`docs/design.md` #24 (hook mode)** updated to point at the
+  dedicated roadmap entry instead of describing transcript parsing
+  inline, and to note that the 2026-05-22 capture metadata already
+  surfaces ingestion status (`transcript = "available_not_ingested"`)
+  so readers know agentcam saw the path but deliberately did not read
+  it.
+- No source / test / runtime changes for this entry.
+
 ### Added (2026-05-22, capture-visibility metadata)
 
 - **`manifest.json` now carries a `capture` block** declaring what
