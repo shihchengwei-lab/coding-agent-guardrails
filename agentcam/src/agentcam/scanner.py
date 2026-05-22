@@ -445,3 +445,82 @@ def default_ruleset() -> RuleSet:
     YAML-loaded user rules without monkey-patching module state.
     """
     return _BUILTIN_RULESET
+
+
+# ---------------------------------------------------------------------------
+# Ruleset provenance (decision #29)
+# ---------------------------------------------------------------------------
+
+import hashlib
+import json as _json
+
+
+# Stable identifier for the built-in rule set shipped with this release.
+# Keep this id in sync with the agentcam release line if you ever ship a
+# parallel ruleset (e.g. an "agentcam-strict" preset); the *version* on
+# the provenance struct is the agentcam version that built it.
+BUILTIN_RULESET_ID = "agentcam-default"
+
+
+def _canonical_ruleset(rs: "RuleSet") -> dict:
+    """Project a :class:`RuleSet` to a JSON-serializable canonical form.
+
+    Sorted lists everywhere so two rule sets with the same content but
+    different declaration order hash equal. Otherwise reordering a
+    tuple for readability would silently change the hash and confuse
+    ``agentcam compare``.
+    """
+    def _pm(matchers: PathMatchers) -> dict:
+        return {
+            "segments": sorted([list(t) for t in matchers.segments]),
+            "prefixes": sorted([list(t) for t in matchers.prefixes]),
+            "basenames": sorted([list(t) for t in matchers.basenames]),
+            "extensions": sorted([list(t) for t in matchers.extensions]),
+        }
+
+    def _outputs(rows) -> list:
+        # re.Pattern → its .pattern string, then sorted by (pattern, label).
+        return sorted([[pat.pattern, label] for pat, label in rows])
+
+    return {
+        "high_paths": _pm(rs.high_paths),
+        "medium_paths": _pm(rs.medium_paths),
+        "high_output": _outputs(rs.high_output),
+        "medium_output": _outputs(rs.medium_output),
+    }
+
+
+def compute_ruleset_sha256(rs: "RuleSet") -> str:
+    """Deterministic ``sha256:<hex>`` over the canonical form of ``rs``.
+
+    Stability guarantee: feeding the same logical rule set in any
+    declaration order yields the same hash. Adding/removing/renaming a
+    rule changes the hash. Used by :func:`provenance_for_builtin_ruleset`
+    and by future YAML-loader integration to put a single fingerprint on
+    every report.
+    """
+    canonical = _canonical_ruleset(rs)
+    blob = _json.dumps(canonical, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def provenance_for_builtin_ruleset() -> "RulesetProvenance":
+    """Provenance struct for the default (built-in-only) rule set.
+
+    YAML-loaded custom rules (roadmap #4) will return a different
+    struct from a sibling factory; the manifest schema is shared.
+    """
+    # Local import: models.py imports nothing from scanner, so this
+    # avoids a circular import at module-load time.
+    from agentcam.models import RulesetProvenance
+    from agentcam import __version__
+
+    merged = compute_ruleset_sha256(default_ruleset())
+    return RulesetProvenance(
+        builtin_ruleset_id=BUILTIN_RULESET_ID,
+        builtin_ruleset_version=__version__,
+        custom_rules_path=None,
+        custom_rules_sha256=None,
+        merged_rules_sha256=merged,
+        load_status="builtin_only",
+    )

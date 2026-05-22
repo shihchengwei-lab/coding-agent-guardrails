@@ -919,6 +919,81 @@ ruleset can register medium-severity extension matchers without
 another `scan_paths` edit. Built-in behavior is unchanged because
 iterating an empty tuple is a no-op.
 
+## 29. Ruleset provenance in manifest + report
+
+**Decision.** Each `manifest.json` carries a `ruleset` block, and each
+`AGENT_RUN_REPORT.md` carries a `## Scanner Ruleset` section,
+identifying which rule set produced the risk flags. Built-in-only
+mode is represented explicitly (`builtin_ruleset_id="agentcam-default"`,
+`load_status="builtin_only"`, `custom_rules_path=null`). The
+`merged_rules_sha256` is a deterministic SHA-256 over the canonical
+JSON projection of the effective rule set, in `sha256:<hex>` format.
+
+**Why now, before the YAML loader.** Once the YAML loader (roadmap
+#4) lands, two reports diffed by `agentcam compare` or by a human
+could disagree because one used a custom YAML and the other used the
+built-in. Without provenance, the reader has to externally check
+`.agentcam/rules.yaml` history to disambiguate. Landing provenance
+first means every report ever produced records which rule set
+generated its flags — including the ones that landed before custom
+rules existed, which all explicitly say `"builtin_only"`.
+
+**Why a stable canonical form, not raw struct hashing.** Python
+`hash()` of a `RuleSet` would change across interpreter sessions
+(salted hash). `pickle` hashing would change with pickle protocol
+version. Projecting to a canonical JSON object (sorted lists, regex
+`.pattern` extracted, tuples → lists) gives a hash that depends only
+on the rule *content*, not on declaration order or Python's internal
+representation. That's the property `agentcam compare` needs.
+
+**Why sort before hashing.** The existing `_BUILTIN_RULESET` declares
+matchers in a readability order, not a sorted order. A future
+maintainer reordering a tuple for legibility (e.g. grouping all auth-
+adjacent segments together) would silently change the hash if we
+hashed declaration order — and break every previously-shipped
+report's "the built-in hash matches" check.
+
+**Why ship the substrate without the YAML loader.** Same playbook as
+#27 (`RuleSet` substrate before the YAML loader): land the data
+shape and the call sites first, so the loader's later integration is
+a single producer of a `RulesetProvenance` struct + a `RuleSet`. The
+provenance struct already has slots for `custom_rules_path`,
+`custom_rules_sha256`, and any `load_status` value other than
+`"builtin_only"` — those just stay null/`"builtin_only"` until the
+loader lands.
+
+**Why `builtin_ruleset_id` is a constant, but `builtin_ruleset_version`
+tracks `agentcam.__version__`.** The id distinguishes parallel rule
+sets if we ever ship more than one preset (e.g. `agentcam-strict`).
+The version says which agentcam release built it — so an
+`agentcam-default / 0.1.0` report and an `agentcam-default / 0.3.0`
+report can differ legitimately because we changed built-in rules
+between releases, and the `merged_rules_sha256` will reflect that.
+
+**Why ride on top of the existing `RuleSet` (#27), not a new struct.**
+`_canonical_ruleset` reads `PathMatchers.segments` etc. directly. If
+we re-shaped the rule data into something fancier for provenance,
+we'd have two parallel formats to keep in sync. As long as the
+canonical projection is in `scanner.py`, the hash automatically
+tracks whatever the scanner actually uses.
+
+**Known limitations.**
+- *Custom-rule layer not implemented yet.* Today every production
+  call site passes `provenance_for_builtin_ruleset()`, so
+  `custom_rules_*` are always null. The YAML loader will add a
+  sibling factory.
+- *Hash does not cover redaction patterns.* Redaction lives in a
+  separate module (`redaction.py`) with its own constants. If
+  redaction patterns change between releases, the manifest's
+  `agentcam_version` field captures that — not `merged_rules_sha256`.
+- *Regex flag bits not included.* `re.Pattern.flags` is not part of
+  the canonical projection (only `.pattern` is). Adding `(?i)` to a
+  pattern would change the .pattern string, so it's still detected;
+  but rebuilding a pattern via `re.compile(s, re.IGNORECASE)` vs
+  `re.compile(s)` with the same source string would NOT. Acceptable
+  because the built-in patterns either embed flags inline (`(?i)…`)
+  or rely on documented module-level conventions.
+
 ## 28. Capture Visibility metadata in manifest + report
 
 **Decision.** Each `manifest.json` carries a `capture` block, and each

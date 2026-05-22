@@ -227,7 +227,7 @@ def _do_session_end() -> int:
     from agentcam.models import capture_for_claude_hook
     from agentcam.paths import create_run_dir
     from agentcam.report import write_run_artifacts
-    from agentcam.scanner import scan_paths
+    from agentcam.scanner import provenance_for_builtin_ruleset, scan_paths
 
     payload = _read_hook_input()
     if payload is None:
@@ -372,6 +372,7 @@ def _do_session_end() -> int:
             terminal_forward_degraded=False,
             platform_label=_platform.system().lower(),
             capture=capture,
+            ruleset=provenance_for_builtin_ruleset(),
         )
     except Exception:
         # Half-written run dir is worse than no run dir — it confuses

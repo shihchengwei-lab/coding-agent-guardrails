@@ -472,3 +472,33 @@ class TestCaptureVisibilityHookMode:
         _agentcam_hook(tmp_git_repo, "hook-session-end", bare_end)
         cap = self._manifest(tmp_git_repo)["capture"]
         assert cap["transcript"] == "unknown"
+
+
+# ---------------------------------------------------------------------------
+# Ruleset provenance (Feature 4 / design.md #29)
+# ---------------------------------------------------------------------------
+
+class TestRulesetProvenanceHookMode:
+    def _manifest(self, repo: Path) -> dict:
+        run_dir = next(_runs_dir(repo).iterdir())
+        return json.loads(
+            (run_dir / "manifest.json").read_text(encoding="utf-8")
+        )
+
+    def test_hook_mode_manifest_has_same_ruleset_shape_as_wrap(
+        self, tmp_git_repo: Path,
+    ):
+        sid = "test-ruleset-1"
+        _agentcam_hook(
+            tmp_git_repo, "hook-session-start",
+            _hook_payload(sid, tmp_git_repo, "SessionStart"),
+        )
+        (tmp_git_repo / "made_by_agent.txt").write_text("hi")
+        _agentcam_hook(
+            tmp_git_repo, "hook-session-end",
+            _hook_payload(sid, tmp_git_repo, "SessionEnd"),
+        )
+        rs = self._manifest(tmp_git_repo)["ruleset"]
+        assert rs["builtin_ruleset_id"] == "agentcam-default"
+        assert rs["load_status"] == "builtin_only"
+        assert rs["merged_rules_sha256"].startswith("sha256:")

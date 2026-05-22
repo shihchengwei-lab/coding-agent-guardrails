@@ -197,6 +197,31 @@ def capture_for_wrap_pipe(*, empty_run_policy: str) -> CaptureCapability:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class RulesetProvenance:
+    """Which rule set produced the risk flags in this report.
+
+    See ``docs/design.md`` decision #29 (Ruleset provenance) for the
+    rationale. Built-in-only mode is represented explicitly so future
+    YAML-loaded custom rule sets (roadmap #4) can be distinguished by
+    a non-null ``custom_rules_path`` + ``custom_rules_sha256`` and a
+    ``load_status`` other than ``"builtin_only"``.
+
+    ``merged_rules_sha256`` is a deterministic hash of the *effective*
+    rule set (built-in alone today, built-in ⊕ custom in the future)
+    so two reports diffed by future ``agentcam compare`` (or by a
+    human) cannot silently disagree because one used a different
+    ruleset. Format: ``sha256:<hex>``.
+    """
+
+    builtin_ruleset_id: str
+    builtin_ruleset_version: str
+    custom_rules_path: str | None
+    custom_rules_sha256: str | None
+    merged_rules_sha256: str | None
+    load_status: str
+
+
 def capture_for_claude_hook(
     *,
     transcript_available: bool,
@@ -259,10 +284,11 @@ class RunManifest:
     agentcam_version: str
     paths: RunPaths
     # Optional for back-compat: legacy tests build RunManifest directly
-    # without setting capture. Production callers (cli.py, hooks.py)
-    # always supply one. When None, serialize_manifest omits the block
-    # and render_report skips the section.
+    # without setting capture / ruleset. Production callers (cli.py,
+    # hooks.py) always supply both. When None, serialize_manifest
+    # omits the block and render_report skips the section.
     capture: CaptureCapability | None = None
+    ruleset: RulesetProvenance | None = None
 
 
 @dataclass(frozen=True)

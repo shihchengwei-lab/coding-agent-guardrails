@@ -7,6 +7,38 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Added (2026-05-22, ruleset provenance)
+
+- **`manifest.json` now carries a `ruleset` block** identifying which
+  rule set produced the risk flags: `builtin_ruleset_id`,
+  `builtin_ruleset_version`, `custom_rules_path`,
+  `custom_rules_sha256`, `merged_rules_sha256` (deterministic SHA-256
+  over canonical JSON of the effective rule set, format
+  `sha256:<hex>`), `load_status`. Built-in-only mode is represented
+  explicitly so future YAML-loaded customs (roadmap #4) can be
+  distinguished by a non-null `custom_rules_path` and a
+  `load_status` other than `"builtin_only"`.
+- **`AGENT_RUN_REPORT.md` now has a compact `## Scanner Ruleset`
+  section** near the bottom (5 lines: id/version, custom path,
+  custom hash, merged hash, load status).
+- **`RulesetProvenance` dataclass** in `agentcam.models` (frozen,
+  slot-based); **`compute_ruleset_sha256` + `provenance_for_builtin_ruleset`**
+  in `agentcam.scanner`. Both wrap mode and hook mode call the same
+  factory, so reports across both modes carry the same provenance
+  shape.
+- **Hash determinism** guaranteed: canonical form sorts before
+  hashing so reordering tuples for readability doesn't silently
+  change the hash and confuse `agentcam compare` (roadmap v0.2 #5).
+- **`RunManifest.ruleset` is `Optional` with default `None`** for
+  back-compat; legacy callers don't break. `serialize_manifest`
+  omits the block when `None`; `render_report` skips the section.
+- **+11 unit tests** in `tests/test_ruleset_provenance.py` (hash
+  determinism + input-order independence, factory defaults, frozen
+  guard, serialize / render presence + absence). **+2 e2e tests** (1
+  wrap mode, 1 hook mode) confirming both modes write the same
+  provenance shape. Closes the prerequisite for roadmap #4 (YAML
+  loader). See `docs/design.md` decision #29.
+
 ### Roadmap (2026-05-22, Claude Code transcript ingestion entry)
 
 - **`ROADMAP.md` `v0.3+ candidates` now lists "Claude Code transcript

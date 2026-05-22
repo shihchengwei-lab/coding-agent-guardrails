@@ -135,7 +135,11 @@ def _run_command(args) -> int:
     from agentcam.redaction import StreamingRedactor, redact_argv
     from agentcam.report import write_run_artifacts
     from agentcam.runner import CommandNotFoundError, run_wrapped
-    from agentcam.scanner import scan_output, scan_paths
+    from agentcam.scanner import (
+        provenance_for_builtin_ruleset,
+        scan_output,
+        scan_paths,
+    )
 
     run_argv = _strip_leading_dashdash(args.argv or [])
     if not run_argv:
@@ -302,6 +306,7 @@ def _run_command(args) -> int:
         terminal_forward_degraded=run_result.terminal_forward_degraded,
         platform_label=platform.system().lower(),
         capture=capture,
+        ruleset=provenance_for_builtin_ruleset(),
     )
 
     # 10) Tell the user where to find the report (stderr so it doesn't pollute

@@ -472,3 +472,26 @@ class TestCaptureVisibility:
         assert proc.returncode == 0
         cap = _manifest(tmp_git_repo)["capture"]
         assert cap["empty_run_policy"] == "keep_empty_requested"
+
+
+# ---------------------------------------------------------------------------
+# Ruleset provenance (Feature 4 / design.md #29)
+# ---------------------------------------------------------------------------
+
+class TestRulesetProvenance:
+    def test_wrap_mode_manifest_has_ruleset_block(self, tmp_git_repo: Path):
+        proc = _agentcam(
+            tmp_git_repo, "run", "--",
+            sys.executable, "-c", "open('hi.txt','w').write('x')",
+        )
+        assert proc.returncode == 0
+        rs = _manifest(tmp_git_repo).get("ruleset")
+        assert rs is not None, "wrap mode manifest must carry ruleset block"
+        assert rs["builtin_ruleset_id"] == "agentcam-default"
+        assert rs["load_status"] == "builtin_only"
+        assert rs["custom_rules_path"] is None
+        assert rs["merged_rules_sha256"].startswith("sha256:")
+
+        report = _report(tmp_git_repo)
+        assert "## Scanner Ruleset" in report
+        assert "agentcam-default" in report

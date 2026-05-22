@@ -22,6 +22,7 @@ from agentcam.models import (
     GitState,
     ReportBundle,
     RiskFlag,
+    RulesetProvenance,
     RunManifest,
     RunPaths,
 )
@@ -88,6 +89,7 @@ def render_report(
         _render_verification_placeholder(),
         _render_rollback(manifest, bundle.state_after),
         _render_logs(manifest),
+        _render_scanner_ruleset(manifest.ruleset),
         _render_local_artifacts(manifest),
     ]
     return "\n\n".join(s for s in sections if s)
@@ -112,6 +114,7 @@ def write_run_artifacts(
     terminal_forward_degraded: bool,
     platform_label: str,
     capture: CaptureCapability | None = None,
+    ruleset: RulesetProvenance | None = None,
 ) -> ReportBundle:
     """Build manifest + Bundle, render report, write both artifacts.
 
@@ -180,6 +183,7 @@ def write_run_artifacts(
         agentcam_version=__version__,
         paths=run_paths,
         capture=capture,
+        ruleset=ruleset,
     )
 
     bundle = ReportBundle(
@@ -249,7 +253,20 @@ def serialize_manifest(m: RunManifest) -> dict:
         # JSON consumers can use `"capture" in data` to detect schema
         # presence cleanly. New production manifests always carry it.
         out["capture"] = _serialize_capture(m.capture)
+    if m.ruleset is not None:
+        out["ruleset"] = _serialize_ruleset(m.ruleset)
     return out
+
+
+def _serialize_ruleset(p: RulesetProvenance) -> dict:
+    return {
+        "builtin_ruleset_id": p.builtin_ruleset_id,
+        "builtin_ruleset_version": p.builtin_ruleset_version,
+        "custom_rules_path": p.custom_rules_path,
+        "custom_rules_sha256": p.custom_rules_sha256,
+        "merged_rules_sha256": p.merged_rules_sha256,
+        "load_status": p.load_status,
+    }
 
 
 def _serialize_capture(c: CaptureCapability) -> dict:
@@ -669,6 +686,28 @@ def _render_logs(m: RunManifest) -> str:
         "but should not be shared. They live under `.git/`, so they are NOT "
         "tracked by git, but they CAN be picked up by cloud sync, system "
         "backups, or by sharing the entire `.git/` directory."
+    )
+
+
+def _render_scanner_ruleset(p: RulesetProvenance | None) -> str:
+    """Render the `## Scanner Ruleset` section.
+
+    Compact: 4-5 lines, placed near the bottom of the report so it
+    doesn't compete with risk flags for attention. Returns "" when
+    ``p`` is None (legacy callers).
+    """
+    if p is None:
+        return ""
+    custom_path = p.custom_rules_path or "none"
+    custom_hash = p.custom_rules_sha256 or "—"
+    merged_hash = p.merged_rules_sha256 or "—"
+    return (
+        "## Scanner Ruleset\n\n"
+        f"- Built-in ruleset: `{p.builtin_ruleset_id}` / `{p.builtin_ruleset_version}`\n"
+        f"- Custom rules: {custom_path}\n"
+        f"- Custom rules hash: `{custom_hash}`\n"
+        f"- Merged rules hash: `{merged_hash}`\n"
+        f"- Load status: `{p.load_status}`"
     )
 
 
