@@ -130,6 +130,7 @@ def _run_command(args) -> int:
         resolve_git_dir,
         resolve_git_root,
     )
+    from agentcam.models import capture_for_wrap_pipe
     from agentcam.paths import RunIdCollisionError, create_run_dir
     from agentcam.redaction import StreamingRedactor, redact_argv
     from agentcam.report import write_run_artifacts
@@ -273,7 +274,16 @@ def _run_command(args) -> int:
     risk_flags.extend(_scan_log(Path(run_paths.stderr_raw), "stderr.log"))
 
     # 8-9) Shared post-run pipeline: dep probe + manifest + bundle +
-    # render + write. Same helper called from hook mode.
+    # render + write. Same helper called from hook mode. `capture`
+    # records what observation surface was active for this run -- see
+    # docs/design.md #28.
+    capture = capture_for_wrap_pipe(
+        empty_run_policy=(
+            "keep_empty_requested"
+            if args.keep_empty
+            else "auto_delete_clean_no_diff"
+        ),
+    )
     write_run_artifacts(
         state_before=state_before,
         state_after=state_after,
@@ -291,6 +301,7 @@ def _run_command(args) -> int:
         shell_used=run_result.shell_used,
         terminal_forward_degraded=run_result.terminal_forward_degraded,
         platform_label=platform.system().lower(),
+        capture=capture,
     )
 
     # 10) Tell the user where to find the report (stderr so it doesn't pollute

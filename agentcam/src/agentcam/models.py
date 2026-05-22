@@ -141,6 +141,97 @@ class ExitDetail:
     interpretation_source: InterpretationSource
 
 
+@dataclass(frozen=True, slots=True)
+class CaptureCapability:
+    """What agentcam was able to observe for this run.
+
+    See ``docs/design.md`` decision #28 (Capture Visibility metadata)
+    for the rationale. Constant per (mode, transcript availability,
+    empty-run policy) tuple — factory functions
+    :func:`capture_for_wrap_pipe` / :func:`capture_for_claude_hook` are
+    the supported way to build one.
+
+    The fields are plain strings (not enums) so manifest.json round-trips
+    cleanly and external readers (`jq`, dashboards) don't have to
+    understand a Python type. Allowed values are documented in
+    ``docs/design.md`` #28 and the brief; renderers do not validate them
+    — garbage in, garbage out on the surface, but the schema_version on
+    the manifest lets consumers detect format changes.
+    """
+
+    mode: str
+    stdout: str
+    stderr: str
+    git_before_after: str
+    path_risk_scan: str
+    output_risk_scan: str
+    dependency_probe: str
+    transcript: str
+    internal_tool_calls: str
+    file_reads: str
+    network_egress: str
+    empty_run_policy: str
+
+
+def capture_for_wrap_pipe(*, empty_run_policy: str) -> CaptureCapability:
+    """Capture profile for the PIPE-based wrap-mode subprocess path.
+
+    stdout/stderr are tee'd by ``runner.py``, so output-pattern risk
+    scanning is available. Internal tool calls / file reads / network
+    egress remain invisible — agentcam observes only what reaches the
+    tee'd pipes and the git working tree.
+    """
+    return CaptureCapability(
+        mode="wrap_pipe",
+        stdout="captured",
+        stderr="captured",
+        git_before_after="captured",
+        path_risk_scan="enabled",
+        output_risk_scan="enabled",
+        dependency_probe="enabled",
+        transcript="not_supported",
+        internal_tool_calls="not_visible",
+        file_reads="not_visible",
+        network_egress="not_visible",
+        empty_run_policy=empty_run_policy,
+    )
+
+
+def capture_for_claude_hook(
+    *,
+    transcript_available: bool,
+    empty_run_policy: str,
+) -> CaptureCapability:
+    """Capture profile for the Claude Code SessionStart/SessionEnd path.
+
+    Hook subprocesses do not see Claude Code's terminal output, so
+    output-pattern risk scanning is unavailable
+    (``output_risk_scan="disabled_no_output_stream"``). Path scanning,
+    dependency probe, and git before/after are unaffected — they read
+    git state and working-tree files, not the transcript.
+
+    ``transcript_available`` flips the ``transcript`` field between
+    ``"available_not_ingested"`` (Claude Code provided a transcript_path
+    in the hook payload) and ``"unknown"`` (no path provided / not a
+    string). Ingestion itself is a v0.3+ roadmap item; we currently do
+    not read the file.
+    """
+    return CaptureCapability(
+        mode="claude_hook",
+        stdout="not_available",
+        stderr="not_available",
+        git_before_after="captured",
+        path_risk_scan="enabled",
+        output_risk_scan="disabled_no_output_stream",
+        dependency_probe="enabled",
+        transcript="available_not_ingested" if transcript_available else "unknown",
+        internal_tool_calls="not_visible",
+        file_reads="not_visible",
+        network_egress="not_visible",
+        empty_run_policy=empty_run_policy,
+    )
+
+
 @dataclass
 class RunManifest:
     """Top-level run manifest, serialized to ``manifest.json``."""
@@ -167,6 +258,11 @@ class RunManifest:
     platform: str
     agentcam_version: str
     paths: RunPaths
+    # Optional for back-compat: legacy tests build RunManifest directly
+    # without setting capture. Production callers (cli.py, hooks.py)
+    # always supply one. When None, serialize_manifest omits the block
+    # and render_report skips the section.
+    capture: CaptureCapability | None = None
 
 
 @dataclass(frozen=True)

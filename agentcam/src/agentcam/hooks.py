@@ -224,6 +224,7 @@ def _do_session_end() -> int:
         compute_diff_fingerprint,
         resolve_git_dir,
     )
+    from agentcam.models import capture_for_claude_hook
     from agentcam.paths import create_run_dir
     from agentcam.report import write_run_artifacts
     from agentcam.scanner import scan_paths
@@ -235,6 +236,10 @@ def _do_session_end() -> int:
     if extracted is None:
         return 0
     session_id, cwd = extracted
+    # transcript_path is the only currently-documented richer-visibility
+    # signal Claude Code exposes to hooks; ingestion itself is a v0.3+
+    # roadmap item -- we just record whether the path was advertised.
+    transcript_available = isinstance(payload.get("transcript_path"), str)
 
     if not cwd.exists():
         return 0
@@ -341,6 +346,14 @@ def _do_session_end() -> int:
 
         # Shared post-run pipeline: dep probe + manifest + bundle +
         # render + write. Same helper called from wrap mode (cli.py).
+        # `capture` records that hook mode has no stdout/stderr stream
+        # and that transcript ingestion is a v0.3+ item -- so report
+        # readers don't confuse "no output flags" with "no risk" --
+        # see docs/design.md #28.
+        capture = capture_for_claude_hook(
+            transcript_available=transcript_available,
+            empty_run_policy="auto_delete_clean_no_diff",
+        )
         write_run_artifacts(
             state_before=state_before,
             state_after=state_after,
@@ -358,6 +371,7 @@ def _do_session_end() -> int:
             shell_used=False,
             terminal_forward_degraded=False,
             platform_label=_platform.system().lower(),
+            capture=capture,
         )
     except Exception:
         # Half-written run dir is worse than no run dir — it confuses

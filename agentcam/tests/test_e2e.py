@@ -438,3 +438,37 @@ class TestNoDiffCleanup:
         assert proc.returncode == 0
         report = _report(tmp_git_repo)
         assert len(report) > 0
+
+
+# ---------------------------------------------------------------------------
+# Capture Visibility (Feature 2 / design.md #28)
+# ---------------------------------------------------------------------------
+
+class TestCaptureVisibility:
+    def test_wrap_mode_records_wrap_pipe_capture(self, tmp_git_repo: Path):
+        proc = _agentcam(
+            tmp_git_repo, "run", "--",
+            sys.executable, "-c", "open('hi.txt','w').write('x')",
+        )
+        assert proc.returncode == 0
+        m = _manifest(tmp_git_repo)
+        cap = m.get("capture")
+        assert cap is not None, "wrap mode manifest must carry capture block"
+        assert cap["mode"] == "wrap_pipe"
+        assert cap["stdout"] == "captured"
+        assert cap["output_risk_scan"] == "enabled"
+        assert cap["network_egress"] == "not_visible"
+        assert cap["empty_run_policy"] == "auto_delete_clean_no_diff"
+
+        report = _report(tmp_git_repo)
+        assert "## Capture Visibility" in report
+        assert "wrap_pipe" in report
+
+    def test_wrap_mode_keep_empty_changes_policy(self, tmp_git_repo: Path):
+        proc = _agentcam(
+            tmp_git_repo, "run", "--keep-empty", "--",
+            sys.executable, "-c", "open('hi.txt','w').write('x')",
+        )
+        assert proc.returncode == 0
+        cap = _manifest(tmp_git_repo)["capture"]
+        assert cap["empty_run_policy"] == "keep_empty_requested"

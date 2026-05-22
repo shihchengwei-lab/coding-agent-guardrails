@@ -7,6 +7,52 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Added (2026-05-22, capture-visibility metadata)
+
+- **`manifest.json` now carries a `capture` block** declaring what
+  agentcam was able to observe for the run: `mode` (`wrap_pipe` /
+  `claude_hook`), per-stream capture status, scanner availability,
+  transcript availability, and the empty-run cleanup policy. Wrap mode
+  declares `output_risk_scan="enabled"`; hook mode declares
+  `"disabled_no_output_stream"` so the reader cannot read "no output
+  flag" as "no risk happened". See `docs/design.md` #28.
+- **`AGENT_RUN_REPORT.md` now has a `## Capture Visibility` section**
+  rendering the same data as a Markdown table. Placed right after the
+  Summary header so visibility is declared up front, before risk
+  verdicts.
+- **`CaptureCapability` dataclass + `capture_for_wrap_pipe` /
+  `capture_for_claude_hook` factories** in `agentcam.models`. Frozen,
+  slot-based; production callers (`cli.py`, `hooks.py`) use the
+  factories so per-mode profiles live in a single locus.
+- **`RunManifest.capture` is `Optional` with default `None`** for
+  back-compat: legacy tests that build a manifest directly still
+  round-trip. `serialize_manifest` omits the block when `None`;
+  `render_report` skips the section when `None`.
+- **Hook mode reads `transcript_path` from the Claude Code hook
+  payload** to flip `capture.transcript` between
+  `"available_not_ingested"` and `"unknown"`. Parsing the file itself
+  is a v0.3+ roadmap item (Feature 3); this is just a visibility
+  signal.
+- **+16 tests**: 12 unit-level (`tests/test_capture.py`) for factories,
+  serialization, and rendering; 2 wrap-mode e2e
+  (`tests/test_e2e.py::TestCaptureVisibility`); 2 hook-mode e2e
+  (`tests/test_hooks.py::TestCaptureVisibilityHookMode`).
+- Closes the `capture_mode: hook manifest field` TODO referenced in
+  the 2026-05-18 Hook mode entry below.
+
+### Documented (2026-05-22, network-visibility boundary clarification)
+
+- **README "Local-only, no telemetry"** now states agentcam's "makes
+  no network calls" claim covers the agentcam process itself only,
+  not the wrapped agent / SDK / browser subprocess / shell script /
+  MCP client. Adds a Known-limitations bullet
+  ("Does not monitor wrapped-agent network activity").
+- **`docs/design.md` "Out-of-scope reminders"** pins the boundary so a
+  future agent doesn't reword the README claim into a security
+  guarantee. Lists the rejected escalations (packet capture, DNS log,
+  MCP gateway, eBPF, network allowlist / approval UI).
+- No CLI, manifest, or runtime behavior changes for this entry.
+
 ### Documented (2026-05-20, post-surface-work alignment)
 
 - **README** now has a "Dependency Changes section" block describing

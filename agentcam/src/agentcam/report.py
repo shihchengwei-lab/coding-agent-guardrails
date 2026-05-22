@@ -15,6 +15,7 @@ from pathlib import Path
 
 from agentcam import __version__
 from agentcam.models import (
+    CaptureCapability,
     ChangedFile,
     DependencyChange,
     ExitDetail,
@@ -77,6 +78,7 @@ def render_report(
     manifest = bundle.manifest
     sections: list[str] = [
         _render_header(manifest),
+        _render_capture_visibility(manifest.capture),
         _render_verdict(bundle.risk_flags),
         _render_risk_flags(bundle.risk_flags),
         _render_changed_files(bundle.state_after),
@@ -109,6 +111,7 @@ def write_run_artifacts(
     shell_used: bool,
     terminal_forward_degraded: bool,
     platform_label: str,
+    capture: CaptureCapability | None = None,
 ) -> ReportBundle:
     """Build manifest + Bundle, render report, write both artifacts.
 
@@ -176,6 +179,7 @@ def write_run_artifacts(
         platform=platform_label,
         agentcam_version=__version__,
         paths=run_paths,
+        capture=capture,
     )
 
     bundle = ReportBundle(
@@ -216,7 +220,7 @@ def serialize_manifest(m: RunManifest) -> dict:
         "stdout_redacted": m.paths.stdout_redacted,
         "stderr_redacted": m.paths.stderr_redacted,
     }
-    return {
+    out: dict = {
         "schema_version": m.schema_version,
         "run_id": m.run_id,
         "started_at": m.started_at.isoformat(),
@@ -239,6 +243,29 @@ def serialize_manifest(m: RunManifest) -> dict:
         "platform": m.platform,
         "agentcam_version": m.agentcam_version,
         "paths": paths_dict,
+    }
+    if m.capture is not None:
+        # Block is omitted (not set to null) for legacy manifests so
+        # JSON consumers can use `"capture" in data` to detect schema
+        # presence cleanly. New production manifests always carry it.
+        out["capture"] = _serialize_capture(m.capture)
+    return out
+
+
+def _serialize_capture(c: CaptureCapability) -> dict:
+    return {
+        "mode": c.mode,
+        "stdout": c.stdout,
+        "stderr": c.stderr,
+        "git_before_after": c.git_before_after,
+        "path_risk_scan": c.path_risk_scan,
+        "output_risk_scan": c.output_risk_scan,
+        "dependency_probe": c.dependency_probe,
+        "transcript": c.transcript,
+        "internal_tool_calls": c.internal_tool_calls,
+        "file_reads": c.file_reads,
+        "network_egress": c.network_egress,
+        "empty_run_policy": c.empty_run_policy,
     }
 
 
@@ -280,6 +307,81 @@ def _render_header(m: RunManifest) -> str:
         f"- Platform: {m.platform}\n"
         f"- agentcam version: {m.agentcam_version}"
     )
+
+
+_CAPTURE_NOTE: dict[str, str] = {
+    # mode
+    "wrap_pipe": "Subprocess wrapped via stdout/stderr PIPE; logs tee'd to disk.",
+    "wrap_pty": "Subprocess wrapped via PTY (Windows ConPTY / POSIX pty).",
+    "claude_hook": "Recorded via Claude Code SessionStart / SessionEnd hooks; "
+                   "no subprocess wrapping, no terminal output.",
+    "ci": "Recorded inside a CI runner.",
+    # stdout / stderr
+    "captured": "Streamed bytes preserved to raw log.",
+    "not_available": "Not piped through agentcam in this mode.",
+    "placeholder": "Empty file written so the report template renders.",
+    # scans
+    "enabled": "Scanner produced flags for this run.",
+    "disabled_no_output_stream": "No output stream to scan in this mode.",
+    "disabled": "Scanner intentionally off for this run.",
+    # transcript
+    "not_supported": "Mode has no transcript concept.",
+    "available_not_ingested": "Hook payload exposed a transcript_path; "
+                              "agentcam does not parse it yet (v0.3+ work).",
+    "ingested_redacted": "Transcript text was parsed and redacted into the report.",
+    # visibility (internal calls / file reads / network)
+    "not_visible": "Outside agentcam's observation surface in this mode.",
+    "partially_visible": "Some events observed; coverage is best-effort, not complete.",
+    "visible": "Fully observed for this run.",
+    # empty-run policy
+    "auto_delete_clean_no_diff": "Default: a clean no-diff successful run would "
+                                  "be auto-deleted (this run was kept because it "
+                                  "had a diff, risk evidence, or a non-zero exit).",
+    "keep_empty_requested": "--keep-empty: cleanup skipped this invocation.",
+    "preserve_visible_risk": "No git-visible diff, but output risk flags were "
+                             "observed; report preserved.",
+    "unknown": "(unknown)",
+}
+
+
+def _render_capture_visibility(c: CaptureCapability | None) -> str:
+    """Render the `## Capture Visibility` section.
+
+    Returns "" when ``c`` is None — legacy callers / fixtures that don't
+    set capture continue producing the previous report shape. New
+    production reports (wrap mode + hook mode) always include this
+    block.
+    """
+    if c is None:
+        return ""
+
+    def row(signal: str, status: str) -> str:
+        note = _CAPTURE_NOTE.get(status, "")
+        return f"| {signal} | `{status}` | {note} |"
+
+    lines = [
+        "## Capture Visibility",
+        "",
+        "> What agentcam observed for this run. Cells named `not_visible` / "
+        "`not_available` / `disabled_*` describe agentcam's coverage limits "
+        "in this mode — they are not statements about what the agent did.",
+        "",
+        "| Signal | Status | Notes |",
+        "|---|---|---|",
+        row("mode", c.mode),
+        row("stdout", c.stdout),
+        row("stderr", c.stderr),
+        row("git_before_after", c.git_before_after),
+        row("path_risk_scan", c.path_risk_scan),
+        row("output_risk_scan", c.output_risk_scan),
+        row("dependency_probe", c.dependency_probe),
+        row("transcript", c.transcript),
+        row("internal_tool_calls", c.internal_tool_calls),
+        row("file_reads", c.file_reads),
+        row("network_egress", c.network_egress),
+        row("empty_run_policy", c.empty_run_policy),
+    ]
+    return "\n".join(lines)
 
 
 def _render_verdict(flags: list[RiskFlag]) -> str:

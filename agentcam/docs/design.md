@@ -916,6 +916,83 @@ ruleset can register medium-severity extension matchers without
 another `scan_paths` edit. Built-in behavior is unchanged because
 iterating an empty tuple is a no-op.
 
+## 28. Capture Visibility metadata in manifest + report
+
+**Decision.** Each `manifest.json` carries a `capture` block, and each
+`AGENT_RUN_REPORT.md` carries a `## Capture Visibility` section,
+declaring which signals agentcam was able to observe for this run.
+Wrap-mode runs declare `mode="wrap_pipe"`, `stdout="captured"`,
+`output_risk_scan="enabled"`, etc.; hook-mode runs declare
+`mode="claude_hook"`, `stdout="not_available"`,
+`output_risk_scan="disabled_no_output_stream"`. Fields are plain
+strings with an allowed-value set documented inline and in the
+`agentcam_priority_6_gaps_task_brief.md` source brief.
+
+**Why a single declared `capture` block instead of leaving the reader
+to infer.** Hook-mode reports look identical to wrap-mode reports in
+several places (Risk Flags, Changed Files) but the absence of an
+output-pattern flag in hook mode means "the scanner could not run on
+output", not "the agent's output was clean". A reader skimming the
+report has no way to tell those apart without external context. The
+`capture` block is that context, stated upfront. Likewise
+`network_egress="not_visible"` exists so a future reviewer doesn't
+read "no network risk flags" as "the agent didn't talk to the
+network" — a confusion the Feature 1 README clarification was also
+written to prevent.
+
+**Why a flat dict, not an enum hierarchy.** External readers (`jq`,
+small dashboards, future SARIF mapping) read JSON; an enum would
+need a JSON schema doc and a translation layer. Strings round-trip
+cleanly through JSON and through Markdown. The dataclass is
+`frozen=True` so renderers cannot mutate the declared visibility
+mid-render, but the strings themselves are not validated — schema
+versioning on the manifest is the formal escape hatch if the value
+set ever needs to grow.
+
+**Why two factory functions, not one.** Constructing a
+`CaptureCapability(mode="wrap_pipe", stdout="captured", ...)` at
+every call site would re-state the same constants in two places, and
+the next reviewer would have to diff them to confirm "yes, both modes
+declare git_before_after the same way". The factories
+(`capture_for_wrap_pipe`, `capture_for_claude_hook`) make the
+per-mode profile a single locus; the only parameters are the bits
+that *do* vary at runtime (`empty_run_policy`,
+`transcript_available`).
+
+**Why kept off the `ReportBundle`.** `CaptureCapability` is metadata
+about how the bundle was produced, not an input to rendering on the
+same footing as risk flags or dependency changes. It belongs on the
+manifest (the "this is the run" record); the bundle reaches it via
+`bundle.manifest.capture`. Future renderers consuming a Bundle get
+it for free.
+
+**Why `empty_run_policy` lives in `capture`, not in a separate
+`empty_run` block.** Decision #23 already wrote no-diff cleanup as a
+property of the run, but with no manifest field representing it.
+The natural home is the visibility block — "what would have happened
+if there were no diff" is part of the capture profile. Feature 6
+(no-diff preservation when output risk is visible) will add
+`"preserve_visible_risk"` to the allowed set without re-litigating
+where the field lives.
+
+**Why backward-compat with `capture=None`.** Existing tests build
+`RunManifest` directly without a capture block; the
+`render_report`/`serialize_manifest` legacy paths must keep working
+for any external script that consumes prior manifests. `None`
+suppresses both the JSON block and the Markdown section; production
+code paths always set it.
+
+**Known limitations.**
+- *We do not validate the string values.* A typo at a future call
+  site (e.g. `mode="wrap-pipe"` with a dash) would silently produce
+  a manifest with non-canonical text. Acceptable because the value
+  set is enforced by the factory functions; no production path
+  constructs `CaptureCapability` directly.
+- *`internal_tool_calls` / `file_reads` are always `not_visible`
+  today*; they exist so a future PTY mode or transcript-ingestion
+  feature can flip them to `partially_visible` without manifest
+  schema churn.
+
 ---
 
 ## Out-of-scope reminders (do not add these without re-reading §10–§22)

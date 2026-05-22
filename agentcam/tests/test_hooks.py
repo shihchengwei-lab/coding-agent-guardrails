@@ -405,3 +405,70 @@ class TestOrphanCleanupOnFailure:
         assert not runs.exists() or not any(runs.iterdir()), (
             "run dir must not be left as orphan with placeholder logs"
         )
+
+
+# ---------------------------------------------------------------------------
+# Capture Visibility metadata (Feature 2 / design.md #28)
+# ---------------------------------------------------------------------------
+
+class TestCaptureVisibilityHookMode:
+    def _manifest(self, repo: Path) -> dict:
+        run_dir = next(_runs_dir(repo).iterdir())
+        return json.loads(
+            (run_dir / "manifest.json").read_text(encoding="utf-8")
+        )
+
+    def _report(self, repo: Path) -> str:
+        run_dir = next(_runs_dir(repo).iterdir())
+        return (run_dir / "AGENT_RUN_REPORT.md").read_text(encoding="utf-8")
+
+    def test_hook_mode_manifest_carries_claude_hook_capture(
+        self, tmp_git_repo: Path,
+    ):
+        sid = "test-capture-1"
+        _agentcam_hook(
+            tmp_git_repo, "hook-session-start",
+            _hook_payload(sid, tmp_git_repo, "SessionStart"),
+        )
+        (tmp_git_repo / "made_by_agent.txt").write_text("hi")
+        _agentcam_hook(
+            tmp_git_repo, "hook-session-end",
+            _hook_payload(sid, tmp_git_repo, "SessionEnd"),
+        )
+        cap = self._manifest(tmp_git_repo)["capture"]
+        assert cap["mode"] == "claude_hook"
+        assert cap["stdout"] == "not_available"
+        assert cap["stderr"] == "not_available"
+        assert cap["output_risk_scan"] == "disabled_no_output_stream"
+        assert cap["path_risk_scan"] == "enabled"
+        # _hook_payload() includes transcript_path="/tmp/fake.jsonl" — so
+        # the capture metadata should record availability, even though
+        # we don't ingest it.
+        assert cap["transcript"] == "available_not_ingested"
+
+        report = self._report(tmp_git_repo)
+        assert "## Capture Visibility" in report
+        assert "claude_hook" in report
+        assert "disabled_no_output_stream" in report
+
+    def test_hook_mode_without_transcript_path_marks_unknown(
+        self, tmp_git_repo: Path,
+    ):
+        sid = "test-capture-2"
+        # Build a payload that has session_id + cwd but NO transcript_path,
+        # to confirm the capture block reports `transcript = "unknown"`.
+        bare_start = {
+            "session_id": sid,
+            "cwd": str(tmp_git_repo),
+            "hook_event_name": "SessionStart",
+        }
+        bare_end = {
+            "session_id": sid,
+            "cwd": str(tmp_git_repo),
+            "hook_event_name": "SessionEnd",
+        }
+        _agentcam_hook(tmp_git_repo, "hook-session-start", bare_start)
+        (tmp_git_repo / "made_by_agent.txt").write_text("hi")
+        _agentcam_hook(tmp_git_repo, "hook-session-end", bare_end)
+        cap = self._manifest(tmp_git_repo)["capture"]
+        assert cap["transcript"] == "unknown"
