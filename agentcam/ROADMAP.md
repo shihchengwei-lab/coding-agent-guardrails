@@ -25,6 +25,54 @@ of scope (see `docs/design.md` "Out-of-scope reminders").
 
 Ordered by likely value to v0.1 users, **not** by build difficulty.
 
+### Priority-6 surface batch — SHIPPED 2026-05-22
+
+Six dogfood-driven gaps closed in one batch. Each entry is one commit
+on `main`; see CHANGELOG `[Unreleased]` 2026-05-22 entries for the
+detail and `docs/design.md` decisions #28-#31 for the rationale.
+
+- **README network-visibility clarification.** "agentcam makes no
+  network calls" now states it covers the agentcam process itself,
+  not the wrapped agent / SDK / browser / shell / MCP client.
+  Known-limitations bullet added. `docs/design.md` out-of-scope
+  reminders pin the boundary.
+- **Capture Visibility metadata** (`docs/design.md` #28). New
+  `capture` block on `manifest.json` and `## Capture Visibility`
+  table in `AGENT_RUN_REPORT.md`. Wrap mode declares
+  `output_risk_scan = enabled`; hook mode declares
+  `disabled_no_output_stream`, so "no output flag in hook mode"
+  cannot be misread as "no risk happened".
+- **Ruleset provenance** (`docs/design.md` #29). New `ruleset` block
+  on every manifest + `## Scanner Ruleset` section on every report.
+  Carries built-in id/version, custom-rules path/hash (null today),
+  load_status, and a deterministic `merged_rules_sha256` over the
+  effective rule set (declaration order + regex flags both included
+  in the canonical form, per Codex review). Prerequisite for the
+  YAML loader (#4 below) and for future `agentcam compare` (#5).
+- **No-diff preservation when output risk visible**
+  (`docs/design.md` #30). Wraps decision #23 with the natural
+  exception: if the run produced no git-visible diff AND exited 0
+  AND the output scanner flagged HIGH/MEDIUM patterns, the run dir
+  is kept (`capture.empty_run_policy = "preserve_visible_risk"`).
+  `--keep-empty` still wins; hook mode unchanged (no output stream
+  to scan).
+- **`agentcam export <run_id>`** (`docs/design.md` #31). New CLI
+  subcommand producing a share-safe redacted ZIP bundle (report +
+  redacted manifest + redacted logs + checksums + EXPORT_NOTES).
+  Raw stdout/stderr excluded by default; `--include-raw` opt-in.
+  Path-traversal defense in depth (regex screen + resolved-parent
+  check). Atomic `.tmp + replace` write. No network calls.
+- **Claude Code transcript ingestion now a v0.3+ candidate**
+  (`ROADMAP.md` `v0.3+` section). Explicitly tracked with proposed
+  scope and acceptance criteria, carrying local-only / redacted-only /
+  non-blocking / no-LLM-summarization constraints.
+
+Two external Codex review passes (the second after the first surfaced
+fixes for the ruleset hash and the export checksum order). +50 new
+tests in `tests/test_capture.py`, `tests/test_ruleset_provenance.py`,
+`tests/test_export.py`, plus regression coverage in `test_e2e.py` and
+`test_hooks.py`. Full suite 321 + 1 skip on Windows.
+
 ### Surface work — SHIPPED 2026-05-20
 
 These don't have stand-alone user-visible feature names; they're
@@ -203,12 +251,23 @@ don't know about." Without YAML, every team forks the source.
 **Constraint.** Basic rule mechanism stays free. Pre-built rule packs (PCI
 patterns, HIPAA patterns, FinTech patterns) could be paid.
 
-**Status (substrate SHIPPED 2026-05-20).** The `RuleSet` data
-structure and the `scan_paths(ruleset=...)` / `scan_output(ruleset=...)`
-plumbing landed (see "Surface work" above). What's left to ship: the
-YAML loader that reads `.agentcam/rules.yaml`, merges user rules with
-the built-in default, and passes the merged `RuleSet` through cli.py /
-hooks.py. Estimated ~20 lines + tests; see `docs/design.md` #27.
+**Status (substrate SHIPPED 2026-05-20 + 2026-05-22).** Two layers
+landed:
+- 2026-05-20: the `RuleSet` data structure and the
+  `scan_paths(ruleset=...)` / `scan_output(ruleset=...)` plumbing
+  (see "Surface work" above).
+- 2026-05-22: ruleset provenance — `merged_rules_sha256` over the
+  effective rule set, `custom_rules_path` / `custom_rules_sha256`
+  slots already on every manifest with null today, `load_status`
+  ready to flip from `"builtin_only"` to `"custom_loaded"`. So a
+  YAML-loaded rule set will show up in every report's
+  `## Scanner Ruleset` section with no further manifest-schema
+  churn.
+
+What's left to ship: the YAML loader that reads `.agentcam/rules.yaml`,
+merges user rules with the built-in default, builds a sibling
+`provenance_for_custom_ruleset(...)`, and passes both through cli.py /
+hooks.py. Estimated ~20 lines + tests; see `docs/design.md` #27 + #29.
 
 ### 5. `agentcam compare <run-id-a> <run-id-b>`
 

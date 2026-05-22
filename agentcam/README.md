@@ -18,7 +18,7 @@ agentcam run -- codex "add input validation to login form"
 agentcam run -- bash -lc "npm run build && npm test"
 ```
 
-After each run, you get an `AGENT_RUN_REPORT.md` answering three questions:
+After each run, you get an `AGENT_RUN_REPORT.md` answering four questions:
 
 1. **What did the agent change?** — exact file list, diff stat, staged vs.
    unstaged vs. untracked, before/after HEAD.
@@ -27,6 +27,12 @@ After each run, you get an `AGENT_RUN_REPORT.md` answering three questions:
    --hard`, conflict markers), dependency manifests.
 3. **How do I roll back if something's wrong?** — situation-aware rollback
    notes (no blanket `git reset --hard` suggestions).
+4. **What did agentcam actually observe (and not observe)?** — an explicit
+   Capture Visibility table per run, so "no output-pattern flag" cannot be
+   misread as "no risk happened". Hook-mode reports declare
+   `stdout = not_available`; wrap-mode reports declare `stdout = captured`.
+   Same table also reports the ruleset id + a deterministic hash of the
+   effective rule set, so reports stay diffable across releases.
 
 See [`examples/risky-auth-change/expected-report.md`](examples/risky-auth-change/expected-report.md)
 for what a report looks like when the agent touches a sensitive area.
