@@ -1,0 +1,23 @@
+diff --git a/src/notes.js b/src/notes.js
+index 518970f..6635bcd 100644
+--- a/src/notes.js
++++ b/src/notes.js
+@@ -8,4 +8,17 @@ function listNotes(notes) {
+   return notes.map((n) => `${n.id}\t${n.text}`).join("\n");
+ }
+ 
+-module.exports = { addNote, listNotes };
++// Export formatters keyed by format name. Add csv/markdown here later.
++const exporters = {
++  json: (notes) => JSON.stringify(notes),
++};
++
++function exportNotes(notes, format = "json") {
++  const exporter = exporters[format];
++  if (!exporter) {
++    throw new Error(`Unknown export format: ${format}`);
++  }
++  return exporter(notes);
++}
++
++module.exports = { addNote, listNotes, exportNotes };

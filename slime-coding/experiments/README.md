@@ -90,6 +90,13 @@ you edited it in place (the isolated run repos are just thrown away).
     registry/abstraction 9/9, Slime 1/9; ~50–60% less product code at equal
     functionality. Narrow (one axis, prompt-only, one fixture); **still no
     general efficacy claim**.
+  - [`../reports/2026-06-18-js-wording.md`](../reports/2026-06-18-js-wording.md)
+    (runs under `runs/2026-06-18-js-wording/`): second language (`js-notes`) +
+    wording variation. The effect is **not** a language or exact-phrase artifact
+    (JS reproduces it; "make it extensible" also triggers it), but it is
+    **conditional on an extensibility hint** — with no hint, baseline and Slime
+    both stay minimal. Sharpens the claim: Slime resists an *explicit invitation*
+    to over-build, not over-implementation in general.
   - [`../reports/2026-06-18-condition-c.md`](../reports/2026-06-18-condition-c.md)
     (runs under `runs/2026-06-18-condition-c/`): the L2 dependency gate on the
     `dart-mini-app` fixture. Disciplined agents didn't add a dependency (gate

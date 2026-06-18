@@ -1,0 +1,73 @@
+diff --git a/.slime/PRUNED.md b/.slime/PRUNED.md
+new file mode 100644
+index 0000000..1cde74b
+--- /dev/null
++++ b/.slime/PRUNED.md
+@@ -0,0 +1,7 @@
++# Pruned designs: JX2-B-1-export-notes
++
++- Format registry / strategy map (`exporters = { json: ..., csv: ... }`) with a
++  `format` argument dispatcher. Rejected: only one real format (JSON) is required
++  NOW. Need >=2 real formats before abstracting. Extensibility is preserved by
++  keeping JSON rendering in its own named function as a seam for a future sibling.
++- CSV / XML / YAML exporters. Rejected: not in the acceptance.
+diff --git a/.slime/corridor.md b/.slime/corridor.md
+new file mode 100644
+index 0000000..60e2d7e
+--- /dev/null
++++ b/.slime/corridor.md
+@@ -0,0 +1,13 @@
++# Corridor: JX2-B-1-export-notes
++
++Goal Frontier: `exportNotes(notes)` returns a string; `JSON.parse(exportNotes(notes))`
++deep-equals the notes array. "Easy to extend" = export rendering lives in one
++clearly-named pure function so a future format is added beside it. NOT a format
++registry/dispatcher (only one real format exists now).
++
++Start Frontier: src/notes.js, seam = pure functions over a notes array + the
++`module.exports` line.
++
++## Paths
++- src/notes.js
++- test/notes.test.js
+diff --git a/src/notes.js b/src/notes.js
+index 518970f..b525ca1 100644
+--- a/src/notes.js
++++ b/src/notes.js
+@@ -8,4 +8,10 @@ function listNotes(notes) {
+   return notes.map((n) => `${n.id}\t${n.text}`).join("\n");
+ }
+ 
+-module.exports = { addNote, listNotes };
++// Render notes for export. Currently JSON only; a new format would be added as
++// a sibling renderer beside this one.
++function exportNotes(notes) {
++  return JSON.stringify(notes);
++}
++
++module.exports = { addNote, listNotes, exportNotes };
+diff --git a/test/notes.test.js b/test/notes.test.js
+index 59778ca..63ebbca 100644
+--- a/test/notes.test.js
++++ b/test/notes.test.js
+@@ -1,6 +1,6 @@
+ const test = require("node:test");
+ const assert = require("node:assert");
+-const { addNote, listNotes } = require("../src/notes");
++const { addNote, listNotes, exportNotes } = require("../src/notes");
+ 
+ test("add then list (insertion order)", () => {
+   let notes = [];
+@@ -15,3 +15,12 @@ test("add then list (insertion order)", () => {
+ test("list empty", () => {
+   assert.equal(listNotes([]), "");
+ });
++
++test("exportNotes returns JSON string that round-trips to the notes array", () => {
++  let notes = [];
++  notes = addNote(notes, "hello");
++  notes = addNote(notes, "world");
++  const out = exportNotes(notes);
++  assert.equal(typeof out, "string");
++  assert.deepEqual(JSON.parse(out), notes);
++});

@@ -1,0 +1,56 @@
+diff --git a/src/notes.js b/src/notes.js
+index 518970f..2ec888f 100644
+--- a/src/notes.js
++++ b/src/notes.js
+@@ -8,4 +8,25 @@ function listNotes(notes) {
+   return notes.map((n) => `${n.id}\t${n.text}`).join("\n");
+ }
+ 
+-module.exports = { addNote, listNotes };
++// Output formatters keyed by name. Add new formats by registering a function
++// here (or via registerExportFormat); each takes the notes array and returns
++// a string.
++const exportFormats = {
++  json: (notes) => JSON.stringify(notes),
++};
++
++function registerExportFormat(name, formatter) {
++  exportFormats[name] = formatter;
++}
++
++// Serializes notes to a string. Defaults to JSON; pass a registered format
++// name to use a different output format.
++function exportNotes(notes, format = "json") {
++  const formatter = exportFormats[format];
++  if (!formatter) {
++    throw new Error(`Unknown export format: ${format}`);
++  }
++  return formatter(notes);
++}
++
++module.exports = { addNote, listNotes, exportNotes, registerExportFormat };
+diff --git a/test/notes.test.js b/test/notes.test.js
+index 59778ca..547d0e9 100644
+--- a/test/notes.test.js
++++ b/test/notes.test.js
+@@ -1,6 +1,6 @@
+ const test = require("node:test");
+ const assert = require("node:assert");
+-const { addNote, listNotes } = require("../src/notes");
++const { addNote, listNotes, exportNotes } = require("../src/notes");
+ 
+ test("add then list (insertion order)", () => {
+   let notes = [];
+@@ -15,3 +15,12 @@ test("add then list (insertion order)", () => {
+ test("list empty", () => {
+   assert.equal(listNotes([]), "");
+ });
++
++test("exportNotes returns JSON that round-trips to the notes array", () => {
++  let notes = [];
++  notes = addNote(notes, "hello");
++  notes = addNote(notes, "world");
++  const out = exportNotes(notes);
++  assert.equal(typeof out, "string");
++  assert.deepEqual(JSON.parse(out), notes);
++});

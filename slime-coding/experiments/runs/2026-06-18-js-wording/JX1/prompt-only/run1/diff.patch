@@ -1,0 +1,65 @@
+diff --git a/.slime/PRUNED.md b/.slime/PRUNED.md
+new file mode 100644
+index 0000000..c1647a7
+--- /dev/null
++++ b/.slime/PRUNED.md
+@@ -0,0 +1,6 @@
++# Pruned designs: JX1-B-1-exportNotes
++
++- Format registry / strategy map / dispatcher keyed on format name
++  ("json"/"csv"/"markdown"). Rejected: only ONE real format (JSON) is required
++  now. Need >=2 real formats before abstracting. csv/markdown are speculative.
++- Adding a `format` parameter to exportNotes. Rejected: YAGNI; not in acceptance.
+diff --git a/.slime/corridor.md b/.slime/corridor.md
+new file mode 100644
+index 0000000..1320ef3
+--- /dev/null
++++ b/.slime/corridor.md
+@@ -0,0 +1,8 @@
++# Corridor: JX1-B-1-exportNotes
++
++Add `exportNotes(notes)` to src/notes.js returning a JSON string of the notes
++array. Pure function over `notes`, exported alongside addNote/listNotes.
++
++## Paths
++- src/notes.js
++- test/notes.test.js
+diff --git a/src/notes.js b/src/notes.js
+index 518970f..7bf5404 100644
+--- a/src/notes.js
++++ b/src/notes.js
+@@ -8,4 +8,8 @@ function listNotes(notes) {
+   return notes.map((n) => `${n.id}\t${n.text}`).join("\n");
+ }
+ 
+-module.exports = { addNote, listNotes };
++function exportNotes(notes) {
++  return JSON.stringify(notes);
++}
++
++module.exports = { addNote, listNotes, exportNotes };
+diff --git a/test/notes.test.js b/test/notes.test.js
+index 59778ca..63ebbca 100644
+--- a/test/notes.test.js
++++ b/test/notes.test.js
+@@ -1,6 +1,6 @@
+ const test = require("node:test");
+ const assert = require("node:assert");
+-const { addNote, listNotes } = require("../src/notes");
++const { addNote, listNotes, exportNotes } = require("../src/notes");
+ 
+ test("add then list (insertion order)", () => {
+   let notes = [];
+@@ -15,3 +15,12 @@ test("add then list (insertion order)", () => {
+ test("list empty", () => {
+   assert.equal(listNotes([]), "");
+ });
++
++test("exportNotes returns JSON string that round-trips to the notes array", () => {
++  let notes = [];
++  notes = addNote(notes, "hello");
++  notes = addNote(notes, "world");
++  const out = exportNotes(notes);
++  assert.equal(typeof out, "string");
++  assert.deepEqual(JSON.parse(out), notes);
++});
