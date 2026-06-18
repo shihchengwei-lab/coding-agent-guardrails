@@ -23,7 +23,16 @@ import os
 import re
 import sys
 
-RECENT = int(os.environ.get("SLIME_PRUNE_RECENT", "5"))
+def recent_count():
+    """How many most-recent records to always inject. Invalid or negative
+    values fall back to the default; 0 means inject no recency window (rely on
+    corridor match only). Never raises — a bad env var must not crash the hook."""
+    raw = os.environ.get("SLIME_PRUNE_RECENT", "5")
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return 5
+    return n if n >= 0 else 5
 
 
 def read_input():
@@ -84,7 +93,8 @@ def main():
         sys.exit(0)
 
     cid = current_corridor_id(cwd)
-    recent = entries[-RECENT:]
+    n = recent_count()
+    recent = entries[-n:] if n > 0 else []
     selected = []
     for e in entries:
         if e in recent or (cid and entry_corridor(e) == cid):

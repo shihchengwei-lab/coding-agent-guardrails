@@ -61,19 +61,76 @@ def is_git(cwd):
 # --------------------------------------------------------------------------
 # L2 — PreToolUse corridor gate
 # --------------------------------------------------------------------------
+TEMPLATE_ID = "example-feature"
+TEMPLATE_GLOBS = {"lib/feature/example/**", "test/feature/example/**"}
+
+
+def corridor_id(cwd):
+    path = os.path.join(cwd, ".slime", "corridor.md")
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                m = re.match(r"#\s*Corridor:\s*(.+)", line.strip())
+                if m:
+                    return m.group(1).strip()
+    except OSError:
+        return None
+    return None
+
+
+def corridor_problem(cwd):
+    """Return a reason string if the corridor is missing/invalid, else None.
+
+    Only unambiguous signals block: missing file, missing header, the template
+    id, an empty Paths list, or paths still pointing at the template example.
+    """
+    path = os.path.join(cwd, ".slime", "corridor.md")
+    if not os.path.exists(path):
+        return ".slime/corridor.md is missing"
+    cid = corridor_id(cwd)
+    if not cid:
+        return ".slime/corridor.md has no '# Corridor: <id>' header"
+    if cid == TEMPLATE_ID:
+        return ".slime/corridor.md is still the template (id 'example-feature')"
+    globs = corridor_globs(cwd)
+    if not globs:
+        return ".slime/corridor.md has an empty '## Paths' list"
+    if any(g in TEMPLATE_GLOBS for g in globs):
+        return ".slime/corridor.md still lists the template example paths"
+    return None
+
+
+def under_slime(cwd, tool_input):
+    """True when the edit targets a .slime/ artifact (always allowed, so the
+    corridor and pruned log can be bootstrapped without a corridor)."""
+    fp = (tool_input or {}).get("file_path") or (tool_input or {}).get("path") or ""
+    if not fp:
+        return False
+    abs_fp = fp if os.path.isabs(fp) else os.path.join(cwd, fp)
+    try:
+        rel = os.path.relpath(abs_fp, cwd)
+    except ValueError:
+        return False
+    return rel.split(os.sep)[0] == ".slime"
+
+
 def corridor_gate(data):
     cwd = data.get("cwd") or os.getcwd()
-    corridor = os.path.join(cwd, ".slime", "corridor.md")
-    if not os.path.exists(corridor):
+    # Bootstrap exemption: writing .slime/ artifacts (corridor.md, PRUNED.md)
+    # never needs a corridor, otherwise creating one would deadlock.
+    if under_slime(cwd, data.get("tool_input")):
+        sys.exit(0)
+    problem = corridor_problem(cwd)
+    if problem:
         out = {
             "hookSpecificOutput": {
                 "hookEventName": "PreToolUse",
                 "permissionDecision": "deny",
                 "permissionDecisionReason": (
-                    "Slime Coding: .slime/corridor.md is missing. Define the "
-                    "Meeting Corridor before editing — run /slime-corridor "
-                    "(or the slime-navigate skill). No corridor = no evidence "
-                    "for where the minimal change should land."
+                    "Slime Coding: " + problem + ". Define the Meeting Corridor "
+                    "before editing — run /slime-corridor (or the slime-navigate "
+                    "skill). No valid corridor = no evidence for where the "
+                    "minimal change should land."
                 ),
             }
         }
