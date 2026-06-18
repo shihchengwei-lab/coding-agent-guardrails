@@ -83,5 +83,10 @@ you edited it in place (the isolated run repos are just thrown away).
   - [`../reports/2026-06-18-discriminating-smoke.md`](../reports/2026-06-18-discriminating-smoke.md)
     (runs under `runs/2026-06-18-discriminating/`): tasks baited to elicit
     over-implementation. One axis (speculative extensibility) discriminated —
-    baseline built a format registry the Slime arm pruned. A signal, N=1; **no
-    efficacy claim**.
+    baseline built a format registry the Slime arm pruned. A signal, N=1.
+  - [`../reports/2026-06-18-extensibility-3runs.md`](../reports/2026-06-18-extensibility-3runs.md)
+    (runs under `runs/2026-06-18-extensibility/`): the extensibility axis on 3
+    tasks × 3 runs. Reproduces — baseline built a speculative
+    registry/abstraction 9/9, Slime 1/9; ~50–60% less product code at equal
+    functionality. Narrow (one axis, prompt-only, one fixture); **still no
+    general efficacy claim**.

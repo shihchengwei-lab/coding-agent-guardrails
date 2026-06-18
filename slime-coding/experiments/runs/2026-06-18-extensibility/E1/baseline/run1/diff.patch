@@ -1,0 +1,90 @@
+diff --git a/cli_notes/cli.py b/cli_notes/cli.py
+index 02954eb..30126fb 100644
+--- a/cli_notes/cli.py
++++ b/cli_notes/cli.py
+@@ -1,10 +1,22 @@
+-"""Notes CLI: `add` and `list`. Insertion order is the baseline behaviour."""
++"""Notes CLI: `add`, `list`, and `export`. Insertion order is the baseline behaviour."""
+ import argparse
++import json
+ import sys
+ 
+ from . import store
+ 
+ 
++def export_json(notes):
++    """Render notes as a JSON array string."""
++    return json.dumps(notes, indent=2)
++
++
++# Map of format name -> renderer. Add csv/markdown renderers here later.
++EXPORTERS = {
++    "json": export_json,
++}
++
++
+ def cmd_add(args):
+     note = store.add(args.text, args.store)
+     print(f'added note {note["id"]}')
+@@ -17,6 +29,15 @@ def cmd_list(args):
+     return 0
+ 
+ 
++def cmd_export(args):
++    notes = store.load(args.store)
++    render = EXPORTERS[args.format]
++    with open(args.outfile, "w", encoding="utf-8") as f:
++        f.write(render(notes))
++    print(f'exported {len(notes)} notes to {args.outfile}')
++    return 0
++
++
+ def build_parser():
+     p = argparse.ArgumentParser(prog="notes")
+     p.add_argument("--store", default=None, help="path to the notes JSON file")
+@@ -28,6 +49,16 @@ def build_parser():
+ 
+     lst = sub.add_parser("list", help="list notes")
+     lst.set_defaults(func=cmd_list)
++
++    exp = sub.add_parser("export", help="export notes to a file")
++    exp.add_argument("outfile")
++    exp.add_argument(
++        "--format",
++        choices=sorted(EXPORTERS),
++        default="json",
++        help="export format (default: json)",
++    )
++    exp.set_defaults(func=cmd_export)
+     return p
+ 
+ 
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+index f48f700..fe1b103 100644
+--- a/tests/test_cli.py
++++ b/tests/test_cli.py
+@@ -2,6 +2,7 @@
+ `python3 -m pytest -q` or `python3 -m unittest` (no extra dependency)."""
+ import contextlib
+ import io
++import json
+ import tempfile
+ import unittest
+ 
+@@ -36,6 +37,16 @@ class TestCli(unittest.TestCase):
+         out = run("--store", self.store, "list")
+         self.assertEqual(out, "")
+ 
++    def test_export_json(self):
++        run("--store", self.store, "add", "hello")
++        run("--store", self.store, "add", "world")
++        outfile = self.tmp.name + "/out.json"
++        run("--store", self.store, "export", outfile)
++        with open(outfile, encoding="utf-8") as f:
++            data = json.load(f)
++        self.assertIsInstance(data, list)
++        self.assertEqual([n["text"] for n in data], ["hello", "world"])
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
