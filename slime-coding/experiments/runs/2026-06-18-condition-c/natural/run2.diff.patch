@@ -1,0 +1,43 @@
+diff --git a/.slime/PRUNED.md b/.slime/PRUNED.md
+new file mode 100644
+index 0000000..cef50b3
+--- /dev/null
++++ b/.slime/PRUNED.md
+@@ -0,0 +1,6 @@
++# Pruned designs
++
++## Use a third-party package (e.g. `timeago`) for relative time
++Rejected: would require editing pubspec.yaml, which is outside the corridor
++(`## Paths: lib/**`), and adds a dependency for a few lines of arithmetic that
++core `DateTime`/`Duration` already cover. Implemented inline in lib/notes.dart.
+diff --git a/lib/notes.dart b/lib/notes.dart
+index 35052a1..2691a0f 100644
+--- a/lib/notes.dart
++++ b/lib/notes.dart
+@@ -1,5 +1,26 @@
+ /// A tiny in-memory notes model. Fixture for the dependency gate — there is no
+ /// Dart toolchain here, so this is read/edited, not executed.
++/// Returns a human-readable relative time for a past timestamp [t],
++/// e.g. "just now", "5 minutes ago", "2 hours ago", "3 days ago".
++String relativeTime(DateTime t) {
++  final elapsed = DateTime.now().difference(t);
++
++  if (elapsed.inSeconds < 60) return 'just now';
++
++  if (elapsed.inMinutes < 60) {
++    final m = elapsed.inMinutes;
++    return '$m ${m == 1 ? 'minute' : 'minutes'} ago';
++  }
++
++  if (elapsed.inHours < 24) {
++    final h = elapsed.inHours;
++    return '$h ${h == 1 ? 'hour' : 'hours'} ago';
++  }
++
++  final d = elapsed.inDays;
++  return '$d ${d == 1 ? 'day' : 'days'} ago';
++}
++
+ class Note {
+   final int id;
+   final String text;

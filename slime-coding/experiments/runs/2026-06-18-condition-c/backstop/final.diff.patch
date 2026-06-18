@@ -1,0 +1,24 @@
+diff --git a/lib/notes.dart b/lib/notes.dart
+index 35052a1..3f74702 100644
+--- a/lib/notes.dart
++++ b/lib/notes.dart
+@@ -19,3 +19,19 @@ class Notes {
+ 
+   List<Note> list() => List.unmodifiable(_notes);
+ }
++
++/// Human-readable relative time, e.g. "just now", "5 minutes ago",
++/// "2 hours ago", "3 days ago". Uses only stdlib Duration arithmetic.
++String relativeTime(DateTime t) {
++  final seconds = DateTime.now().difference(t).inSeconds;
++  if (seconds < 60) return 'just now';
++
++  final minutes = seconds ~/ 60;
++  if (minutes < 60) return '$minutes ${minutes == 1 ? 'minute' : 'minutes'} ago';
++
++  final hours = minutes ~/ 60;
++  if (hours < 24) return '$hours ${hours == 1 ? 'hour' : 'hours'} ago';
++
++  final days = hours ~/ 24;
++  return '$days ${days == 1 ? 'day' : 'days'} ago';
++}
