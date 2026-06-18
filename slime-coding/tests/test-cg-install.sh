@@ -83,5 +83,21 @@ grep -q '"other-hook"' "$THIRD_HOME/.claude/settings.json" \
   && ok "5  unrelated third-party hook preserved" \
   || bad "5  unrelated third-party hook preserved" "lost"
 
+# === 6. CG_HOOK_EXT=py mode ===================================================
+# Owners on Windows native Claude Code (which invokes python explicitly) need
+# the .py variant. Stub a .py-flavour cg dir and verify the flag switches.
+CG_PY="$(mktmp)"
+for s in rules inventory_gate review; do
+  printf '#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n' > "$CG_PY/$s.py"
+done
+PY_HOME="$(mktmp)"
+HOME="$PY_HOME" CG_HOOK_EXT=py "$INSTALL" "$(mktmp)" --with-cg "$CG_PY" >/dev/null 2>&1
+if [ -f "$PY_HOME/.claude/scripts/rules.py" ] \
+    && grep -q '"command": "python .*rules\.py"' "$PY_HOME/.claude/settings.json"; then
+  ok "6  CG_HOOK_EXT=py: .py scripts copied + python-prefixed commands"
+else
+  bad "6  CG_HOOK_EXT=py: .py scripts copied + python-prefixed commands" "see $PY_HOME"
+fi
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

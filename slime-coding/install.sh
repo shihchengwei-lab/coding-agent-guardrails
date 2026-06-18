@@ -12,6 +12,9 @@
 # --with-cg additionally installs the owner's user-level coding-guidelines
 # hooks (rules + inventory_gate + review) into ~/.claude/scripts/ and merges
 # them into ~/.claude/settings.json. Skip the flag and that step is not run.
+# Script flavour is .sh by default; set CG_HOOK_EXT=py to copy the .py variant
+# and emit "python <path>" commands (needed when Claude Code runs as Windows
+# native, where .sh is not directly executable).
 #
 # Re-running is safe (idempotent): existing Slime Coding hooks are replaced,
 # not duplicated. A timestamped backup of settings.json is kept.
@@ -33,11 +36,19 @@ done
 PROJECT="${ARGS[0]:-$PWD}"
 PROJECT="$(cd "$PROJECT" && pwd)"
 
+# --- cg hook script flavour: .sh (default) or .py via CG_HOOK_EXT -------------
+CG_EXT="${CG_HOOK_EXT:-sh}"
+case "$CG_EXT" in
+  sh) CG_CMD_PREFIX="" ;;
+  py) CG_CMD_PREFIX="python " ;;
+  *)  echo "error: CG_HOOK_EXT must be sh or py (got $CG_EXT)" >&2; exit 1 ;;
+esac
+
 # --- validate --with-cg path looks like a coding-guidelines repo --------------
 if [ -n "$CG_HOME" ]; then
   CG_HOME="$(cd "$CG_HOME" 2>/dev/null && pwd)" || {
     echo "error: --with-cg path not found" >&2; exit 1; }
-  for f in rules.sh inventory_gate.sh review.sh; do
+  for f in "rules.$CG_EXT" "inventory_gate.$CG_EXT" "review.$CG_EXT"; do
     [ -f "$CG_HOME/$f" ] || {
       echo "error: $CG_HOME does not look like coding-guidelines (missing $f)" >&2
       exit 1; }
@@ -51,7 +62,7 @@ fi
 
 echo "Slime Coding home : $SLIME_HOME"
 echo "Target project    : $PROJECT"
-[ -n "$CG_HOME" ] && echo "coding-guidelines : $CG_HOME"
+[ -n "$CG_HOME" ] && echo "coding-guidelines : $CG_HOME (.$CG_EXT)"
 
 mkdir -p "$PROJECT/.claude/commands" "$PROJECT/.claude/skills"
 SETTINGS="$PROJECT/.claude/settings.json"
@@ -132,21 +143,25 @@ install_cg() {
   mkdir -p "$scripts"
   local s
   for s in rules inventory_gate review; do
-    cp "$CG_HOME/$s.sh" "$scripts/$s.sh"
-    chmod +x "$scripts/$s.sh"
+    cp "$CG_HOME/$s.$CG_EXT" "$scripts/$s.$CG_EXT"
+    chmod +x "$scripts/$s.$CG_EXT"
   done
-  echo "  copied cg scripts -> $scripts/*.sh"
+  echo "  copied cg scripts -> $scripts/*.$CG_EXT"
 
   CG_SETTINGS="$user_dir/settings.json" \
   CG_SCRIPTS="$scripts" \
+  CG_EXT="$CG_EXT" \
+  CG_CMD_PREFIX="$CG_CMD_PREFIX" \
   python3 - <<'PY'
 import json, os, re, shutil, time
 
 settings_path = os.environ["CG_SETTINGS"]
 scripts       = os.environ["CG_SCRIPTS"]
+ext           = os.environ["CG_EXT"]
+cmd_prefix    = os.environ["CG_CMD_PREFIX"]
 
 def cmd(stem):
-    return f'{scripts}/{stem}.sh'
+    return f'{cmd_prefix}{scripts}/{stem}.{ext}'
 
 template = {
     "UserPromptSubmit": [
