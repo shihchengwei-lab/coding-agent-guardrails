@@ -11,9 +11,16 @@ One binary, registered on two events; it dispatches on hook_event_name.
                               * new-dependency gate: pubspec.yaml gained a
                                 dependency this session -> block, demand a
                                 keep/remove decision.
-                              * prune-logging gate: checks fail AND PRUNED.md
-                                was not touched this session -> block, demand
-                                the abandoned path be recorded.
+                              * failing-check-at-stop gate: SLIME_TEST_CMD is
+                                red at Stop and nothing was recorded in
+                                PRUNED.md -> block. The teeth are on the
+                                unambiguous fact "the check is failing as you
+                                finish"; recording the abandoned design in
+                                PRUNED.md is just the acknowledgement that lets
+                                you stop on red (the other way out is to make
+                                the check pass). It is NOT a check that you
+                                "pruned" anything — abandoning a design is not a
+                                git fact.
                               L3 metrics (touched/new files, public-API adds,
                               out-of-corridor files) are reported, never block.
 
@@ -286,11 +293,13 @@ def stop(data):
         rc = run_check(cwd)
         if rc is not None and rc != 0 and not pruned_touched(cwd):
             blocks.append(
-                "Checks are failing (exit "
+                "Stopping with a failing check: SLIME_TEST_CMD exited "
                 + str(rc)
-                + ") and .slime/PRUNED.md has no uncommitted change relative to "
-                "HEAD. Record the design path you abandoned in .slime/PRUNED.md "
-                "(run /slime-prune) before stopping."
+                + ". Don't finish silently on red — either make the check pass, "
+                "or, if you abandoned a design that led here, record it in "
+                ".slime/PRUNED.md (/slime-prune) so the next round doesn't retry "
+                "it. (Detected via git status on .slime/PRUNED.md, not a session "
+                "boundary.)"
             )
 
     report = l3_report(cwd)

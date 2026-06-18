@@ -58,6 +58,13 @@ cloning, so "versions" track the git history rather than published releases.
 - README concept illustration (`assets/slime-coding.png`).
 
 ### Changed
+- Renamed the L2 "prune-logging" gate to what it actually enforces: a
+  **failing-check-at-stop** gate. Its teeth are on the unambiguous git/exit
+  fact "`SLIME_TEST_CMD` is red as you finish"; recording a path in `PRUNED.md`
+  is just the acknowledgement that lets you stop on red (the other way out is to
+  make the check pass). It never claimed to verify that you "pruned" anything —
+  abandoning a design is not a git fact. Block message and `docs/DESIGN.md`
+  updated; behaviour unchanged.
 - `out-of-corridor` count (L3 report and `metrics.py`) now excludes `.slime/`
   artifacts: editing the corridor is tracked separately, and `PRUNED.md`
   updates are required, not scope creep.
