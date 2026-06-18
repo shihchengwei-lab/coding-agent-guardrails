@@ -77,5 +77,9 @@ you edited it in place (the isolated run repos are just thrown away).
 - **Mechanism layer (plan Q1/Q2/Q3, §11 "機制驗證成功")**: covered by
   `tests/test.sh` + CI. See [`../reports/`](../reports/) for the mechanism
   verification note.
-- **Effect layer (plan Q4/Q5, smoke/controlled benchmark)**: not yet run.
-  Requires real multi-condition agent runs + human review.
+- **Effect layer (plan Q4/Q5)**: a first A-vs-B smoke run exists
+  ([`../reports/2026-06-18-smoke-report.md`](../reports/2026-06-18-smoke-report.md),
+  artifacts under `runs/2026-06-18/`). It found the task set cannot yet
+  discriminate (baseline did not over-implement on these small tasks), so **no
+  efficacy is claimed**. The controlled benchmark needs a discriminating task
+  set first.
