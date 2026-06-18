@@ -1,0 +1,247 @@
+#!/usr/bin/env python3
+"""L2 deterministic gates + L3 fuzzy measurement.
+
+One binary, registered on two events; it dispatches on hook_event_name.
+
+  PreToolUse (Edit|Write)  -> L2 corridor gate.
+                              Deny edits when .slime/corridor.md is absent —
+                              no corridor means no evidence for where to cut.
+
+  Stop                     -> L2 git-fact gates (block) + L3 cost report.
+                              * new-dependency gate: pubspec.yaml gained a
+                                dependency this session -> block, demand a
+                                keep/remove decision.
+                              * prune-logging gate: checks fail AND PRUNED.md
+                                was not touched this session -> block, demand
+                                the abandoned path be recorded.
+                              L3 metrics (touched/new files, public-API adds,
+                              out-of-corridor files) are reported, never block.
+
+L2 gates fire only on unambiguous git facts (zero inference), so a false block
+that would train users to disable the hook cannot happen here. L3 carries the
+fuzzy signals and only reports.
+
+Tunables (env):
+  SLIME_TEST_CMD       shell command run as the check for the prune gate.
+                       If unset, the prune-logging gate degrades (skipped).
+  SLIME_TEST_TIMEOUT   seconds before the check is abandoned (default 600).
+  SLIME_PUBSPEC        path to the dependency manifest (default pubspec.yaml).
+"""
+import fnmatch
+import json
+import os
+import re
+import subprocess
+import sys
+
+PUBSPEC = os.environ.get("SLIME_PUBSPEC", "pubspec.yaml")
+
+
+def read_input():
+    try:
+        return json.load(sys.stdin)
+    except Exception:
+        return {}
+
+
+def git(cwd, *args):
+    try:
+        r = subprocess.run(
+            ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=30
+        )
+        return r.stdout if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def is_git(cwd):
+    return bool(git(cwd, "rev-parse", "--is-inside-work-tree").strip())
+
+
+# --------------------------------------------------------------------------
+# L2 — PreToolUse corridor gate
+# --------------------------------------------------------------------------
+def corridor_gate(data):
+    cwd = data.get("cwd") or os.getcwd()
+    corridor = os.path.join(cwd, ".slime", "corridor.md")
+    if not os.path.exists(corridor):
+        out = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": (
+                    "Slime Coding: .slime/corridor.md is missing. Define the "
+                    "Meeting Corridor before editing — run /slime-corridor "
+                    "(or the slime-navigate skill). No corridor = no evidence "
+                    "for where the minimal change should land."
+                ),
+            }
+        }
+        print(json.dumps(out))
+    sys.exit(0)
+
+
+# --------------------------------------------------------------------------
+# L2 — Stop: new-dependency gate
+# --------------------------------------------------------------------------
+def parse_deps(text):
+    deps = set()
+    in_block = False
+    for line in text.splitlines():
+        if re.match(r"^dependencies:\s*$", line):
+            in_block = True
+            continue
+        if in_block:
+            if re.match(r"^\S", line):  # next top-level key ends the block
+                break
+            m = re.match(r"^  ([\w-]+):", line)
+            if m:
+                deps.add(m.group(1))
+    return deps
+
+
+def new_dependencies(cwd):
+    head = git(cwd, "show", "HEAD:" + PUBSPEC)
+    if not head:
+        # No baseline at HEAD (fresh repo, or manifest not yet committed) — we
+        # cannot tell new deps from existing ones, so degrade rather than
+        # false-block. L2 gates must never fire on an ambiguous signal.
+        return []
+    try:
+        with open(os.path.join(cwd, PUBSPEC), encoding="utf-8") as f:
+            cur = f.read()
+    except OSError:
+        return []
+    return sorted(parse_deps(cur) - parse_deps(head))
+
+
+# --------------------------------------------------------------------------
+# L2 — Stop: prune-logging gate
+# --------------------------------------------------------------------------
+def pruned_touched(cwd):
+    return bool(git(cwd, "status", "--porcelain", "--", ".slime/PRUNED.md").strip())
+
+
+def run_check(cwd):
+    cmd = os.environ.get("SLIME_TEST_CMD")
+    if not cmd:
+        return None  # gate degrades when no runnable check exists
+    try:
+        timeout = int(os.environ.get("SLIME_TEST_TIMEOUT", "600"))
+        r = subprocess.run(
+            cmd, cwd=cwd, shell=True, capture_output=True, text=True, timeout=timeout
+        )
+        return r.returncode
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------
+# L3 — Stop: cost report (never blocks)
+# --------------------------------------------------------------------------
+def corridor_globs(cwd):
+    path = os.path.join(cwd, ".slime", "corridor.md")
+    globs = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            in_paths = False
+            for line in f:
+                s = line.strip()
+                if s.lower().startswith("## paths"):
+                    in_paths = True
+                    continue
+                if in_paths:
+                    if s.startswith("##"):
+                        break
+                    m = re.match(r"-\s+(.+)", s)
+                    if m:
+                        globs.append(m.group(1).strip())
+    except OSError:
+        return []
+    return globs
+
+
+def l3_report(cwd):
+    touched = [n for n in git(cwd, "diff", "HEAD", "--name-only").splitlines() if n]
+    new_files = [
+        u
+        for u in git(cwd, "ls-files", "--others", "--exclude-standard").splitlines()
+        if u
+    ]
+    diff = git(cwd, "diff", "HEAD")
+    api = 0
+    for line in diff.splitlines():
+        if line.startswith("+") and not line.startswith("+++"):
+            c = line[1:].lstrip()
+            if re.match(r"(export\s|class\s|enum\s|mixin\s|typedef\s|extension\s)", c):
+                api += 1
+
+    globs = corridor_globs(cwd)
+    out_corr = []
+    if globs:
+        for n in touched + new_files:
+            if not any(fnmatch.fnmatch(n, g) for g in globs):
+                out_corr.append(n)
+
+    lines = [
+        "Slime Coding — cost report:",
+        f"  touched files: {len(touched)}",
+        f"  new files: {len(new_files)}",
+        f"  public-API additions (Dart export/class/enum/mixin/typedef): {api}",
+    ]
+    if globs:
+        suffix = f" -> {', '.join(out_corr[:10])}" if out_corr else ""
+        lines.append(f"  out-of-corridor files: {len(out_corr)}{suffix}")
+    else:
+        lines.append("  out-of-corridor: (no '## Paths' defined in corridor.md)")
+    return "\n".join(lines)
+
+
+def stop(data):
+    cwd = data.get("cwd") or os.getcwd()
+    if not is_git(cwd):
+        sys.exit(0)
+
+    blocks = []
+    # Guard against infinite Stop loops: only block on the first pass.
+    if not data.get("stop_hook_active"):
+        deps = new_dependencies(cwd)
+        if deps:
+            blocks.append(
+                "New dependency added to "
+                + PUBSPEC
+                + ": "
+                + ", ".join(deps)
+                + ". Each must be justified by the current corridor — keep it "
+                "(and say why) or remove it before finishing."
+            )
+        rc = run_check(cwd)
+        if rc is not None and rc != 0 and not pruned_touched(cwd):
+            blocks.append(
+                "Checks are failing (exit "
+                + str(rc)
+                + ") and .slime/PRUNED.md was not updated this session. Record "
+                "the design path you abandoned in .slime/PRUNED.md (run "
+                "/slime-prune) before stopping."
+            )
+
+    report = l3_report(cwd)
+    if blocks:
+        print(json.dumps({"decision": "block", "reason": "\n\n".join(blocks) + "\n\n" + report}))
+        sys.exit(0)
+    print(json.dumps({"systemMessage": report}))
+    sys.exit(0)
+
+
+def main():
+    data = read_input()
+    event = data.get("hook_event_name")
+    if event == "PreToolUse":
+        corridor_gate(data)
+    elif event == "Stop":
+        stop(data)
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,123 @@
+# Slime Coding
+
+把 Slime Coding 落到 Claude Code 的工作流，打包成 plugin。
+
+Slime Coding 約束 agentic AI 的過度實作：不從 prompt 直接生成 code，而是先讓
+需求與現有 repo 各自長出 frontier，只在兩者交會的最小走廊（corridor）動手，沒有
+evidence 的路徑剪掉並記錄。這個 repo 把那套紀律綁到 Claude Code 真正會強制執行的
+機制上。
+
+## 核心原則：請求 vs 強制
+
+- **prompt 是請求。** 寫在 `CLAUDE.md` 的「不要做 X」，模型可以略過。
+- **hook 是強制。** 條件命中就每次執行，不依賴模型記得。
+- **牙齒只能長在無歧義的訊號上。** 用模糊判斷去 hard-block，誤攔會訓練使用者把
+  hook 關掉，比沒有閘門更糟——所以閘門只收 git 事實，模糊訊號只回報。
+
+## 四層
+
+| 層 | 承載 | 機制 | 牙齒 |
+|---|---|---|---|
+| L0 紀律 | frontier 規則、走廊 artifact | `CLAUDE.md` + `slime-navigate` skill + `corridor.md` | 無（請求） |
+| L1 狀態 | 剪枝紀錄的跨輪保存 | `PRUNED.md` + 注入 hook | 注入確定，內容為狀態 |
+| L2 閘門 | git 事實的硬擋 | command-type hook（block） | 有 |
+| L3 量測 | 模糊成本訊號 | report-only hook | 無（只回報） |
+
+### L0 紀律
+`slime-navigate` skill 模板化五個輸出：Goal Frontier、Start Frontier、Meeting
+Corridor、Pruned Paths、Stop Condition。把 `templates/CLAUDE.slime.md` 貼進專案
+的 `CLAUDE.md`。走廊寫成 `.slime/corridor.md`，供 L2、L3 讀。
+> 內建 Explore / Plan 子 agent 會跳過 `CLAUDE.md`，所以探索階段的紀律綁在主
+> agent 上。
+
+### L1 狀態（剪枝紀錄）
+要修的失敗：agentic loop 復活上一輪已否決的設計，因為否決理由不在 context。
+- 檔案 `.slime/PRUNED.md`：git 進版、跨 session 存活、append-only。
+- `bin/prune-inject` 掛 SessionStart + UserPromptSubmit，透過 `additionalContext`
+  注入主 agent。
+- **衰減**：只注入與當前走廊相關、或近 N 筆的剪枝（`SLIME_PRUNE_RECENT`，預設
+  5），避免 `PRUNED.md` 單調成長線性燒 token。
+- 抵達編輯子 agent：子 agent 有獨立 context、不吃主 session 注入。靠兩件事補——
+  `CLAUDE.md` 寫「編輯前先讀 `.slime/PRUNED.md`」，或 planner 委派時把剪枝摘要
+  寫進 task prompt。
+
+### L2 閘門（全 command-type，零推論）
+`bin/patch-cost` 只收 git 事實，三個硬擋：
+- **新增依賴**：Stop hook 比對 `pubspec.yaml` 的 `dependencies` 鍵集 → 新增就
+  block，要求確認保留或移除。
+- **剪枝補登**：Stop hook，`SLIME_TEST_CMD` exit ≠ 0 且本 session `PRUNED.md`
+  未被 touch → block，要求把否決走廊寫進 `PRUNED.md` 再結束。
+- **走廊閘門**：PreToolUse 掛 `Edit|Write`，`.slime/corridor.md` 不存在就 `deny`。
+
+### L3 量測（永不 block）
+`bin/patch-cost` 在 Stop 時當 `systemMessage` 回報模糊訊號：touched / new files
+計數、public API 變更（Dart `export` / `class` / …）、走廊外檔案（讀
+`corridor.md` 的 `## Paths` 判定）。因為不擋，誤判不會升級成棄用。
+
+## 安裝
+
+Plugin（project scope，跟著 repo）：
+
+```bash
+# 在使用 Slime Coding 的專案根目錄
+claude plugin install /path/to/slime-coding   # 或從 marketplace
+```
+
+或先在專案 `.claude/` 迭代，穩定後轉 plugin（hook 格式兩處相同）。
+然後：
+1. 把 `templates/CLAUDE.slime.md` 貼進專案 `CLAUDE.md`。
+2. 把 `templates/.slime/` 複製到專案根目錄並 git 進版（先清成你自己的內容）。
+3. 用 `claude plugin details slime-coding` 查 token 成本。
+
+## 設定（env）
+
+| 變數 | 預設 | 作用 |
+|---|---|---|
+| `SLIME_PRUNE_RECENT` | `5` | L1 注入時保留的近 N 筆剪枝 |
+| `SLIME_TEST_CMD` | 無 | L2 剪枝閘門用的檢查指令；未設則此閘門退化 |
+| `SLIME_TEST_TIMEOUT` | `600` | 檢查的 timeout（秒） |
+| `SLIME_PUBSPEC` | `pubspec.yaml` | 依賴清單路徑（非 Dart 專案可改） |
+
+## Slash commands
+
+- `/slime-corridor [id]` — 產出 / 更新 `.slime/corridor.md`。
+- `/slime-prune [理由]` — 把否決走廊 append 進 `.slime/PRUNED.md`。
+
+## artifact 格式
+
+`.slime/corridor.md` 需含 `# Corridor: <id>` 與 `## Paths` 清單（glob）。
+`.slime/PRUNED.md` 每筆以 `## [date] corridor:<id>` 開頭。範例見
+`templates/.slime/`。
+
+## 結構
+
+```text
+slime-coding/
+├── .claude-plugin/plugin.json
+├── skills/slime-navigate/SKILL.md        # L0
+├── hooks/hooks.json                      # L1 注入；L2 三閘門；L3 回報
+├── bin/
+│   ├── patch-cost                        # L2 確定子集 + L3 模糊子集
+│   └── prune-inject                      # L1 注入 + 衰減
+├── commands/{slime-prune,slime-corridor}.md
+├── templates/
+│   ├── CLAUDE.slime.md                   # L0 貼進專案 CLAUDE.md
+│   └── .slime/{corridor.md,PRUNED.md}    # artifact 範例
+└── README.md
+```
+
+## 前提與限制
+
+- 需求要能寫成可觀察的驗收條件；寫不出來的模糊任務先做 discovery。
+- 剪枝補登閘門依賴可執行的測試或檢查（`SLIME_TEST_CMD`）；沒有可跑的檢查時這條
+  退化。
+- 衰減鍵（走廊 id / 近 N 筆）決定 context 成本上界；近 N 由 `SLIME_PRUNE_RECENT`
+  控制。
+- L2 的依賴閘門目前針對 Dart/Flutter 的 `pubspec.yaml`；換語言時改 `SLIME_PUBSPEC`
+  與 `bin/patch-cost` 的解析。
+
+## 參考
+
+- Hooks: https://code.claude.com/docs/en/hooks
+- Sub-agents: https://code.claude.com/docs/en/sub-agents
+- Plugins: https://code.claude.com/docs/en/plugins

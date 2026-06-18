@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+"""L1 state — pruned-path injection with decay.
+
+Slime Coding's failure mode: the agentic loop revives a design that was
+already rejected last round, because the rejection reason left the context.
+
+This hook reads `.slime/PRUNED.md` and injects the relevant pruned records
+back into the MAIN agent's context on SessionStart and UserPromptSubmit via
+`additionalContext`.
+
+Decay (section 1.5.3.4 of the guide): we do NOT re-paste the whole file —
+that would make PRUNED.md's monotonic growth burn tokens linearly. We inject
+only records tied to the CURRENT corridor, plus the most recent N records.
+Older records stay on disk for the record, out of context.
+
+Tunables (env):
+  SLIME_PRUNE_RECENT   number of most-recent records to always inject (default 5)
+
+This hook never blocks; on any unexpected condition it exits 0 silently.
+"""
+import json
+import os
+import re
+import sys
+
+RECENT = int(os.environ.get("SLIME_PRUNE_RECENT", "5"))
+
+
+def read_input():
+    try:
+        return json.load(sys.stdin)
+    except Exception:
+        return {}
+
+
+def current_corridor_id(cwd):
+    path = os.path.join(cwd, ".slime", "corridor.md")
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                m = re.match(r"#\s*Corridor:\s*(.+)", line.strip())
+                if m:
+                    return m.group(1).strip()
+    except OSError:
+        return None
+    return None
+
+
+def parse_entries(text):
+    """Split PRUNED.md into '## '-delimited records, preserving body lines."""
+    entries = []
+    cur = None
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if cur is not None:
+                entries.append(cur)
+            cur = {"header": line[3:].strip(), "body": [line]}
+        elif cur is not None:
+            cur["body"].append(line)
+    if cur is not None:
+        entries.append(cur)
+    return entries
+
+
+def entry_corridor(entry):
+    m = re.search(r"corridor:(\S+)", entry["header"])
+    return m.group(1) if m else None
+
+
+def main():
+    data = read_input()
+    event = data.get("hook_event_name", "UserPromptSubmit")
+    cwd = data.get("cwd") or os.getcwd()
+
+    pruned = os.path.join(cwd, ".slime", "PRUNED.md")
+    try:
+        with open(pruned, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        sys.exit(0)
+
+    entries = parse_entries(text)
+    if not entries:
+        sys.exit(0)
+
+    cid = current_corridor_id(cwd)
+    recent = entries[-RECENT:]
+    selected = []
+    for e in entries:
+        if e in recent or (cid and entry_corridor(e) == cid):
+            selected.append(e)
+    if not selected:
+        sys.exit(0)
+
+    rendered = "\n".join("\n".join(e["body"]) for e in selected)
+    header = (
+        "# Slime Coding — Pruned Paths\n"
+        "These designs were already rejected. Do NOT revive any of them unless "
+        "you have NEW evidence; if you must, say what changed.\n"
+        f"(showing {len(selected)} of {len(entries)} records; "
+        f"current corridor: {cid or 'none'}; full log: .slime/PRUNED.md)\n"
+    )
+    out = {
+        "hookSpecificOutput": {
+            "hookEventName": event,
+            "additionalContext": header + "\n" + rendered,
+        }
+    }
+    print(json.dumps(out))
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
