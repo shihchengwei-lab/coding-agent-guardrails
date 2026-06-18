@@ -10,6 +10,10 @@ Slime Coding 約束 agentic AI 的過度實作：不從 prompt 直接生成 code
 evidence 的路徑剪掉並記錄。這個 repo 把那套紀律綁到 Claude Code 真正會強制執行的
 機制上。
 
+> 想先懂「為什麼這樣做、怎麼手動運用」，看概念與方法論：
+> **[`docs/CONCEPT.md`](docs/CONCEPT.md)**。本 README 講的是「怎麼讓它在
+> Claude Code 裡生效」。
+
 ## 核心原則：請求 vs 強制
 
 - **prompt 是請求。** 寫在 `CLAUDE.md` 的「不要做 X」，模型可以略過。

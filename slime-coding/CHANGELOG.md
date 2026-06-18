@@ -22,6 +22,9 @@ cloning, so "versions" track the git history rather than published releases.
   (without blocking) the fact that the `.slime/` bootstrap exemption lets a
   corridor be widened mid-task.
 - `LICENSE` (MIT) and this changelog.
+- `docs/CONCEPT.md`: the Slime Coding concept / methodology document (v0.2),
+  linked from the README. The README stays the engineering/how-to layer.
+- README concept illustration (`assets/slime-coding.png`).
 
 ### Changed
 - Dropped the Claude Code plugin format (removed `.claude-plugin/plugin.json`,
