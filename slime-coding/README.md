@@ -1,6 +1,7 @@
 # Slime Coding
 
-把 Slime Coding 落到 Claude Code 的工作流，打包成 plugin。
+把 Slime Coding 落到 Claude Code 的工作流：clone 這個 repo，跑 `install.sh` 把
+紀律接進專案的 hooks / skill / commands。
 
 Slime Coding 約束 agentic AI 的過度實作：不從 prompt 直接生成 code，而是先讓
 需求與現有 repo 各自長出 frontier，只在兩者交會的最小走廊（corridor）動手，沒有
