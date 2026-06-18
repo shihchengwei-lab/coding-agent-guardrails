@@ -251,6 +251,13 @@ def l3_report(cwd):
         lines.append(f"  out-of-corridor files: {len(out_corr)}{suffix}")
     else:
         lines.append("  out-of-corridor: (no '## Paths' defined in corridor.md)")
+    # The corridor gate always lets .slime/ through (to avoid a bootstrap
+    # deadlock), so widening the corridor mid-task is possible. That can be
+    # legitimate new evidence, so we don't block — but surface it for the user.
+    corridor_changed = bool(
+        git(cwd, "status", "--porcelain", "--", ".slime/corridor.md").strip()
+    )
+    lines.append(f"  corridor changed this session: {'yes' if corridor_changed else 'no'}")
     return "\n".join(lines)
 
 
@@ -277,9 +284,9 @@ def stop(data):
             blocks.append(
                 "Checks are failing (exit "
                 + str(rc)
-                + ") and .slime/PRUNED.md was not updated this session. Record "
-                "the design path you abandoned in .slime/PRUNED.md (run "
-                "/slime-prune) before stopping."
+                + ") and .slime/PRUNED.md has no uncommitted change relative to "
+                "HEAD. Record the design path you abandoned in .slime/PRUNED.md "
+                "(run /slime-prune) before stopping."
             )
 
     report = l3_report(cwd)

@@ -7,13 +7,20 @@ cloning, so "versions" track the git history rather than published releases.
 ## [Unreleased]
 
 ### Added
-- `install.sh`: clone-and-install flow. Wires the three hooks into a target
-  project's `.claude/settings.json` with a quoted absolute path, links the
+- `install.sh`: clone-and-install flow. Wires the two hook scripts into a
+  target project's `.claude/settings.json` (across SessionStart,
+  UserPromptSubmit, PreToolUse, Stop) with a quoted absolute path, links the
   `slime-navigate` skill and the `/slime-corridor` / `/slime-prune` commands
   into `.claude/`, and seeds `.slime/` when absent. Idempotent; backs up
   `settings.json`.
 - `hooks/hooks.template.json`: hook block with a `__SLIME_HOME__` placeholder
-  for manual installers.
+  for manual installers. Commands run via `python3`, so install does not
+  depend on the clone keeping its executable bit.
+- `tests/test.sh`: minimal behavioural tests for the hooks (corridor gate,
+  bootstrap exemption, template rejection, env handling, Stop gates).
+- L3 report now includes `corridor changed this session: yes/no`, surfacing
+  (without blocking) the fact that the `.slime/` bootstrap exemption lets a
+  corridor be widened mid-task.
 - `LICENSE` (MIT) and this changelog.
 
 ### Changed
@@ -22,6 +29,8 @@ cloning, so "versions" track the git history rather than published releases.
 - Corridor gate (L2, PreToolUse) now blocks on invalid corridors, not just a
   missing file: a missing `# Corridor:` header, the template id
   `example-feature`, an empty `## Paths`, or the template example globs.
+- The prune-logging block message now says "no uncommitted change relative to
+  HEAD" instead of "not updated this session", matching the implementation.
 - Docs clarify the prune-logging gate detects an uncommitted change versus
   `HEAD` (not a Claude Code session boundary), and that the L3 `systemMessage`
   report is user-facing by design.

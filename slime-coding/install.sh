@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Slime Coding — clone-and-install.
 #
-# Wires the three hooks into a project's .claude/settings.json (with an
-# absolute, quoted path to this clone), and links the skill + slash commands
-# into the project's .claude/ so Claude Code discovers them. No plugin, no
-# marketplace — just clone this repo anywhere and run:
+# Wires the two hook scripts (prune-inject, patch-cost) into a project's
+# .claude/settings.json across four events (SessionStart, UserPromptSubmit,
+# PreToolUse, Stop), with an absolute, quoted path to this clone, and links the
+# skill + slash commands into the project's .claude/ so Claude Code discovers
+# them. No plugin, no marketplace — just clone this repo anywhere and run:
 #
 #   ./install.sh [/path/to/target/project]   # default: current directory
 #
@@ -27,7 +28,8 @@ echo "Target project    : $PROJECT"
 mkdir -p "$PROJECT/.claude/commands" "$PROJECT/.claude/skills"
 SETTINGS="$PROJECT/.claude/settings.json"
 
-# 1. Merge hooks into settings.json (absolute path baked into the template).
+# 1. Merge hooks into settings.json (the two scripts run via `python3`, so the
+#    install does not depend on the clone keeping its executable bit).
 SLIME_HOME="$SLIME_HOME" SETTINGS="$SETTINGS" TEMPLATE="$SLIME_HOME/hooks/hooks.template.json" \
 python3 - <<'PY'
 import json, os, re, shutil, time

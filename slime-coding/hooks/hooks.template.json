@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"__SLIME_HOME__\"/bin/prune-inject"
+            "command": "python3 \"__SLIME_HOME__\"/bin/prune-inject"
           }
         ]
       }
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"__SLIME_HOME__\"/bin/prune-inject"
+            "command": "python3 \"__SLIME_HOME__\"/bin/prune-inject"
           }
         ]
       }
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"__SLIME_HOME__\"/bin/patch-cost"
+            "command": "python3 \"__SLIME_HOME__\"/bin/patch-cost"
           }
         ]
       }
@@ -36,7 +36,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"__SLIME_HOME__\"/bin/patch-cost"
+            "command": "python3 \"__SLIME_HOME__\"/bin/patch-cost"
           }
         ]
       }
