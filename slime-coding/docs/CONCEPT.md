@@ -3,7 +3,7 @@
 版本：v0.2  
 日期：2026-06-18  
 狀態：概念文件  
-用途：定義 Slime Coding 的核心概念、操作流程與適用邊界。部署到 Claude Code、hooks、skill、commands 的細節放在 README 與 `install.sh`，不放在本文件。
+用途：定義 Slime Coding 的核心概念、操作流程與適用邊界。部署到 Claude Code、hooks、skill、commands 的細節放在 [`DESIGN.md`](DESIGN.md) 與 [`../README.md`](../README.md)，不放在本文件。
 
 ---
 
@@ -638,11 +638,11 @@ Slime Coding 關心的是：
 
 ---
 
-## 11. 與部署（README / install.sh）的關係
+## 11. 與部署（DESIGN.md / README）的關係
 
 本文件定義 Slime Coding 的概念層。
 
-工程承載層（見 README 與 `install.sh`）處理的是，例如：
+工程承載層（見 [`DESIGN.md`](DESIGN.md) 與 [`../README.md`](../README.md)）處理的是，例如：
 
 ```text
 - 哪些規則放在 CLAUDE.md。
