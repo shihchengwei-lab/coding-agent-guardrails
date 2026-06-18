@@ -1,0 +1,26 @@
+diff --git a/cli_notes/cli.py b/cli_notes/cli.py
+index 02954eb..dfafe4b 100644
+--- a/cli_notes/cli.py
++++ b/cli_notes/cli.py
+@@ -17,6 +17,11 @@ def cmd_list(args):
+     return 0
+ 
+ 
++def cmd_count(args):
++    print(len(store.load(args.store)))
++    return 0
++
++
+ def build_parser():
+     p = argparse.ArgumentParser(prog="notes")
+     p.add_argument("--store", default=None, help="path to the notes JSON file")
+@@ -28,6 +33,9 @@ def build_parser():
+ 
+     lst = sub.add_parser("list", help="list notes")
+     lst.set_defaults(func=cmd_list)
++
++    cnt = sub.add_parser("count", help="print the number of notes")
++    cnt.set_defaults(func=cmd_count)
+     return p
+ 
+ 

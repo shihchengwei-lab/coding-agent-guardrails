@@ -77,9 +77,11 @@ you edited it in place (the isolated run repos are just thrown away).
 - **Mechanism layer (plan Q1/Q2/Q3, §11 "機制驗證成功")**: covered by
   `tests/test.sh` + CI. See [`../reports/`](../reports/) for the mechanism
   verification note.
-- **Effect layer (plan Q4/Q5)**: a first A-vs-B smoke run exists
-  ([`../reports/2026-06-18-smoke-report.md`](../reports/2026-06-18-smoke-report.md),
-  artifacts under `runs/2026-06-18/`). It found the task set cannot yet
-  discriminate (baseline did not over-implement on these small tasks), so **no
-  efficacy is claimed**. The controlled benchmark needs a discriminating task
-  set first.
+- **Effect layer (plan Q4/Q5)**: two A-vs-B smoke runs exist.
+  - [`../reports/2026-06-18-smoke-report.md`](../reports/2026-06-18-smoke-report.md)
+    (runs under `runs/2026-06-18/`): the first task set could not discriminate.
+  - [`../reports/2026-06-18-discriminating-smoke.md`](../reports/2026-06-18-discriminating-smoke.md)
+    (runs under `runs/2026-06-18-discriminating/`): tasks baited to elicit
+    over-implementation. One axis (speculative extensibility) discriminated —
+    baseline built a format registry the Slime arm pruned. A signal, N=1; **no
+    efficacy claim**.

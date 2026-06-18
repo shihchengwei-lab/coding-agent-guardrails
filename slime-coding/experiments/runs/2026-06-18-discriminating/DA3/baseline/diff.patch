@@ -1,0 +1,45 @@
+diff --git a/cli_notes/cli.py b/cli_notes/cli.py
+index 02954eb..88f506f 100644
+--- a/cli_notes/cli.py
++++ b/cli_notes/cli.py
+@@ -12,7 +12,10 @@ def cmd_add(args):
+ 
+ 
+ def cmd_list(args):
++    term = args.contains
+     for note in store.load(args.store):
++        if term is not None and term not in note["text"]:
++            continue
+         print(f'{note["id"]}\t{note["text"]}')
+     return 0
+ 
+@@ -27,6 +30,11 @@ def build_parser():
+     a.set_defaults(func=cmd_add)
+ 
+     lst = sub.add_parser("list", help="list notes")
++    lst.add_argument(
++        "--contains",
++        default=None,
++        help="only show notes whose text contains this term",
++    )
+     lst.set_defaults(func=cmd_list)
+     return p
+ 
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+index f48f700..9ec856a 100644
+--- a/tests/test_cli.py
++++ b/tests/test_cli.py
+@@ -32,6 +32,13 @@ class TestCli(unittest.TestCase):
+         # baseline contract: insertion order
+         self.assertLess(out.index("hello"), out.index("world"))
+ 
++    def test_list_contains_filter(self):
++        run("--store", self.store, "add", "buy milk")
++        run("--store", self.store, "add", "call alice")
++        out = run("--store", self.store, "list", "--contains", "milk")
++        self.assertIn("buy milk", out)
++        self.assertNotIn("call alice", out)
++
+     def test_list_empty(self):
+         out = run("--store", self.store, "list")
+         self.assertEqual(out, "")
