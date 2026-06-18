@@ -39,6 +39,13 @@ cloning, so "versions" track the git history rather than published releases.
   runner only sets the stage and reads the diff.
 - `tests/test-bench.sh`: behavioural tests for the runner (plan, new-cell
   across all four conditions, measure, validate, aggregate).
+- `install.sh --with-cg <path>`: opt-in flag to also install the owner's
+  user-level [coding-guidelines](https://github.com/shihchengwei-lab/coding-guidelines)
+  hooks. Copies its three `.sh` scripts into `~/.claude/scripts/` and merges
+  its hook entries into `~/.claude/settings.json`, idempotent and with a
+  backup. Without the flag, behaviour is unchanged.
+- `tests/test-cg-install.sh`: smoke tests for the new flag using a stubbed
+  `$HOME` and a fake cg directory; wired into CI as a separate step.
 - L3 report now includes `corridor changed this session: yes/no`, surfacing
   (without blocking) the fact that the `.slime/` bootstrap exemption lets a
   corridor be widened mid-task.

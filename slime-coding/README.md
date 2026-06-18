@@ -8,12 +8,21 @@
 
 ## English
 
-**Stop agentic AI from over-building.** Instead of generating code straight from
-a prompt, Slime Coding makes the agent grow two frontiers — what the requirement
-needs, and what the repo already offers — and only edit the **minimal corridor
-where they meet**. Rejected designs are pruned and recorded so they don't come
-back. It's wired into Claude Code as hooks, so the discipline is enforced, not
-just requested.
+A slime mould pushes tendrils out from both ends of a maze. Tubes that find
+food thicken; tubes that find nothing wither. What's left is the path between
+two points — not designed, just *what survived*.
+
+**Slime Coding** does this to AI coding. The agent grows two frontiers — what
+the requirement actually needs, and what the repo already offers — and only
+edits the **minimal corridor where they meet**. Branches without evidence
+wither. Rejected designs are pruned and recorded so they don't grow back next
+round.
+
+→ The metaphor in full (Food Points, frontiers, corridor, pruned paths, stop
+condition): **[`docs/CONCEPT.md`](docs/CONCEPT.md)**.
+
+This repo wires the discipline into Claude Code as **hooks**, so it's
+enforced on git facts, not just requested in a prompt.
 
 ### Why hooks
 
@@ -47,6 +56,22 @@ skill + `/slime-corridor` and `/slime-prune` commands. One manual step: paste
 → Mechanics, config, layout: **[`docs/DESIGN.md`](docs/DESIGN.md)** ·
 the idea & manual method: **[`docs/CONCEPT.md`](docs/CONCEPT.md)**.
 
+### Pairing with coding-guidelines (optional)
+
+If you also use
+[coding-guidelines](https://github.com/shihchengwei-lab/coding-guidelines) —
+the two-prompt + Stop-self-check user-level companion — pass `--with-cg` to
+install both in one shot:
+
+```bash
+~/slime-coding/install.sh /path/to/your/project --with-cg ~/coding-guidelines
+```
+
+This copies its three scripts into `~/.claude/scripts/` and merges its hook
+entries into `~/.claude/settings.json` (backup kept, idempotent). The two
+repos stay independent — cg works standalone without the flag, and slime
+works without cg.
+
 ### Status — experimental, honestly
 
 Not a validated framework; no "proven / production-ready" claims. What's known
@@ -67,10 +92,18 @@ so far (data in [`reports/`](reports/), plan in
 
 ## 中文
 
-**約束 agentic AI 的過度實作。** 不從 prompt 直接生成 code，而是先讓需求與現有
-repo 各自長出 frontier，只在兩者交會的**最小走廊（corridor）**動手；沒 evidence
-的路徑剪掉並記錄，下輪不再復活。整套綁到 Claude Code 的 hook 上——是**強制**，不是
-請求。
+黏菌在迷宮裡會從兩端同時伸觸鬚：接到食物的管變粗，沒接到的萎縮。剩下的就是兩點
+之間的路——沒人「設計」，只是「活下來的」。
+
+**Slime Coding** 把這個套在 AI 寫程式上。Agent 從需求跟現有 repo 各長出
+frontier，只在兩者交會的**最小走廊（corridor）**動手；沒 evidence 的分支萎縮，
+被剪掉的路徑記下來，下一輪不會悄悄復活。
+
+→ 完整比喻（Food Points、frontier、走廊、剪枝路徑、停止條件）：
+**[`docs/CONCEPT.md`](docs/CONCEPT.md)**。
+
+這個 repo 把這套紀律接進 Claude Code 的 **hook**，用 git 事實強制執行，而不是
+寫在 prompt 裡請求。
 
 ### 為什麼用 hook
 
@@ -100,6 +133,20 @@ cd /path/to/your/project
 
 → 機制、設定、結構：**[`docs/DESIGN.md`](docs/DESIGN.md)**；
 理念與手動流程：**[`docs/CONCEPT.md`](docs/CONCEPT.md)**。
+
+### 搭配 coding-guidelines（選用）
+
+若同時使用
+[coding-guidelines](https://github.com/shihchengwei-lab/coding-guidelines)
+（兩條 prompt 紀律 + Stop 自查清單,user-level 配套），加 `--with-cg` 一次裝完：
+
+```bash
+~/slime-coding/install.sh /path/to/your/project --with-cg ~/coding-guidelines
+```
+
+它會把 cg 的三個 script 複製到 `~/.claude/scripts/`，並 merge cg 的 hook 進
+`~/.claude/settings.json`（保留 backup、idempotent）。兩個 repo 維持獨立 ——
+不加 flag 時 cg 仍可單獨使用,slime 也不依賴 cg。
 
 ### 驗證狀態——誠實版
 
