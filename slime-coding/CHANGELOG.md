@@ -28,6 +28,17 @@ cloning, so "versions" track the git history rather than published releases.
   (now 19 checks). Mechanism verification recorded in
   `reports/2026-06-18-mechanism-verification.md`. README states the
   experimental/validation status.
+- `experiments/slime-bench`: controlled-benchmark runner (Python3 stdlib) that
+  wraps the existing building blocks into five subcommands —
+  `plan` / `new-cell` / `measure` / `validate` / `aggregate`. `new-cell`
+  materialises a fixture and applies the per-condition stack (A/B/C/D in
+  plan §6); `measure` invokes `metrics.py` and writes `metrics.json` into the
+  cell; `validate` checks a record against `schema/metrics.schema.json`
+  (required + type + enum + minimum); `aggregate` walks a runs root and
+  prints a markdown table. The agent run itself stays out of scope — the
+  runner only sets the stage and reads the diff.
+- `tests/test-bench.sh`: behavioural tests for the runner (plan, new-cell
+  across all four conditions, measure, validate, aggregate).
 - L3 report now includes `corridor changed this session: yes/no`, surfacing
   (without blocking) the fact that the `.slime/` bootstrap exemption lets a
   corridor be widened mid-task.
@@ -57,6 +68,9 @@ cloning, so "versions" track the git history rather than published releases.
 - `prune-inject` no longer crashes on a non-numeric or negative
   `SLIME_PRUNE_RECENT` (falls back to `5`); `0` now means "no recency window"
   instead of injecting every record.
+- `experiments/metrics.py`: force UTF-8 when capturing git output so the
+  script runs on Windows shells whose default locale is not UTF-8 (e.g.
+  cp950); behavior on Linux/macOS is unchanged.
 
 ## [0.1.0] — initial
 

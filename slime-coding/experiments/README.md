@@ -39,35 +39,46 @@ Runs are written under a top-level `reports/` and (when produced)
 ## Running one cell
 
 Each run uses an **isolated** copy of the fixture as its own git repo (so the
-baseline commit and diff don't mix with the slime-coding repo).
+baseline commit and diff don't mix with the slime-coding repo). Use
+`slime-bench` (`experiments/slime-bench`) to wrap the building blocks, or
+invoke them directly if you prefer:
 
 ```bash
-# 1. materialize the fixture as a standalone repo with a baseline commit
-RUN=/tmp/slime-run/T1-C-1
-experiments/new-run.sh cli-notes "$RUN"
+# 1. print the matrix (no side-effects) — sanity-check the plan before running
+python3 experiments/slime-bench plan T1 \
+  --conditions baseline,prompt-only,hooked-slime,hooked-no-l1 --runs 3
 
-# 2. set up the condition (A: skip; B: paste CLAUDE.slime.md + skill/commands;
-#    C: install full stack; D: install then remove prune-inject hooks)
-./install.sh "$RUN"                       # condition C
+# 2. materialize one cell at <root>/<task>/<condition>/run<N> and apply the
+#    condition stack (A: nothing; B: skill/commands + CLAUDE.slime.md;
+#    C: install.sh full stack; D: C then strip the prune-inject hooks)
+ROOT=/tmp/slime-runs/2026-06-18
+CELL=$(python3 experiments/slime-bench new-cell \
+        --task T1 --condition hooked-slime --run 1 \
+        --fixture cli-notes --root "$ROOT" | tail -1)
 
 # 3. write the real corridor (/slime-corridor) and commit it as the task
 #    baseline, so later corridor edits show up as a diff:
-#    git -C "$RUN" add -A && git -C "$RUN" commit -m corridor
+#    git -C "$CELL" add -A && git -C "$CELL" commit -m corridor
 
-# 4. run the agent on tasks/T1-small-feature.md inside "$RUN", then its tests:
-cd "$RUN" && python3 -m unittest -q
+# 4. run the agent on tasks/T1-small-feature.md inside "$CELL", then its tests:
+cd "$CELL" && python3 -m unittest -q
 
 # 5. capture the git-derived metrics BEFORE committing the agent's work:
-python3 experiments/metrics.py --repo "$RUN" \
-  --task T1 --condition hooked-slime --run 1 > "$RUN/metrics.json"
+python3 experiments/slime-bench measure "$CELL"          # writes $CELL/metrics.json
 
 # 6. fill in the human-judged fields (task_success, reviewer score, blocks,
-#    pruned_path_revived, ...) by hand, validate against the schema, and save
-#    the run folder (prompt, diff.patch, stop-report, metrics.json, notes).
+#    pruned_path_revived, ...) by hand. Then validate against the schema:
+python3 experiments/slime-bench validate "$CELL/metrics.json"
+
+# 7. once a batch is done, aggregate the runs root into a markdown table:
+python3 experiments/slime-bench aggregate "$ROOT"
 ```
 
-`metrics.py` only fills the deterministic columns (plan §10.2); the judged
-columns are emitted as `null` on purpose so nobody invents them.
+`measure` only fills the deterministic columns (plan §10.2); the judged
+columns are emitted as `null` on purpose so nobody invents them. `validate`
+fails on a raw `measure` output — that is the design: the runner refuses to
+treat un-judged runs as complete, so the human-judged columns can't be
+silently skipped.
 
 `experiments/fixtures/<name>/reset.sh` resets the **in-repo** fixture source if
 you edited it in place (the isolated run repos are just thrown away).

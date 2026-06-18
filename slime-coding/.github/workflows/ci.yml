@@ -30,6 +30,7 @@ jobs:
         run: |
           bash -n install.sh
           bash -n tests/test.sh
+          bash -n tests/test-bench.sh
 
       - name: Check executable bits
         run: |
@@ -39,6 +40,9 @@ jobs:
 
       - name: Run hook tests
         run: ./tests/test.sh
+
+      - name: Run controlled-benchmark runner tests
+        run: bash tests/test-bench.sh
 
       - name: install.sh smoke test (idempotent)
         run: |
