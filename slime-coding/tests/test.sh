@@ -200,5 +200,63 @@ case "$out" in
   *) bad "18 .slime/ edits not counted out-of-corridor" "$out" ;;
 esac
 
+# === Typecheck gate (SLIME_TYPECHECK_CMD) — proposal AC1-AC6 ================
+M="$(mkrepo)"
+mkdir -p "$M/.slime"
+printf '# Corridor: real\n## Paths\n- lib/**\n' > "$M/.slime/corridor.md"
+git -C "$M" add -A && git -C "$M" commit -qm init
+
+# AC1: unset -> degrade (no typecheck block)
+out=$(stop "$M" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "19 SLIME_TYPECHECK_CMD unset -> degrade" "$out" ;;
+  *systemMessage*) ok "19 SLIME_TYPECHECK_CMD unset -> degrade (no block)" ;;
+  *) bad "19 SLIME_TYPECHECK_CMD unset -> degrade" "$out" ;;
+esac
+
+# AC2: exit 0 -> no typecheck block
+out=$(stop "$M" | SLIME_TYPECHECK_CMD='exit 0' python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "20 SLIME_TYPECHECK_CMD exit 0 -> no block" "$out" ;;
+  *systemMessage*) ok "20 SLIME_TYPECHECK_CMD exit 0 -> no block" ;;
+  *) bad "20 SLIME_TYPECHECK_CMD exit 0 -> no block" "$out" ;;
+esac
+
+# AC3: exit 1 -> block, reason carries the remedy text
+out=$(stop "$M" | SLIME_TYPECHECK_CMD='exit 1' python3 "$PATCH")
+case "$out" in
+  *'"block"'*Typecheck*hallucinated*) ok "21 SLIME_TYPECHECK_CMD exit 1 -> block (remedy text)" ;;
+  *) bad "21 SLIME_TYPECHECK_CMD exit 1 -> block (remedy text)" "$out" ;;
+esac
+
+# AC4: command not found -> degrade (no false block)
+out=$(stop "$M" | SLIME_TYPECHECK_CMD='this-cmd-does-not-exist-xyz' python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "22 missing typecheck cmd -> degrade" "$out" ;;
+  *systemMessage*) ok "22 missing typecheck cmd -> degrade (no block)" ;;
+  *) bad "22 missing typecheck cmd -> degrade" "$out" ;;
+esac
+
+# AC5: typecheck fail + new dependency -> both blocks present
+P5="$(mkrepo)"
+printf 'name: d\ndependencies:\n  flutter:\n    sdk: flutter\n' > "$P5/pubspec.yaml"
+mkdir -p "$P5/.slime"; printf '# Corridor: real\n## Paths\n- lib/**\n' > "$P5/.slime/corridor.md"
+git -C "$P5" add -A && git -C "$P5" commit -qm init
+printf 'name: d\ndependencies:\n  flutter:\n    sdk: flutter\n  http: ^1\n' > "$P5/pubspec.yaml"
+out=$(stop "$P5" | SLIME_TYPECHECK_CMD='exit 1' python3 "$PATCH")
+if grep -q Typecheck <<<"$out" && grep -q 'New dependency' <<<"$out" && grep -q http <<<"$out"; then
+  ok "23 typecheck + dependency -> both blocks in reason"
+else
+  bad "23 typecheck + dependency -> both blocks in reason" "$out"
+fi
+
+# AC6: stop_hook_active -> no block even if typecheck fails
+out=$(printf '{"hook_event_name":"Stop","stop_hook_active":true,"cwd":"%s"}' "$M" | SLIME_TYPECHECK_CMD='exit 1' python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "24 stop_hook_active + typecheck fail -> no block" "$out" ;;
+  *systemMessage*) ok "24 stop_hook_active + typecheck fail -> no block" ;;
+  *) bad "24 stop_hook_active + typecheck fail -> no block" "$out" ;;
+esac
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

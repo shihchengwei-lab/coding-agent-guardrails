@@ -7,7 +7,13 @@ One binary, registered on two events; it dispatches on hook_event_name.
                               Deny edits when .slime/corridor.md is absent —
                               no corridor means no evidence for where to cut.
 
-  Stop                     -> L2 git-fact gates (block) + L3 cost report.
+  Stop                     -> L2 tool-fact gates (block) + L3 cost report.
+                              * typecheck gate: SLIME_TYPECHECK_CMD (e.g.
+                                `dart analyze`) is red at Stop -> block. It is
+                                the contact sensor for hallucinated attachment
+                                points; no log-and-leave escape (unresolved
+                                code is broken, not abandoned). Opt-in; degrades
+                                if unset.
                               * new-dependency gate: pubspec.yaml gained a
                                 dependency this session -> block, demand a
                                 keep/remove decision.
@@ -200,6 +206,29 @@ def run_check(cwd):
         return None
 
 
+def run_typecheck(cwd):
+    """Run SLIME_TYPECHECK_CMD (e.g. `dart analyze`) as a contact sensor for the
+    patch. Returns (returncode, output) when the command actually ran, or None
+    when the gate must degrade (unset / missing command / timeout / error) — a
+    typechecker is the only thing that can tell a real attachment point from a
+    hallucinated one, but L2 must never false-block on an ambiguous signal."""
+    cmd = os.environ.get("SLIME_TYPECHECK_CMD")
+    if not cmd:
+        return None
+    try:
+        timeout = int(os.environ.get("SLIME_TEST_TIMEOUT", "600"))
+        r = subprocess.run(
+            cmd, cwd=cwd, shell=True, capture_output=True, text=True, timeout=timeout
+        )
+        if r.returncode == 127:
+            # shell "command not found" — a misconfigured command is not
+            # evidence of a hallucinated reference, so degrade, don't block.
+            return None
+        return r.returncode, (r.stdout or r.stderr or "")
+    except Exception:
+        return None
+
+
 # --------------------------------------------------------------------------
 # L3 — Stop: cost report (never blocks)
 # --------------------------------------------------------------------------
@@ -280,6 +309,24 @@ def stop(data):
     blocks = []
     # Guard against infinite Stop loops: only block on the first pass.
     if not data.get("stop_hook_active"):
+        # Typecheck (contact sensor) goes first: a reference that doesn't
+        # resolve means the code never compiled, which is more fundamental than
+        # a dependency or a red test. Unlike the failing-check gate below, this
+        # has NO log-and-leave escape — an unresolved reference is broken code,
+        # not an abandoned-but-acknowledged design, so the only way out is to
+        # fix the reference (or scope it as new work in the corridor).
+        tc = run_typecheck(cwd)
+        if tc is not None and tc[0] != 0:
+            blocks.append(
+                "Typecheck failed (SLIME_TYPECHECK_CMD exited "
+                + str(tc[0])
+                + "): the patch references something that does not resolve in "
+                "the repo — often a hallucinated attachment point. Fix the "
+                "reference. If it should exist but doesn't yet, it is new work, "
+                "not an anchor — go back and add it to the corridor's Goal "
+                "Frontier.\n\n"
+                + tc[1][:1500]
+            )
         deps = new_dependencies(cwd)
         if deps:
             blocks.append(

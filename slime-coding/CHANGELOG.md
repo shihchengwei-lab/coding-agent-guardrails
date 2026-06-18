@@ -7,6 +7,15 @@ cloning, so "versions" track the git history rather than published releases.
 ## [Unreleased]
 
 ### Added
+- L2 **typecheck gate** (`SLIME_TYPECHECK_CMD`, opt-in): at Stop, runs a type
+  checker (e.g. `dart analyze`) as a contact sensor and blocks if it is red —
+  catching hallucinated attachment points (a reference to a symbol/file/API
+  that doesn't resolve). Unlike the failing-check gate it has no log-and-leave
+  escape: unresolved code is broken, not an abandoned-but-logged design, so the
+  only way out is to fix the reference or scope it as new work. Exit-code only
+  (no output parsing, no multi-language adapter); degrades when unset / command
+  not found / timeout. Behaviour tests AC1–AC6 in `tests/test.sh` (now 25). A
+  mechanism, with no claim that it reduces hallucinations in practice.
 - `install.sh`: clone-and-install flow. Wires the two hook scripts into a
   target project's `.claude/settings.json` (across SessionStart,
   UserPromptSubmit, PreToolUse, Stop) with a quoted absolute path, links the
