@@ -148,14 +148,33 @@ slime-coding/
 
 ## 驗證狀態
 
-這是**實驗性**工作流，不是已驗證的 framework。目前只完成**機制層**驗證（閘門在它
-宣稱的 git 事實上會觸發、bootstrap 不死鎖、install idempotent）——見
+這是**實驗性**工作流，不是已驗證的 framework。在 controlled benchmark 出來前，
+不使用「proven / validated / production-ready」字眼。完整紀錄在
+[`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md) 與
+[`experiments/`](experiments/)；報告在 [`reports/`](reports/)。目前已知：
+
+**機制層（已驗證）。** 閘門在它宣稱的 git 事實上會觸發、bootstrap 不死鎖、
+install idempotent，由 `tests/test.sh`（19 項）+ CI 守住。見
 [`reports/2026-06-18-mechanism-verification.md`](reports/2026-06-18-mechanism-verification.md)。
 
-「是否真的降低過度實作」屬於**效果層**，需要多條件 benchmark，尚未執行。驗證計畫與
-實驗 harness 見 [`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md) 與
-[`experiments/`](experiments/)。在 controlled benchmark 出來前，不使用
-「proven / validated / production-ready」字眼。
+**效果層（初步、窄、僅 prompt-only）。** 以小 fixture（Python / Node）A/B 對照：
+
+- **L0 紀律**在「prompt 明示邀請推測性擴展」時有可重現、跨語言的效果：baseline
+  會替「只需要一種」的格式/種類/鍵蓋 registry/strategy（累計 13/13），Slime 紀律
+  擋掉（1/13），同功能同測試下 product code 約砍半。**但效果取決於那個邀請**——
+  prompt 不提示時，baseline 本來就最小化，Slime 量不出差異（0/4 vs 0/4）。
+  見 [`reports/2026-06-18-extensibility-3runs.md`](reports/2026-06-18-extensibility-3runs.md)、
+  [`reports/2026-06-18-js-wording.md`](reports/2026-06-18-js-wording.md)。
+- 先前測過的**重構誘餌、gold-plating 誘餌**沒讓 baseline 膨脹，故無宣稱。
+  見 [`reports/2026-06-18-smoke-report.md`](reports/2026-06-18-smoke-report.md)、
+  [`reports/2026-06-18-discriminating-smoke.md`](reports/2026-06-18-discriminating-smoke.md)。
+- **L2 依賴閘門**對守規矩的 agent 不額外加分（紀律已擋住），但對越界 agent 是有效
+  backstop：越界時真的 block、點名套件、驅動移除。見
+  [`reports/2026-06-18-condition-c.md`](reports/2026-06-18-condition-c.md)。
+
+**尚未做。** 多條件 controlled benchmark（≥8 任務、≥3 run、含失敗案例）；真正
+hooked（條件 C）的全自動跑；更急躁/較弱的 baseline 模型；非 export 的任務家族。
+所以**沒有任何普遍效益宣稱**——目前能說的只有上面這幾條窄結論。
 
 ## 前提與限制
 
