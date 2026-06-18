@@ -21,6 +21,13 @@ cloning, so "versions" track the git history rather than published releases.
 - GitHub Actions CI (`.github/workflows/ci.yml`): runs the tests, syntax/JSON
   checks, shell lint, executable-bit check, and an idempotent `install.sh`
   smoke test on push / PR to `main`. README shows a CI badge.
+- Validation harness (`docs/VALIDATION_PLAN.md`, `experiments/`): `new-run.sh`
+  to materialise a fixture as an isolated git repo, `metrics.py` for the
+  git-derived run metrics, `schema/metrics.schema.json`, task cards T1–T8, and
+  the `cli-notes` fixture. Phase A edge tests added to `tests/test.sh`
+  (now 19 checks). Mechanism verification recorded in
+  `reports/2026-06-18-mechanism-verification.md`. README states the
+  experimental/validation status.
 - L3 report now includes `corridor changed this session: yes/no`, surfacing
   (without blocking) the fact that the `.slime/` bootstrap exemption lets a
   corridor be widened mid-task.
@@ -30,6 +37,9 @@ cloning, so "versions" track the git history rather than published releases.
 - README concept illustration (`assets/slime-coding.png`).
 
 ### Changed
+- `out-of-corridor` count (L3 report and `metrics.py`) now excludes `.slime/`
+  artifacts: editing the corridor is tracked separately, and `PRUNED.md`
+  updates are required, not scope creep.
 - Dropped the Claude Code plugin format (removed `.claude-plugin/plugin.json`,
   renamed `hooks/hooks.json`). Installation is now clone + `install.sh`.
 - Corridor gate (L2, PreToolUse) now blocks on invalid corridors, not just a

@@ -100,5 +100,105 @@ case "$out" in
   *) bad "9  clean stop -> systemMessage report" "$out" ;;
 esac
 
+# === Phase A edge cases (validation plan §13) ===============================
+
+# A1: corridor.md without a ## Paths list -> deny
+F="$(mkrepo)"
+mkdir -p "$F/.slime"
+printf '# Corridor: real\n## Scope\njust prose, no paths\n' > "$F/.slime/corridor.md"
+out=$(pre "$F" "$F/lib/x.dart" | python3 "$PATCH")
+case "$out" in
+  *'"deny"'*) ok "10 corridor without ## Paths -> deny" ;;
+  *) bad "10 corridor without ## Paths -> deny" "$out" ;;
+esac
+
+# A2: corridor.md still listing a template example glob -> deny
+printf '# Corridor: real-task\n## Paths\n- lib/feature/example/**\n' > "$F/.slime/corridor.md"
+out=$(pre "$F" "$F/lib/x.dart" | python3 "$PATCH")
+case "$out" in
+  *'"deny"'*) ok "11 template example glob -> deny" ;;
+  *) bad "11 template example glob -> deny" "$out" ;;
+esac
+
+# A3: valid corridor + edit a file OUTSIDE the corridor ->
+#     PreToolUse allows (gate only checks corridor validity), and the Stop
+#     cost report lists it as out-of-corridor.
+G="$(mkrepo)"
+mkdir -p "$G/.slime"
+printf '# Corridor: real\n## Paths\n- lib/**\n' > "$G/.slime/corridor.md"
+git -C "$G" add -A && git -C "$G" commit -qm init
+out=$(pre "$G" "$G/other/y.py" | python3 "$PATCH")
+[ -z "$out" ] && ok "12 out-of-corridor edit -> PreToolUse allow" || bad "12 out-of-corridor edit -> PreToolUse allow" "$out"
+mkdir -p "$G/other"; printf 'x\n' > "$G/other/y.py"
+out=$(stop "$G" | python3 "$PATCH")
+case "$out" in
+  *"out-of-corridor files: 1"*) ok "13 out-of-corridor file shown in Stop report" ;;
+  *) bad "13 out-of-corridor file shown in Stop report" "$out" ;;
+esac
+
+# A4: missing pubspec.yaml -> dependency gate degrades (no block)
+H="$(mkrepo)"
+mkdir -p "$H/.slime"
+printf '# Corridor: real\n## Paths\n- lib/**\n' > "$H/.slime/corridor.md"
+git -C "$H" add -A && git -C "$H" commit -qm init
+out=$(stop "$H" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "14 missing pubspec -> no dependency block" "$out" ;;
+  *systemMessage*) ok "14 missing pubspec -> dependency gate degrades" ;;
+  *) bad "14 missing pubspec -> dependency gate degrades" "$out" ;;
+esac
+
+# A5: SLIME_TEST_CMD timing out -> degrades, does not crash or block
+out=$(stop "$H" | SLIME_TEST_CMD='sleep 5' SLIME_TEST_TIMEOUT=1 python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "15 SLIME_TEST_CMD timeout -> degrade (no block)" "$out" ;;
+  *systemMessage*) ok "15 SLIME_TEST_CMD timeout -> degrade (no block)" ;;
+  *) bad "15 SLIME_TEST_CMD timeout -> degrade (no block)" "$out" ;;
+esac
+
+# A6: multiple PRUNED records -> inject only matching-corridor + recent N
+K="$(mkrepo)"
+mkdir -p "$K/.slime"
+printf '# Corridor: cur\n## Paths\n- lib/**\n' > "$K/.slime/corridor.md"
+cat > "$K/.slime/PRUNED.md" <<'EOF'
+# Pruned
+## [2026-01-01] corridor:cur
+**Pruned:** OLDMATCH
+## [2026-01-02] corridor:a
+**Pruned:** ALPHA
+## [2026-01-03] corridor:b
+**Pruned:** RECENT1
+## [2026-01-04] corridor:c
+**Pruned:** RECENT2
+EOF
+out=$(prompt "$K" | SLIME_PRUNE_RECENT=2 python3 "$PRUNE")
+if grep -q OLDMATCH <<<"$out" && grep -q RECENT1 <<<"$out" && grep -q RECENT2 <<<"$out" && ! grep -q ALPHA <<<"$out"; then
+  ok "16 multi PRUNED -> matching corridor + recent N only"
+else
+  bad "16 multi PRUNED -> matching corridor + recent N only" "$out"
+fi
+
+# A7: SLIME_PRUNE_RECENT=0 -> inject only matching-corridor records
+out=$(prompt "$K" | SLIME_PRUNE_RECENT=0 python3 "$PRUNE")
+if grep -q OLDMATCH <<<"$out" && ! grep -q RECENT2 <<<"$out" && ! grep -q ALPHA <<<"$out"; then
+  ok "17 RECENT=0 -> only matching-corridor records"
+else
+  bad "17 RECENT=0 -> only matching-corridor records" "$out"
+fi
+
+# A8: editing .slime/ artifacts is not counted as out-of-corridor
+L="$(mkrepo)"
+mkdir -p "$L/.slime"
+printf '# Corridor: real\n## Paths\n- lib/**\n' > "$L/.slime/corridor.md"
+printf '# Pruned\n' > "$L/.slime/PRUNED.md"
+git -C "$L" add -A && git -C "$L" commit -qm init
+printf '## changed\n' >> "$L/.slime/corridor.md"   # widen/edit corridor
+printf '## entry\n' >> "$L/.slime/PRUNED.md"        # log a prune
+out=$(stop "$L" | python3 "$PATCH")
+case "$out" in
+  *"out-of-corridor files: 0"*) ok "18 .slime/ edits not counted out-of-corridor" ;;
+  *) bad "18 .slime/ edits not counted out-of-corridor" "$out" ;;
+esac
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -237,6 +237,10 @@ def l3_report(cwd):
     out_corr = []
     if globs:
         for n in touched + new_files:
+            # .slime/ artifacts aren't scope creep: corridor edits are tracked
+            # separately (corridor changed), and PRUNED.md updates are required.
+            if n.startswith(".slime/"):
+                continue
             if not any(fnmatch.fnmatch(n, g) for g in globs):
                 out_corr.append(n)
 

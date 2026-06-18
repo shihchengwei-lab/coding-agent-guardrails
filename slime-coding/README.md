@@ -146,6 +146,17 @@ slime-coding/
 ./tests/test.sh
 ```
 
+## 驗證狀態
+
+這是**實驗性**工作流，不是已驗證的 framework。目前只完成**機制層**驗證（閘門在它
+宣稱的 git 事實上會觸發、bootstrap 不死鎖、install idempotent）——見
+[`reports/2026-06-18-mechanism-verification.md`](reports/2026-06-18-mechanism-verification.md)。
+
+「是否真的降低過度實作」屬於**效果層**，需要多條件 benchmark，尚未執行。驗證計畫與
+實驗 harness 見 [`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md) 與
+[`experiments/`](experiments/)。在 controlled benchmark 出來前，不使用
+「proven / validated / production-ready」字眼。
+
 ## 前提與限制
 
 - 需求要能寫成可觀察的驗收條件；寫不出來的模糊任務先做 discovery。
