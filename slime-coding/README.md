@@ -138,3 +138,7 @@ slime-coding/
 - Hooks: https://code.claude.com/docs/en/hooks
 - Sub-agents: https://code.claude.com/docs/en/sub-agents
 - Settings（hooks 寫在 `.claude/settings.json`）: https://code.claude.com/docs/en/settings
+
+## License
+
+MIT — see [`LICENSE`](LICENSE)。變更紀錄見 [`CHANGELOG.md`](CHANGELOG.md)。
