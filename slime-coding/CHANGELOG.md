@@ -18,6 +18,9 @@ cloning, so "versions" track the git history rather than published releases.
   depend on the clone keeping its executable bit.
 - `tests/test.sh`: minimal behavioural tests for the hooks (corridor gate,
   bootstrap exemption, template rejection, env handling, Stop gates).
+- GitHub Actions CI (`.github/workflows/ci.yml`): runs the tests, syntax/JSON
+  checks, shell lint, executable-bit check, and an idempotent `install.sh`
+  smoke test on push / PR to `main`. README shows a CI badge.
 - L3 report now includes `corridor changed this session: yes/no`, surfacing
   (without blocking) the fact that the `.slime/` bootstrap exemption lets a
   corridor be widened mid-task.

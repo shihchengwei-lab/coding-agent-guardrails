@@ -1,5 +1,7 @@
 # Slime Coding
 
+[![CI](https://github.com/shihchengwei-lab/slime-coding/actions/workflows/ci.yml/badge.svg)](https://github.com/shihchengwei-lab/slime-coding/actions/workflows/ci.yml)
+
 ![Slime Coding — grow both frontiers, commit only the minimal corridor](assets/slime-coding.png)
 
 把 Slime Coding 落到 Claude Code 的工作流：clone 這個 repo，跑 `install.sh` 把

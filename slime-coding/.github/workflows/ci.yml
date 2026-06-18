@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show versions
+        run: |
+          python3 --version
+          git --version
+          bash --version | head -1
+
+      - name: Syntax-check hook scripts
+        run: |
+          python3 -c 'import ast; ast.parse(open("bin/patch-cost").read())'
+          python3 -c 'import ast; ast.parse(open("bin/prune-inject").read())'
+
+      - name: Validate hooks template JSON
+        run: python3 -c 'import json; json.load(open("hooks/hooks.template.json"))'
+
+      - name: Lint shell scripts
+        run: |
+          bash -n install.sh
+          bash -n tests/test.sh
+
+      - name: Check executable bits
+        run: |
+          for f in bin/patch-cost bin/prune-inject install.sh tests/test.sh; do
+            if [ ! -x "$f" ]; then echo "::error::$f is not executable"; exit 1; fi
+          done
+
+      - name: Run hook tests
+        run: ./tests/test.sh
+
+      - name: install.sh smoke test (idempotent)
+        run: |
+          target="$(mktemp -d)"
+          ./install.sh "$target"
+          ./install.sh "$target"   # second run must stay idempotent
+          python3 - "$target" <<'PY'
+          import json, sys
+          hooks = json.load(open(sys.argv[1] + "/.claude/settings.json"))["hooks"]
+          assert set(hooks) >= {"SessionStart", "UserPromptSubmit", "PreToolUse", "Stop"}, hooks
+          for event, groups in hooks.items():
+              assert len(groups) == 1, f"{event} not idempotent: {len(groups)} groups"
+          print("install.sh smoke test OK")
+          PY
