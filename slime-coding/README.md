@@ -33,6 +33,9 @@ unambiguous git facts:
 - **No edit without a corridor.** Define the minimal change in
   `.slime/corridor.md` first, or `Edit`/`Write` is denied.
 - **A new dependency is blocked at Stop** until you keep-or-remove it.
+- **Hallucinated references are caught** (opt-in): a type checker
+  (`dart analyze`, `tsc`, …) runs at Stop and blocks if the patch points at a
+  symbol that doesn't resolve — i.e. an invented attachment point.
 - **Pruned paths persist** in `.slime/PRUNED.md` and are re-injected next
   session, so the loop can't revive a rejected design.
 - **Scope creep is reported** (touched / new files, out-of-corridor edits) —
@@ -79,7 +82,7 @@ so far (data in [`reports/`](reports/), plan in
 [`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)):
 
 - **Mechanism: verified.** Gates fire on the git facts they claim, bootstrap
-  doesn't deadlock, install is idempotent — `tests/test.sh` (19 checks) + CI.
+  doesn't deadlock, install is idempotent — `tests/test.sh` (25 checks) + CI.
 - **Effect: a narrow, reproducible signal.** In small Python/Node A·B runs, when
   a prompt invites speculative extensibility ("we'll add more formats later"),
   the baseline builds a registry for the one required variant (13/13) while the
@@ -113,6 +116,8 @@ Slime Coding 的牙齒只長在無歧義的 git 事實上：
 - **沒走廊不准改。** 先把最小修改寫進 `.slime/corridor.md`，否則 `Edit`/`Write`
   被擋。
 - **新增依賴在 Stop 被擋**，要你保留或移除才放行。
+- **虛構的 reference 會被擋**（選用）：Stop 時跑 type checker（`dart analyze`、
+  `tsc`…），patch 指到 resolve 不出來的符號（憑空捏的接點）就擋。
 - **剪枝跨輪存活**：寫進 `.slime/PRUNED.md`，下個 session 自動注入，loop 復活不了
   已否決的設計。
 - **scope creep 會回報**（touched / new files、走廊外修改）——顯示，但不誤擋。
@@ -155,7 +160,7 @@ cd /path/to/your/project
 [`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)）：
 
 - **機制層：已驗證。** 閘門在宣稱的 git 事實上會觸發、bootstrap 不死鎖、install
-  idempotent——`tests/test.sh`（19 項）+ CI。
+  idempotent——`tests/test.sh`（25 項）+ CI。
 - **效果層：窄而可重現的訊號。** 小 Python/Node A·B 對照下，當 prompt 明示邀請
   推測性擴展（「之後還會加更多格式」），baseline 會替「只需要一種」的變體蓋
   registry（13/13），Slime 紀律擋掉（1/13），同行為下程式約砍半。**不給這個邀請
