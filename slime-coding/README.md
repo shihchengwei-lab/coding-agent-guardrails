@@ -43,6 +43,9 @@ unambiguous git facts:
 
 ### Quick start
 
+Slime Coding is **per-project** — opt in by running `install.sh` against each
+repo you want it on (state lives in that repo's `.slime/`).
+
 Clone anywhere, then run `install.sh` against your project (idempotent; backs up
 `settings.json`):
 
@@ -123,6 +126,9 @@ Slime Coding 的牙齒只長在無歧義的 git 事實上：
 - **scope creep 會回報**（touched / new files、走廊外修改）——顯示，但不誤擋。
 
 ### 快速開始
+
+Slime Coding 是 **per-project** 工具——每個你想用它的 repo 都要各自跑一次
+`install.sh`（走廊 / PRUNED 狀態存在該 repo 的 `.slime/`）。
 
 clone 到任何位置，對你的專案跑一次 `install.sh`（可重跑、會備份 `settings.json`）：
 
