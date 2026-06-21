@@ -146,19 +146,36 @@ matrix. Same one-shot `claude -p` modality.
 
 ### Direct answer to "does Slime work on Haiku/Sonnet?"
 
-**On this fixture, this bait, at N=3 per cell: no measurable positive effect
-from Slime, plus measurable negative effects.** Specifically:
+**This run cannot answer that question** — the fixture is too small for the
+failure mode to appear. The cli-notes fixture is 115 lines total
+(cli.py 40 + store.py 33 + tests 41 + `__init__` 1); the three baits all
+ask the model to add a single subcommand in a single file (~3 lines of
+real logic each), against a baseline that already contains the obvious
+minimal template (`cmd_add` / `cmd_list`). At this size there is no
+architectural decision space, no multi-file consequence, and no existing
+abstraction to "match" — so the registry pile-up the rubric counts can
+barely manifest even on Opus (which still produced 3/9, but that's the
+high-water mark of the matrix). Haiku and Sonnet baseline are clean at
+0/9 not because they're disciplined under pressure, but because there is
+no pressure on a 3-line task.
 
-- The targeted failure mode (speculative registry pile-up) does not occur on
-  Haiku/Sonnet baseline, so there is nothing for Slime to suppress that
-  isn't already absent. This is consistent with the 06-21 BvC finding that
-  the gates are a backstop on git facts, not a multiplier on premature
-  abstraction — and extends it: on weaker models, the *prompt-only condition
-  that 06-21 said carries the suppression isn't even needed* on this bait,
-  because the model doesn't bite.
-- The bundle imposes a wall-clock tax on Sonnet (corridor authoring + repo
-  navigation eats the agent's deliberation budget). At 590 s this caused
-  2/9 cells to produce no implementation at all.
+What the data actually shows, narrowly:
+
+- **Slime does not help on a task this trivial.** The thing the gates
+  target is not present in the baseline. There is nothing to suppress.
+- **Slime imposes a wall-clock tax on Sonnet at this configuration.**
+  Two cells (2/9) burned the 590 s budget on corridor authoring + repo
+  navigation without writing the implementation. This is a real cost the
+  fixture's small size cannot explain away.
+
+The broader question ("does Slime help weak models avoid garbage on
+real-world tasks?") is **not answered here**. It needs a fixture with
+architectural decision space, multi-file consequences, vague
+specifications, and existing abstractions worth imitating — none of which
+cli-notes has. The 06-18 / 06-21 finding that the gates are a backstop on
+git facts (deps / hallucinated refs / failing checks), not on speculative
+abstraction, is consistent with this null and is the right reason to keep
+the project around even when this specific matrix lights up empty.
 
 ### What this does NOT prove
 
@@ -182,9 +199,11 @@ from Slime, plus measurable negative effects.** Specifically:
 ### Effect on the README
 
 The prior README bullet stayed neutral ("跨 model 也測過、但沒測 baseline").
-That hedge is now obsolete and replaced with the actual finding: on weak
-models tested here, Slime adds cost without adding measurable suppression on
-this axis, because the suppression target isn't present in the baseline.
+The replacement bullet says what this run can and cannot say: fixture too
+small to surface the failure mode, so the matrix produces a null on
+suppression and a real signal on Sonnet timeout cost — but neither "Slime
+helps" nor "Slime doesn't help" can be claimed for Haiku/Sonnet on
+real-world tasks from this evidence.
 
 ## Effect on the 06-21 verdict
 
