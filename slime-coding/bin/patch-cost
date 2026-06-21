@@ -115,6 +115,22 @@ def corridor_problem(cwd):
     return None
 
 
+# Repo-metadata files: not product code, no real frontier to compute, so the
+# corridor concept doesn't apply. Matched by basename so a nested .gitignore
+# (which git itself honours at any depth) is also exempt. README.md is
+# deliberately NOT here — it describes product behaviour and is a real edit
+# target. Keep the list conservative; widening it is a one-line change.
+META_BASENAMES = {
+    ".gitignore",
+    ".gitattributes",
+    ".editorconfig",
+    "LICENSE",
+    "LICENSE.md",
+    "LICENSE.txt",
+    "CHANGELOG.md",
+}
+
+
 def under_slime(cwd, tool_input):
     """True when the edit targets a .slime/ artifact (always allowed, so the
     corridor and pruned log can be bootstrapped without a corridor)."""
@@ -129,11 +145,24 @@ def under_slime(cwd, tool_input):
     return rel.split(os.sep)[0] == ".slime"
 
 
+def is_meta_file(tool_input):
+    """True when the edit target's basename is in META_BASENAMES, so nested
+    .gitignore / .gitattributes (which git honours at any depth) also pass."""
+    fp = (tool_input or {}).get("file_path") or (tool_input or {}).get("path") or ""
+    return os.path.basename(fp) in META_BASENAMES if fp else False
+
+
 def corridor_gate(data):
     cwd = data.get("cwd") or os.getcwd()
+    tool_input = data.get("tool_input")
     # Bootstrap exemption: writing .slime/ artifacts (corridor.md, PRUNED.md)
     # never needs a corridor, otherwise creating one would deadlock.
-    if under_slime(cwd, data.get("tool_input")):
+    if under_slime(cwd, tool_input):
+        sys.exit(0)
+    # Repo-metadata exemption: .gitignore et al. are not product code, so the
+    # corridor concept has no real frontier against them — requiring a corridor
+    # is pure friction.
+    if is_meta_file(tool_input):
         sys.exit(0)
     problem = corridor_problem(cwd)
     if problem:

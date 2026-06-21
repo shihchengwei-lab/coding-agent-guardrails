@@ -266,5 +266,29 @@ case "$out" in
   *) bad "24 stop_hook_active + typecheck fail -> no block" "$out" ;;
 esac
 
+# === Repo-meta files exempt from corridor gate ==============================
+# These are repo metadata, not product code — the corridor concept has no real
+# "frontier" to compute against them, so requiring a corridor is pure friction.
+N="$(mkrepo)"
+
+# 25: no corridor + edit .gitignore -> allow (was: deny, pre-exemption)
+out=$(pre "$N" "$N/.gitignore" | python3 "$PATCH")
+[ -z "$out" ] && ok "25 no corridor + edit .gitignore -> allow" || bad "25 no corridor + edit .gitignore -> allow" "$out"
+
+# 26: no corridor + edit LICENSE -> allow
+out=$(pre "$N" "$N/LICENSE" | python3 "$PATCH")
+[ -z "$out" ] && ok "26 no corridor + edit LICENSE -> allow" || bad "26 no corridor + edit LICENSE -> allow" "$out"
+
+# 27: no corridor + edit nested .gitignore -> allow (basename match, mirrors git)
+out=$(pre "$N" "$N/sub/dir/.gitignore" | python3 "$PATCH")
+[ -z "$out" ] && ok "27 no corridor + edit nested .gitignore -> allow" || bad "27 no corridor + edit nested .gitignore -> allow" "$out"
+
+# 28: no corridor + edit README.md -> still DENY (README is not on the exempt list)
+out=$(pre "$N" "$N/README.md" | python3 "$PATCH")
+case "$out" in
+  *'"deny"'*) ok "28 no corridor + edit README.md -> deny (not exempt)" ;;
+  *) bad "28 no corridor + edit README.md -> deny (not exempt)" "$out" ;;
+esac
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

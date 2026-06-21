@@ -31,7 +31,9 @@ skip it. A **hook** runs every time. Slime Coding puts the teeth only on
 unambiguous git facts:
 
 - **No edit without a corridor.** Define the minimal change in
-  `.slime/corridor.md` first, or `Edit`/`Write` is denied.
+  `.slime/corridor.md` first, or `Edit`/`Write` is denied. (Repo-metadata
+  files — `.gitignore`, `.gitattributes`, `.editorconfig`, `LICENSE`,
+  `CHANGELOG.md` — are exempt: no real frontier to compute against them.)
 - **A new dependency is blocked at Stop** until you keep-or-remove it.
 - **Hallucinated references are caught** (opt-in): a type checker
   (`dart analyze`, `tsc`, …) runs at Stop and blocks if the patch points at a
@@ -85,7 +87,7 @@ so far (data in [`reports/`](reports/), plan in
 [`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)):
 
 - **Mechanism: verified.** Gates fire on the git facts they claim, bootstrap
-  doesn't deadlock, install is idempotent — `tests/test.sh` (25 checks) + CI.
+  doesn't deadlock, install is idempotent — `tests/test.sh` (29 checks) + CI.
 - **Effect: a narrow, reproducible signal.** In small Python/Node A·B runs, when
   a prompt invites speculative extensibility ("we'll add more formats later"),
   the baseline builds a registry for the one required variant (13/13) while the
@@ -122,7 +124,8 @@ frontier，只在兩者交會的**最小走廊（corridor）**動手；沒 evide
 Slime Coding 的牙齒只長在無歧義的 git 事實上：
 
 - **沒走廊不准改。** 先把最小修改寫進 `.slime/corridor.md`，否則 `Edit`/`Write`
-  被擋。
+  被擋。（repo 元資料檔——`.gitignore`、`.gitattributes`、`.editorconfig`、
+  `LICENSE`、`CHANGELOG.md`——免：沒有真正的 frontier 可算。）
 - **新增依賴在 Stop 被擋**，要你保留或移除才放行。
 - **虛構的 reference 會被擋**（選用）：Stop 時跑 type checker（`dart analyze`、
   `tsc`…），patch 指到 resolve 不出來的符號（憑空捏的接點）就擋。
