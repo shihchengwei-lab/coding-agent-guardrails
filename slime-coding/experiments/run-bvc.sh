@@ -33,6 +33,14 @@ mkdir -p "$LOGDIR"
 CONDITIONS="${1:-hooked-slime}"
 NRUNS="${2:-3}"
 
+# Optional model override. When set, --model <id> is passed to `claude -p` and
+# the model id is also written into the cell's metrics.json so we can tell
+# Haiku/Sonnet/Opus cells apart after the fact. Empty -> CLI default (whatever
+# the host user's settings.json picks).
+MODEL="${BVC_MODEL:-}"
+MODEL_ARGS=()
+[ -n "$MODEL" ] && MODEL_ARGS=(--model "$MODEL")
+
 # The Stop gate's failing-check arm only has teeth when a check command exists.
 export SLIME_TEST_CMD="${SLIME_TEST_CMD:-python3 -m pytest -q}"
 
@@ -60,8 +68,9 @@ for task in E1 E2 E3; do
         continue
       fi
 
-      echo "=== $tag : agent run ==="
+      echo "=== $tag : agent run (model=${MODEL:-default}) ==="
       ( cd "$cell" && timeout 590 claude -p "$(prompt_for "$task")" \
+          "${MODEL_ARGS[@]}" \
           --setting-sources project,local \
           --permission-mode bypassPermissions \
           --output-format stream-json --verbose \

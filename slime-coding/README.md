@@ -67,6 +67,7 @@ cd /你的專案
 - **關卡本身會動**：該擋的地方會擋、安裝不會壞、可以重跑——29 個自動測試 + CI 都過。
 - **效果有訊號、但很窄**。在小型 Python/Node 對照測試裡，當題目暗示「之後還會加更多」（例如「之後可能要支援其他格式」），沒用 Slime 的版本會蓋一個大架構（13/13），用了 Slime 的版本不會（1/13）——同功能、程式剩一半。**沒有那個暗示，看不出差異。** 其他容易誘發過度實作的場景（沒事亂重構、為了好看堆抽象）目前測不出差異。
 - **關卡是安全網，不是放大鏡**。最近的同條件對照（[`reports/2026-06-21-bvc.md`](reports/2026-06-21-bvc.md)）顯示：真正讓 AI 守規矩的，是寫在 prompt 裡的紀律。關卡負責接住「紀律失靈」的那幾種情況：加進新套件、引用不存在的函數或變數。
+- **跨 model 也測過、但沒測 baseline**。Opus / Sonnet / Haiku 三個 model 在「裝了 Slime」的條件下都跑得起來，蓋 registry 的傾向 Opus > Sonnet > Haiku（[`reports/2026-06-22-model-class.md`](reports/2026-06-22-model-class.md)）。**但**沒測「不裝 Slime」的對照、所以**「Slime 對弱模型有沒有用」目前沒答案**。Sonnet 上看到 22% (2/9) 的 cell 把時間花在 corridor 探索、沒寫到實作就 timeout——這是 Slime 的代價之一、Haiku 跟 Opus 沒這個問題。
 
 詳細數據在 [`reports/`](reports/)、後續驗證計畫在 [`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)。
 
