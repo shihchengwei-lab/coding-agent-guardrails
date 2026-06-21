@@ -108,9 +108,6 @@ the 590 s wall hits.
   and Haiku both produced fewer registry cells than Opus.
 
 **Does not hold (cannot be claimed):**
-- "Slime helps weak models more than strong models." There is no
-  baseline-no-hook arm for Haiku/Sonnet in this run. Whether Haiku-baseline
-  would have leaked registries at 9/9 or 0/9 is unknown.
 - "Hooks don't hurt." Sonnet's 2/9 timeout is a real cost imposed by the
   corridor-first flow consuming the wall-clock budget. At a 590 s ceiling, a
   model that spends ~590 s on navigation never reaches the implementation.
@@ -118,6 +115,76 @@ the 590 s wall hits.
   a measured rate, not a fluke.
 - Any generalisation to non-Python fixtures or to baits other than the
   extensibility axis. None tested here.
+
+## Update — baseline arm added (2026-06-22 evening)
+
+The "no baseline" gap was closed by running condition A (baseline: naked
+fixture, no L0 prose, no hooks) on the same Haiku/Sonnet × E1/E2/E3 × N=3
+matrix. Same one-shot `claude -p` modality.
+
+| model | condition | registry | code-level over-ext | timeout |
+|-------|-----------|:---:|:---:|:---:|
+| Haiku  | baseline (A)   | 0/9 | 0/9 | 0/9 |
+| Haiku  | hooked-slime (C) | 0/9 | 1/9 (E3 run2 generic `args.sort`) | 0/9 |
+| Sonnet | baseline (A)   | 0/9 | 0/9 | 0/9 |
+| Sonnet | hooked-slime (C) | 1/9 (E3 run3 `_SORT_KEYS`) | 0/9 | 2/9 (E1 run3, E3 run2) |
+| Opus   | hooked-slime (C, 06-21 reuse) | 3/9 | 3/9 | 0/9 |
+
+### What the baseline shows
+
+- **Both models stayed clean on baseline.** Haiku/Sonnet, given the
+  speculative-extensibility bait with no L0 prose and no hooks, did not build
+  a registry on any of the 18 cells, and did not over-extend the code.
+- **Adding Slime did not measurably help on this axis.** For Haiku and
+  Sonnet, baseline is at least as clean as hooked-slime — there is no cell
+  where the hooks suppressed something baseline failed to suppress.
+- **Adding Slime has a measurable cost on Sonnet at this configuration.**
+  Two cells (2/9) burned the 590 s budget on corridor navigation in
+  hooked-slime; the baseline arm finished all 9 cells without timing out.
+  Plus one Sonnet hooked cell built a registry (`_SORT_KEYS`) where the
+  baseline cells did not.
+
+### Direct answer to "does Slime work on Haiku/Sonnet?"
+
+**On this fixture, this bait, at N=3 per cell: no measurable positive effect
+from Slime, plus measurable negative effects.** Specifically:
+
+- The targeted failure mode (speculative registry pile-up) does not occur on
+  Haiku/Sonnet baseline, so there is nothing for Slime to suppress that
+  isn't already absent. This is consistent with the 06-21 BvC finding that
+  the gates are a backstop on git facts, not a multiplier on premature
+  abstraction — and extends it: on weaker models, the *prompt-only condition
+  that 06-21 said carries the suppression isn't even needed* on this bait,
+  because the model doesn't bite.
+- The bundle imposes a wall-clock tax on Sonnet (corridor authoring + repo
+  navigation eats the agent's deliberation budget). At 590 s this caused
+  2/9 cells to produce no implementation at all.
+
+### What this does NOT prove
+
+- **N=3 is noise-level for any single delta.** "1/9 vs 0/9 registry" on
+  Sonnet hooked is one cell; the same number would appear under sampling
+  noise. The shape of the table (multiple deltas all in the same direction)
+  is the load-bearing observation, not any individual cell.
+- **Only one fixture, one bait family.** "Slime hurts weak models" is too
+  strong; "On this specific extensibility-bait test, Slime has nothing to
+  add for Haiku/Sonnet and adds a timeout cost on Sonnet" is what the data
+  actually supports.
+- **The hooks have separate, measured value as a backstop on git facts**
+  (new dependencies, hallucinated references, failing checks at Stop) — none
+  of which are tested here. Those gates didn't fire in this matrix because
+  the agents didn't trigger them, not because they don't work.
+- **One-shot modality.** A user driving an interactive Slime session can
+  raise the timeout, can revise the corridor mid-flight, can stop the agent
+  before it burns the budget. The one-shot `claude -p` modality doesn't
+  give the model any of that.
+
+### Effect on the README
+
+The prior README bullet stayed neutral ("跨 model 也測過、但沒測 baseline").
+That hedge is now obsolete and replaced with the actual finding: on weak
+models tested here, Slime adds cost without adding measurable suppression on
+this axis, because the suppression target isn't present in the baseline.
 
 ## Effect on the 06-21 verdict
 
