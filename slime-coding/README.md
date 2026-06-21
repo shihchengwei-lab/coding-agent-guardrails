@@ -174,7 +174,7 @@ cd /path/to/your/project
 [`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)）：
 
 - **機制層：已驗證。** 閘門在宣稱的 git 事實上會觸發、bootstrap 不死鎖、install
-  idempotent——`tests/test.sh`（25 項）+ CI。
+  idempotent——`tests/test.sh`（29 項）+ CI。
 - **效果層：窄而可重現的訊號。** 小 Python/Node A·B 對照下，當 prompt 明示邀請
   推測性擴展（「之後還會加更多格式」），baseline 會替「只需要一種」的變體蓋
   registry（13/13），Slime 紀律擋掉（1/13），同行為下程式約砍半。**不給這個邀請
