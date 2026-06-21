@@ -34,28 +34,37 @@ else
 fi
 
 # === 3. new-cell prompt-only ================================================
+# The L0 discipline must land in CLAUDE.md (the file Claude Code auto-loads),
+# not a bare CLAUDE.slime.md (which a nested `claude -p` run never reads). An
+# empirical probe confirmed an unloaded CLAUDE.slime.md leaves the agent with no
+# active discipline — that would silently collapse condition B onto baseline A.
 CELL_B=$(python3 "$BENCH" new-cell --task T1 --condition prompt-only --run 1 \
           --fixture cli-notes --root "$ROOT_RUNS" 2>&1 | tail -1)
 if [ -d "$CELL_B/.git" ] \
     && [ -e "$CELL_B/.claude/skills/slime-navigate" ] \
     && [ -e "$CELL_B/.claude/commands/slime-corridor.md" ] \
-    && [ -f "$CELL_B/CLAUDE.slime.md" ] \
+    && [ -f "$CELL_B/CLAUDE.md" ] \
+    && grep -q "Meeting Corridor" "$CELL_B/CLAUDE.md" \
     && [ ! -f "$CELL_B/.claude/settings.json" ]; then
-  ok "3  new-cell prompt-only: skill + commands + CLAUDE.slime.md, no settings.json"
+  ok "3  new-cell prompt-only: skill + commands + discipline in CLAUDE.md, no settings.json"
 else
-  bad "3  new-cell prompt-only: skill + commands + CLAUDE.slime.md, no settings.json" \
+  bad "3  new-cell prompt-only: skill + commands + discipline in CLAUDE.md, no settings.json" \
       "cell=$CELL_B"
 fi
 
 # === 4. new-cell hooked-slime ==============================================
+# C is the full stack: hooks AND the L0 discipline in CLAUDE.md (so the prose
+# the gates back up is actually loaded).
 CELL_C=$(python3 "$BENCH" new-cell --task T1 --condition hooked-slime --run 1 \
           --fixture cli-notes --root "$ROOT_RUNS" 2>&1 | tail -1)
 if [ -f "$CELL_C/.claude/settings.json" ] \
     && grep -q prune-inject "$CELL_C/.claude/settings.json" \
-    && grep -q patch-cost   "$CELL_C/.claude/settings.json"; then
-  ok "4  new-cell hooked-slime: prune-inject + patch-cost wired"
+    && grep -q patch-cost   "$CELL_C/.claude/settings.json" \
+    && [ -f "$CELL_C/CLAUDE.md" ] \
+    && grep -q "Meeting Corridor" "$CELL_C/CLAUDE.md"; then
+  ok "4  new-cell hooked-slime: prune-inject + patch-cost wired + discipline in CLAUDE.md"
 else
-  bad "4  new-cell hooked-slime: prune-inject + patch-cost wired" "cell=$CELL_C"
+  bad "4  new-cell hooked-slime: prune-inject + patch-cost wired + discipline in CLAUDE.md" "cell=$CELL_C"
 fi
 
 # === 5. new-cell hooked-no-l1 ==============================================

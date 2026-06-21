@@ -1,0 +1,50 @@
+diff --git a/cli_notes/cli.py b/cli_notes/cli.py
+index 02954eb..a5a3143 100644
+--- a/cli_notes/cli.py
++++ b/cli_notes/cli.py
+@@ -11,8 +11,17 @@ def cmd_add(args):
+     return 0
+ 
+ 
++# Sort keys for `list --sort`. Add more (e.g. "id", "created") here.
++SORT_KEYS = {
++    "text": lambda n: n["text"],
++}
++
++
+ def cmd_list(args):
+-    for note in store.load(args.store):
++    notes = store.load(args.store)
++    if args.sort:
++        notes = sorted(notes, key=SORT_KEYS[args.sort])
++    for note in notes:
+         print(f'{note["id"]}\t{note["text"]}')
+     return 0
+ 
+@@ -27,6 +36,8 @@ def build_parser():
+     a.set_defaults(func=cmd_add)
+ 
+     lst = sub.add_parser("list", help="list notes")
++    lst.add_argument("--sort", choices=sorted(SORT_KEYS),
++                     help="sort notes by this key (default: insertion order)")
+     lst.set_defaults(func=cmd_list)
+     return p
+ 
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+index f48f700..71c3279 100644
+--- a/tests/test_cli.py
++++ b/tests/test_cli.py
+@@ -32,6 +32,13 @@ class TestCli(unittest.TestCase):
+         # baseline contract: insertion order
+         self.assertLess(out.index("hello"), out.index("world"))
+ 
++    def test_list_sort_text(self):
++        run("--store", self.store, "add", "banana")
++        run("--store", self.store, "add", "apple")
++        out = run("--store", self.store, "list", "--sort", "text")
++        # alphabetical by text, not insertion order
++        self.assertLess(out.index("apple"), out.index("banana"))
++
+     def test_list_empty(self):
+         out = run("--store", self.store, "list")
+         self.assertEqual(out, "")

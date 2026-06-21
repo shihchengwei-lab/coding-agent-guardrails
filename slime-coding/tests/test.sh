@@ -27,9 +27,17 @@ mkrepo() {
 cleanup() { for d in "${TMP_DIRS[@]:-}"; do rm -rf "$d"; done; }
 trap cleanup EXIT
 
-pre()    { printf '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"%s"},"cwd":"%s"}' "$2" "$1"; }
-prompt() { printf '{"hook_event_name":"UserPromptSubmit","cwd":"%s"}' "$1"; }
-stop()   { printf '{"hook_event_name":"Stop","cwd":"%s"}' "$1"; }
+# The hooks run under whatever `python3` resolves to. On Windows that is often
+# native Python (e.g. C:\PythonXX\python.exe), which cannot use a POSIX
+# /tmp/... path as a subprocess cwd — git then reports "not a repo" and every
+# gate degrades to a silent exit 0, failing these assertions. cygpath -m gives a
+# forward-slash Windows path (C:/Users/...) that native Python accepts and that
+# needs no JSON escaping; on Linux/macOS there is no cygpath, so we pass through.
+hostpath() { cygpath -m "$1" 2>/dev/null || printf '%s' "$1"; }
+
+pre()    { printf '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"%s"},"cwd":"%s"}' "$(hostpath "$2")" "$(hostpath "$1")"; }
+prompt() { printf '{"hook_event_name":"UserPromptSubmit","cwd":"%s"}' "$(hostpath "$1")"; }
+stop()   { printf '{"hook_event_name":"Stop","cwd":"%s"}' "$(hostpath "$1")"; }
 
 # --- PreToolUse corridor gate ----------------------------------------------
 D="$(mkrepo)"
@@ -215,7 +223,7 @@ case "$out" in
 esac
 
 # AC2: exit 0 -> no typecheck block
-out=$(stop "$M" | SLIME_TYPECHECK_CMD='exit 0' python3 "$PATCH")
+out=$(stop "$M" | SLIME_TYPECHECK_CMD='sh -c "exit 0"' python3 "$PATCH")
 case "$out" in
   *'"block"'*) bad "20 SLIME_TYPECHECK_CMD exit 0 -> no block" "$out" ;;
   *systemMessage*) ok "20 SLIME_TYPECHECK_CMD exit 0 -> no block" ;;
@@ -223,7 +231,7 @@ case "$out" in
 esac
 
 # AC3: exit 1 -> block, reason carries the remedy text
-out=$(stop "$M" | SLIME_TYPECHECK_CMD='exit 1' python3 "$PATCH")
+out=$(stop "$M" | SLIME_TYPECHECK_CMD='sh -c "exit 1"' python3 "$PATCH")
 case "$out" in
   *'"block"'*Typecheck*hallucinated*) ok "21 SLIME_TYPECHECK_CMD exit 1 -> block (remedy text)" ;;
   *) bad "21 SLIME_TYPECHECK_CMD exit 1 -> block (remedy text)" "$out" ;;
@@ -243,7 +251,7 @@ printf 'name: d\ndependencies:\n  flutter:\n    sdk: flutter\n' > "$P5/pubspec.y
 mkdir -p "$P5/.slime"; printf '# Corridor: real\n## Paths\n- lib/**\n' > "$P5/.slime/corridor.md"
 git -C "$P5" add -A && git -C "$P5" commit -qm init
 printf 'name: d\ndependencies:\n  flutter:\n    sdk: flutter\n  http: ^1\n' > "$P5/pubspec.yaml"
-out=$(stop "$P5" | SLIME_TYPECHECK_CMD='exit 1' python3 "$PATCH")
+out=$(stop "$P5" | SLIME_TYPECHECK_CMD='sh -c "exit 1"' python3 "$PATCH")
 if grep -q Typecheck <<<"$out" && grep -q 'New dependency' <<<"$out" && grep -q http <<<"$out"; then
   ok "23 typecheck + dependency -> both blocks in reason"
 else
@@ -251,7 +259,7 @@ else
 fi
 
 # AC6: stop_hook_active -> no block even if typecheck fails
-out=$(printf '{"hook_event_name":"Stop","stop_hook_active":true,"cwd":"%s"}' "$M" | SLIME_TYPECHECK_CMD='exit 1' python3 "$PATCH")
+out=$(printf '{"hook_event_name":"Stop","stop_hook_active":true,"cwd":"%s"}' "$(hostpath "$M")" | SLIME_TYPECHECK_CMD='sh -c "exit 1"' python3 "$PATCH")
 case "$out" in
   *'"block"'*) bad "24 stop_hook_active + typecheck fail -> no block" "$out" ;;
   *systemMessage*) ok "24 stop_hook_active + typecheck fail -> no block" ;;

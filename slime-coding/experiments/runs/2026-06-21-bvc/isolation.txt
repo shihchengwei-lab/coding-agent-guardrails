@@ -1,0 +1,22 @@
+# Isolation verification — prune-inject hook firing per cell
+# (count of the hook's injected header 'These designs were already rejected')
+# C (hooked-slime) should be 1; B (prompt-only) should be 0.
+cell                       prune_inject_fired
+E1/hooked-slime/run1       1
+E1/hooked-slime/run2       1
+E1/hooked-slime/run3       1
+E1/prompt-only/run1        0
+E1/prompt-only/run2        0
+E1/prompt-only/run3        0
+E2/hooked-slime/run1       1
+E2/hooked-slime/run2       1
+E2/hooked-slime/run3       1
+E2/prompt-only/run1        0
+E2/prompt-only/run2        0
+E2/prompt-only/run3        0
+E3/hooked-slime/run1       1
+E3/hooked-slime/run2       1
+E3/hooked-slime/run3       1
+E3/prompt-only/run1        0
+E3/prompt-only/run2        0
+E3/prompt-only/run3        0

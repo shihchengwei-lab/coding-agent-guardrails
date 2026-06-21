@@ -92,7 +92,12 @@ so far (data in [`reports/`](reports/), plan in
   Slime discipline suppresses it (1/13) — roughly half the code at equal
   behavior. **With no such invitation, there's no difference.** Other
   over-implementation baits (refactoring, gold-plating) didn't reproduce.
-- **The dependency gate is a backstop**, not an extra win on a compliant agent.
+- **The gates are a backstop, not a multiplier.** An automated, same-modality
+  B-vs-C benchmark ([`reports/2026-06-21-bvc.md`](reports/2026-06-21-bvc.md))
+  finds the hooked gates add no measurable reduction beyond the prompt-only
+  discipline on the abstraction axis (N=3): the prose carries the effect, and the
+  gates catch the non-compliant case (a new dependency, a hallucinated reference)
+  the prose can't guarantee away.
 
 ---
 
@@ -171,7 +176,10 @@ cd /path/to/your/project
   推測性擴展（「之後還會加更多格式」），baseline 會替「只需要一種」的變體蓋
   registry（13/13），Slime 紀律擋掉（1/13），同行為下程式約砍半。**不給這個邀請
   就沒有差異。** 其他過度實作誘餌（重構、gold-plating）沒有重現。
-- **依賴閘門是 backstop**，對守規矩的 agent 不額外加分。
+- **閘門是 backstop，不是 multiplier。** 自動化、同模態的 B-vs-C 對照
+  （[`reports/2026-06-21-bvc.md`](reports/2026-06-21-bvc.md)）顯示：在抽象軸上，
+  hook 閘門相對 prompt-only 紀律沒有可測得的額外削減（N=3）——效果由 prose 扛，
+  閘門負責接住 prose 無法保證的不守規案例（新依賴、虛構引用）。
 
 ## License
 

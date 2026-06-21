@@ -1,0 +1,63 @@
+diff --git a/cli_notes/cli.py b/cli_notes/cli.py
+index 02954eb..3d742f9 100644
+--- a/cli_notes/cli.py
++++ b/cli_notes/cli.py
+@@ -17,6 +17,13 @@ def cmd_list(args):
+     return 0
+ 
+ 
++def cmd_export(args):
++    notes = store.load(args.store)
++    store.save(notes, args.file)
++    print(f'exported {len(notes)} notes to {args.file}')
++    return 0
++
++
+ def build_parser():
+     p = argparse.ArgumentParser(prog="notes")
+     p.add_argument("--store", default=None, help="path to the notes JSON file")
+@@ -28,6 +35,10 @@ def build_parser():
+ 
+     lst = sub.add_parser("list", help="list notes")
+     lst.set_defaults(func=cmd_list)
++
++    exp = sub.add_parser("export", help="export notes to a file as JSON")
++    exp.add_argument("file", help="path to write the exported notes to")
++    exp.set_defaults(func=cmd_export)
+     return p
+ 
+ 
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+index f48f700..92f0b68 100644
+--- a/tests/test_cli.py
++++ b/tests/test_cli.py
+@@ -2,6 +2,7 @@
+ `python3 -m pytest -q` or `python3 -m unittest` (no extra dependency)."""
+ import contextlib
+ import io
++import json
+ import tempfile
+ import unittest
+ 
+@@ -36,6 +37,21 @@ class TestCli(unittest.TestCase):
+         out = run("--store", self.store, "list")
+         self.assertEqual(out, "")
+ 
++    def test_export_writes_json(self):
++        run("--store", self.store, "add", "hello")
++        run("--store", self.store, "add", "world")
++        dest = self.tmp.name + "/out.json"
++        run("--store", self.store, "export", dest)
++        with open(dest, encoding="utf-8") as f:
++            exported = json.load(f)
++        self.assertEqual([n["text"] for n in exported], ["hello", "world"])
++
++    def test_export_empty(self):
++        dest = self.tmp.name + "/out.json"
++        run("--store", self.store, "export", dest)
++        with open(dest, encoding="utf-8") as f:
++            self.assertEqual(json.load(f), [])
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

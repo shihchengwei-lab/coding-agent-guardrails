@@ -44,6 +44,8 @@ import fnmatch
 import json
 import os
 import re
+import shlex
+import shutil
 import subprocess
 import sys
 
@@ -215,14 +217,26 @@ def run_typecheck(cwd):
     cmd = os.environ.get("SLIME_TYPECHECK_CMD")
     if not cmd:
         return None
+    # "command not found -> degrade" cross-platform. POSIX shells report exit
+    # 127, but Windows cmd.exe returns 1 — indistinguishable from a real
+    # typecheck failure — so the exit code alone can't carry this signal. Resolve
+    # the program (first token) on PATH first; if it isn't installed the command
+    # is misconfigured, not evidence of a hallucinated reference, so degrade. L2
+    # must never false-block on an ambiguous signal.
+    try:
+        parts = shlex.split(cmd, posix=(os.name != "nt"))
+    except ValueError:
+        parts = cmd.split()
+    prog = parts[0] if parts else ""
+    if prog and not shutil.which(prog):
+        return None
     try:
         timeout = int(os.environ.get("SLIME_TEST_TIMEOUT", "600"))
         r = subprocess.run(
             cmd, cwd=cwd, shell=True, capture_output=True, text=True, timeout=timeout
         )
         if r.returncode == 127:
-            # shell "command not found" — a misconfigured command is not
-            # evidence of a hallucinated reference, so degrade, don't block.
+            # POSIX "command not found" — same rationale as the PATH check above.
             return None
         return r.returncode, (r.stdout or r.stderr or "")
     except Exception:

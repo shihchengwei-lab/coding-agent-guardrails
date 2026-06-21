@@ -85,10 +85,27 @@ def cmd_new_cell(args):
     return 0
 
 
-def apply_prompt_only(cell):
+def seed_claude_md(cell):
+    """Append the L0 discipline to the cell's CLAUDE.md — the file Claude Code
+    auto-loads. Copying it as a bare CLAUDE.slime.md (the README's manual paste
+    step, left to the human) does NOT load it: a nested `claude -p` run never
+    reads it, so the discipline would be inert and condition B/C would lose their
+    defining prose. Append (don't overwrite) so a fixture's own CLAUDE.md, if any,
+    survives; idempotent on re-install."""
     src_claude = REPO_ROOT / "templates" / "CLAUDE.slime.md"
-    if src_claude.exists():
-        shutil.copy(src_claude, cell / "CLAUDE.slime.md")
+    if not src_claude.exists():
+        return
+    discipline = src_claude.read_text(encoding="utf-8")
+    target = cell / "CLAUDE.md"
+    existing = target.read_text(encoding="utf-8") if target.exists() else ""
+    if "Meeting Corridor" in existing:
+        return  # already seeded
+    sep = "\n\n" if existing and not existing.endswith("\n\n") else ""
+    target.write_text(existing + sep + discipline, encoding="utf-8")
+
+
+def apply_prompt_only(cell):
+    seed_claude_md(cell)
     skills_dir = cell / ".claude" / "skills"
     skills_dir.mkdir(parents=True, exist_ok=True)
     shutil.copytree(REPO_ROOT / "skills" / "slime-navigate",
@@ -107,6 +124,9 @@ def apply_hooked(cell):
     if r.returncode != 0:
         sys.stderr.write(r.stderr)
         raise SystemExit(r.returncode)
+    # install.sh leaves the L0 paste to the human; for an automated cell we must
+    # land it in CLAUDE.md ourselves or the hooked arm runs without its prose.
+    seed_claude_md(cell)
 
 
 def strip_l1(cell):

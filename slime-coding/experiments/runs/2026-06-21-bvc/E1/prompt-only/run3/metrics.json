@@ -1,0 +1,30 @@
+{
+  "task_id": "E1",
+  "condition": "prompt-only",
+  "run_id": 3,
+  "task_success": true,
+  "task_success_score": 2,
+  "tests_pass": true,
+  "touched_files": 2,
+  "new_files": 3,
+  "new_dependencies": 0,
+  "public_api_additions": 0,
+  "out_of_corridor_files": 1,
+  "corridor_changed": true,
+  "pruned_path_revived": false,
+  "unrelated_refactor_count": 0,
+  "over_implementation_review": 0,
+  "reviewer_accept": null,
+  "manual_reverts_required": null,
+  "blocks_count": null,
+  "false_block_count": null,
+  "manual_steps": null,
+  "turn_count": null,
+  "notes": "one-shot claude -p (same modality as C); over_impl=0",
+  "_detail": {
+    "out_of_corridor_files": [
+      "CLAUDE.md"
+    ],
+    "new_dependencies": []
+  }
+}
