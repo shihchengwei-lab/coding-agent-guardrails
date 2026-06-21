@@ -4,186 +4,72 @@
 
 ![Slime Coding — grow both frontiers, commit only the minimal corridor](assets/slime-coding.png)
 
-*[English](#english) · [中文](#中文)*
+黏菌走迷宮，會從兩頭同時伸觸鬚出去找食物。碰到食物的觸鬚變粗、沒碰到的萎縮。最後留下的，就是兩點之間活下來的那條路——沒人「設計」它。
 
-## English
+**Slime Coding** 把這條路長出來的方式，搬到 AI 寫程式上。
 
-A slime mould pushes tendrils out from both ends of a maze. Tubes that find
-food thicken; tubes that find nothing wither. What's left is the path between
-two points — not designed, just *what survived*.
+想像你叫 AI「加一個登入功能」。常見的版本：它順手蓋了一個你沒要求的設定系統、為「之後可能會用到」鋪了一層抽象、改了五個檔——但你只想要登入。
 
-**Slime Coding** does this to AI coding. The agent grows two frontiers — what
-the requirement actually needs, and what the repo already offers — and only
-edits the **minimal corridor where they meet**. Branches without evidence
-wither. Rejected designs are pruned and recorded so they don't grow back next
-round.
+Slime Coding 讓 AI 也從兩頭伸觸鬚：
 
-→ The metaphor in full (Food Points, frontiers, corridor, pruned paths, stop
-condition): **[`docs/CONCEPT.md`](docs/CONCEPT.md)**.
+- 一頭往**這次的需求**長——只從「加登入功能」這句話往下挖，需要什麼。
+- 另一頭往**現有的 code** 長——從專案已經有的東西往上找，哪裡可以接上。
 
-This repo wires the discipline into Claude Code as **hooks**, so it's
-enforced on git facts, not just requested in a prompt.
+兩頭碰上才動手；碰不上的方向被剪掉、記到一個檔案。下次 AI 一開始就看到上次否決過哪些方向。
 
-### Why hooks
+→ 完整比喻：[`docs/CONCEPT.md`](docs/CONCEPT.md)
 
-A line in `CLAUDE.md` ("don't over-engineer") is a **request** — the model can
-skip it. A **hook** runs every time. Slime Coding puts the teeth only on
-unambiguous git facts:
+## 怎麼做到？
 
-- **No edit without a corridor.** Define the minimal change in
-  `.slime/corridor.md` first, or `Edit`/`Write` is denied. (Repo-metadata
-  files — `.gitignore`, `.gitattributes`, `.editorconfig`, `LICENSE`,
-  `CHANGELOG.md` — are exempt: no real frontier to compute against them.)
-- **A new dependency is blocked at Stop** until you keep-or-remove it.
-- **Hallucinated references are caught** (opt-in): a type checker
-  (`dart analyze`, `tsc`, …) runs at Stop and blocks if the patch points at a
-  symbol that doesn't resolve — i.e. an invented attachment point.
-- **Pruned paths persist** in `.slime/PRUNED.md` and are re-injected next
-  session, so the loop can't revive a rejected design.
-- **Scope creep is reported** (touched / new files, out-of-corridor edits) —
-  shown, never falsely blocked.
+寫在 `CLAUDE.md` 的「不要過度實作」是**請求**——AI 可以略過。Slime Coding 把它變成**自動關卡**：AI 每次想動 code 都會跑、跳不過。關卡只看明確的事實，不靠感覺判斷：
 
-### Quick start
+- **AI 動手前，自己得先寫清楚「這次要碰哪幾個檔、目標是什麼」**。它寫好一個小檔（30 秒），你確認方向對，它才開始改。沒寫就連改一行都被自己的關卡擋住。
+  - 例外：`.gitignore`、`LICENSE` 這類跟程式邏輯無關的設定檔不用寫範圍就能改。
 
-Slime Coding is **per-project** — opt in by running `install.sh` against each
-repo you want it on (state lives in that repo's `.slime/`).
+- **AI 加進新套件會被擋**。要嘛它說明「為什麼要留」、要嘛拿掉，才能收工。
 
-Clone anywhere, then run `install.sh` against your project (idempotent; backs up
-`settings.json`):
+- **AI 引用一個不存在的函數或變數會被擋**（選用）。它有時候會用一個聽起來合理、但 repo 裡根本沒有的名字——關卡會跑一輪語法檢查、把這種「憑空捏的接點」拒收。
+
+- **被否決的方向留到下次**。下個 session 一開始 AI 就看到上次否決過哪些方向。
+
+- **多寫了多少、超出範圍的檔，會列出來**（只列、不擋）。不誤擋合理的擴大，但讓你看到。
+
+→ 機制細節：[`docs/DESIGN.md`](docs/DESIGN.md)
+
+## 怎麼用？
+
+每個你想用它的專案，各跑一次安裝：
 
 ```bash
-git clone <this-repo> ~/slime-coding
-cd /path/to/your/project
+git clone <這個 repo> ~/slime-coding
+cd /你的專案
 ~/slime-coding/install.sh .
 ```
 
-It wires the hooks into `.claude/settings.json` and links the `slime-navigate`
-skill + `/slime-corridor` and `/slime-prune` commands. One manual step: paste
-`templates/CLAUDE.slime.md` into your `CLAUDE.md`. Needs `python3` + `git`.
+它會把關卡接上、把指令連好。需要 `python3` 跟 `git`。安裝會備份你原本的設定、可以重跑、不會壞。
 
-→ Mechanics, config, layout: **[`docs/DESIGN.md`](docs/DESIGN.md)** ·
-the idea & manual method: **[`docs/CONCEPT.md`](docs/CONCEPT.md)**.
-
-### Pairing with coding-guidelines (optional)
-
-If you also use
-[coding-guidelines](https://github.com/shihchengwei-lab/coding-guidelines) —
-the two-prompt + Stop-self-check user-level companion — pass `--with-cg` to
-install both in one shot:
-
-```bash
-~/slime-coding/install.sh /path/to/your/project --with-cg ~/coding-guidelines
-```
-
-This copies its three scripts into `~/.claude/scripts/` and merges its hook
-entries into `~/.claude/settings.json` (backup kept, idempotent). The two
-repos stay independent — cg works standalone without the flag, and slime
-works without cg.
-
-### Status — experimental, honestly
-
-Not a validated framework; no "proven / production-ready" claims. What's known
-so far (data in [`reports/`](reports/), plan in
-[`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)):
-
-- **Mechanism: verified.** Gates fire on the git facts they claim, bootstrap
-  doesn't deadlock, install is idempotent — `tests/test.sh` (29 checks) + CI.
-- **Effect: a narrow, reproducible signal.** In small Python/Node A·B runs, when
-  a prompt invites speculative extensibility ("we'll add more formats later"),
-  the baseline builds a registry for the one required variant (13/13) while the
-  Slime discipline suppresses it (1/13) — roughly half the code at equal
-  behavior. **With no such invitation, there's no difference.** Other
-  over-implementation baits (refactoring, gold-plating) didn't reproduce.
-- **The gates are a backstop, not a multiplier.** An automated, same-modality
-  B-vs-C benchmark ([`reports/2026-06-21-bvc.md`](reports/2026-06-21-bvc.md))
-  finds the hooked gates add no measurable reduction beyond the prompt-only
-  discipline on the abstraction axis (N=3): the prose carries the effect, and the
-  gates catch the non-compliant case (a new dependency, a hallucinated reference)
-  the prose can't guarantee away.
-
----
-
-## 中文
-
-黏菌在迷宮裡會從兩端同時伸觸鬚：接到食物的管變粗，沒接到的萎縮。剩下的就是兩點
-之間的路——沒人「設計」，只是「活下來的」。
-
-**Slime Coding** 把這個套在 AI 寫程式上。Agent 從需求跟現有 repo 各長出
-frontier，只在兩者交會的**最小走廊（corridor）**動手；沒 evidence 的分支萎縮，
-被剪掉的路徑記下來，下一輪不會悄悄復活。
-
-→ 完整比喻（Food Points、frontier、走廊、剪枝路徑、停止條件）：
-**[`docs/CONCEPT.md`](docs/CONCEPT.md)**。
-
-這個 repo 把這套紀律接進 Claude Code 的 **hook**，用 git 事實強制執行，而不是
-寫在 prompt 裡請求。
-
-### 為什麼用 hook
-
-寫在 `CLAUDE.md` 的「不要過度實作」是**請求**，模型可以略過；**hook** 每次都跑。
-Slime Coding 的牙齒只長在無歧義的 git 事實上：
-
-- **沒走廊不准改。** 先把最小修改寫進 `.slime/corridor.md`，否則 `Edit`/`Write`
-  被擋。（repo 元資料檔——`.gitignore`、`.gitattributes`、`.editorconfig`、
-  `LICENSE`、`CHANGELOG.md`——免：沒有真正的 frontier 可算。）
-- **新增依賴在 Stop 被擋**，要你保留或移除才放行。
-- **虛構的 reference 會被擋**（選用）：Stop 時跑 type checker（`dart analyze`、
-  `tsc`…），patch 指到 resolve 不出來的符號（憑空捏的接點）就擋。
-- **剪枝跨輪存活**：寫進 `.slime/PRUNED.md`，下個 session 自動注入，loop 復活不了
-  已否決的設計。
-- **scope creep 會回報**（touched / new files、走廊外修改）——顯示，但不誤擋。
-
-### 快速開始
-
-Slime Coding 是 **per-project** 工具——每個你想用它的 repo 都要各自跑一次
-`install.sh`（走廊 / PRUNED 狀態存在該 repo 的 `.slime/`）。
-
-clone 到任何位置，對你的專案跑一次 `install.sh`（可重跑、會備份 `settings.json`）：
-
-```bash
-git clone <this-repo> ~/slime-coding
-cd /path/to/your/project
-~/slime-coding/install.sh .
-```
-
-它把 hook 接進 `.claude/settings.json`，並把 `slime-navigate` skill 與
-`/slime-corridor`、`/slime-prune` 連進去。手動一步：把
-`templates/CLAUDE.slime.md` 貼進你的 `CLAUDE.md`。需要 `python3` + `git`。
-
-→ 機制、設定、結構：**[`docs/DESIGN.md`](docs/DESIGN.md)**；
-理念與手動流程：**[`docs/CONCEPT.md`](docs/CONCEPT.md)**。
+最後手動一步：把 `templates/CLAUDE.slime.md` 的內容貼進你專案的 `CLAUDE.md`，這樣 AI 才知道紀律寫在哪。
 
 ### 搭配 coding-guidelines（選用）
 
-若同時使用
-[coding-guidelines](https://github.com/shihchengwei-lab/coding-guidelines)
-（兩條 prompt 紀律 + Stop 自查清單,user-level 配套），加 `--with-cg` 一次裝完：
+如果你也用 [coding-guidelines](https://github.com/shihchengwei-lab/coding-guidelines)（另一套 prompt 紀律），安裝時加 `--with-cg` 一次裝完兩個：
 
 ```bash
-~/slime-coding/install.sh /path/to/your/project --with-cg ~/coding-guidelines
+~/slime-coding/install.sh /你的專案 --with-cg ~/coding-guidelines
 ```
 
-它會把 cg 的三個 script 複製到 `~/.claude/scripts/`，並 merge cg 的 hook 進
-`~/.claude/settings.json`（保留 backup、idempotent）。兩個 repo 維持獨立 ——
-不加 flag 時 cg 仍可單獨使用,slime 也不依賴 cg。
+兩套各自獨立，分開用也行。
 
-### 驗證狀態——誠實版
+## 目前驗證到哪？
 
-這是**實驗性**工作流，不是已驗證的 framework，不用「proven / production-ready」。
-目前已知（數據在 [`reports/`](reports/)、計畫在
-[`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)）：
+還在實驗階段。下面是目前測到的事實：
 
-- **機制層：已驗證。** 閘門在宣稱的 git 事實上會觸發、bootstrap 不死鎖、install
-  idempotent——`tests/test.sh`（29 項）+ CI。
-- **效果層：窄而可重現的訊號。** 小 Python/Node A·B 對照下，當 prompt 明示邀請
-  推測性擴展（「之後還會加更多格式」），baseline 會替「只需要一種」的變體蓋
-  registry（13/13），Slime 紀律擋掉（1/13），同行為下程式約砍半。**不給這個邀請
-  就沒有差異。** 其他過度實作誘餌（重構、gold-plating）沒有重現。
-- **閘門是 backstop，不是 multiplier。** 自動化、同模態的 B-vs-C 對照
-  （[`reports/2026-06-21-bvc.md`](reports/2026-06-21-bvc.md)）顯示：在抽象軸上，
-  hook 閘門相對 prompt-only 紀律沒有可測得的額外削減（N=3）——效果由 prose 扛，
-  閘門負責接住 prose 無法保證的不守規案例（新依賴、虛構引用）。
+- **關卡本身會動**：該擋的地方會擋、安裝不會壞、可以重跑——29 個自動測試 + CI 都過。
+- **效果有訊號、但很窄**。在小型 Python/Node 對照測試裡，當題目暗示「之後還會加更多」（例如「之後可能要支援其他格式」），沒用 Slime 的版本會蓋一個大架構（13/13），用了 Slime 的版本不會（1/13）——同功能、程式剩一半。**沒有那個暗示，看不出差異。** 其他容易誘發過度實作的場景（沒事亂重構、為了好看堆抽象）目前測不出差異。
+- **關卡是安全網，不是放大鏡**。最近的同條件對照（[`reports/2026-06-21-bvc.md`](reports/2026-06-21-bvc.md)）顯示：真正讓 AI 守規矩的，是寫在 prompt 裡的紀律。關卡負責接住「紀律失靈」的那幾種情況：加進新套件、引用不存在的函數或變數。
+
+詳細數據在 [`reports/`](reports/)、後續驗證計畫在 [`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)。
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE). Changes in [`CHANGELOG.md`](CHANGELOG.md).
+MIT — 見 [`LICENSE`](LICENSE)。變更紀錄在 [`CHANGELOG.md`](CHANGELOG.md)。
