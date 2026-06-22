@@ -4,7 +4,7 @@
 
 Agents usually finish the task. The question is how much extra machinery they build on the way.
 
-`Occam Agent` is a tiny repo built around one file: [`AGENT.md`](AGENT.md). It gives coding agents a compact standing instruction set for boring but valuable engineering discipline: small diffs, YAGNI, existing helpers before new abstractions, built-ins before dependencies, and stop when the task is done.
+`Occam Agent` is a tiny repo built around one file: [`AGENT.md`](AGENT.md). It gives coding agents a compact standing instruction set for boring but valuable engineering discipline: build only what is needed, make the smallest readable change, use existing code first, verify, and stop.
 
 This repo also includes a small benchmark harness that tests the practical claim behind the file:
 
@@ -34,7 +34,7 @@ The raw benchmark runs are ignored by git so the repo can stay small.
 
 ## Benchmark Result
 
-The expanded natural-prompt benchmark ran:
+The latest expanded natural-prompt benchmark reran after simplifying `AGENT.md` to 7 lines:
 
 - 18 ordinary bugfix tasks.
 - 4 models.
@@ -45,14 +45,14 @@ Every run passed tests. That is the point: pass rate did not show the difference
 
 | model | baseline avg | disciplined avg | quality change | patch size change |
 | --- | ---: | ---: | ---: | ---: |
-| `gpt-5.3-codex-spark` | 92.92 | 98.82 | +27.78 | -0.23 lines |
-| `gpt-5.4-mini` | 96.74 | 98.89 | +5.55 | -1.22 lines |
-| `gpt-5.5` | 99.93 | 100.00 | +0.00 | -0.78 lines |
-| `gpt-5.4` | 100.00 | 99.86 | +0.00 | +0.06 lines |
+| `gpt-5.3-codex-spark` | 98.82 | 97.64 | -5.56 | +0.17 lines |
+| `gpt-5.4` | 93.19 | 99.86 | +33.33 | +0.39 lines |
+| `gpt-5.4-mini` | 97.85 | 97.43 | -5.56 | -0.56 lines |
+| `gpt-5.5` | 98.82 | 98.54 | +0.00 | +0.22 lines |
 
-The strongest effect appeared on weaker or faster models. Stronger models were already close to disciplined behavior on this suite, so the marginal benefit was smaller.
+The result is mixed. The simplified `AGENT.md` strongly helped `gpt-5.4`, but did not consistently improve the other three models in this single rerun. Every run still passed tests, so the benchmark remains about patch discipline rather than task completion.
 
-See [`RESULTS.md`](RESULTS.md) for the short analysis and [`bench/results/2026-06-22-natural-v2-expanded-benchmark.md`](bench/results/2026-06-22-natural-v2-expanded-benchmark.md) for the detailed report.
+See [`RESULTS.md`](RESULTS.md) for the short analysis and [`bench/results/2026-06-22-slim-agent-rerun-benchmark.md`](bench/results/2026-06-22-slim-agent-rerun-benchmark.md) for the detailed latest report.
 
 ## Use It
 
@@ -61,25 +61,29 @@ Copy [`AGENT.md`](AGENT.md) into a repo where coding agents work.
 The file is intentionally short. It is not a framework, policy system, or prompt library. It is a small set of defaults:
 
 - Build only what is needed now.
+- Prefer the smallest readable change.
 - Touch the fewest files needed.
-- Read existing patterns before adding new code.
-- Use repo helpers and built-ins before adding dependencies.
-- Verify the actual result before calling the task done.
+- Use existing code before adding new code.
+- Do not add abstractions for one-shot code.
+- Verify the result.
+- Stop when done.
 
 ## Run The Benchmark
 
 Prepare a suite:
 
 ```powershell
-python -m bench.prepare baseline --suite natural --output-dir bench/runs-natural-v2/example-model --force
-python -m bench.prepare disciplined --suite natural --output-dir bench/runs-natural-v2/example-model --force
+python -m bench.prepare baseline --suite natural --output-dir bench/runs-natural-slim/example-model --force
+python -m bench.prepare disciplined --suite natural --output-dir bench/runs-natural-slim/example-model --force
 ```
 
 After agents complete the generated tasks, collect and report:
 
 ```powershell
-python -m bench.collect --runs bench/runs-natural-v2
-python -m bench.report --runs bench/runs-natural-v2 --suite natural
+Get-ChildItem bench/runs-natural-slim -Recurse -Filter RUN.json | ForEach-Object {
+  python -m bench.collect $_.DirectoryName | Out-Null
+}
+python -m bench.report --runs bench/runs-natural-slim --suite natural
 python -m unittest discover bench/tests
 ```
 
