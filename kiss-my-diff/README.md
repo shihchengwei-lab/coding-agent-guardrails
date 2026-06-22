@@ -50,6 +50,8 @@ Then the same 6 bugfix tasks were rerun with `kiss-my-diff`.
 | files touched | 2.08 | 1.75 | 16.00% fewer |
 | patch size | 57.75 lines | 27.08 lines | 53.10% smaller |
 
+Scoring: correctness is public tests (35%) plus hidden tests (65%). Clean-diff is the average of file count, patch size, dependency changes, and task-specific quality checks. Overall score is 70% correctness and 30% clean-diff.
+
 The useful part is the diff shape: agents touched fewer files and produced much smaller patches.
 
 | model | correctness | clean-diff change | patch size |
