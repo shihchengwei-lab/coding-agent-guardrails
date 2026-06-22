@@ -4,7 +4,7 @@
 
 Agents usually finish the task. The question is how much extra machinery they build on the way.
 
-`Occam Agent` is a tiny repo built around one file: [`AGENT.md`](AGENT.md). It gives coding agents a compact standing instruction set for boring but valuable engineering discipline: build only what is needed, make the smallest readable change, use existing code first, verify, and stop.
+`Occam Agent` is a tiny repo built around one file: [`AGENT.md`](AGENT.md). It gives coding agents a compact standing instruction set for boring but valuable engineering discipline: build only what is needed, read first, use existing helpers, keep changes local, verify, and stop.
 
 This repo also includes a small benchmark harness that tests the practical claim behind the file:
 
@@ -34,27 +34,27 @@ The raw benchmark runs are ignored by git so the repo can stay small.
 
 ## Benchmark Result
 
-The latest expanded natural-prompt benchmark reran after simplifying `AGENT.md` to 7 lines:
+The latest sweet-spot search compared the 7-line file, two 10-line candidates, and the earlier longer checklist:
 
 - 18 ordinary bugfix tasks.
 - 4 models.
-- 2 variants: baseline prompt vs. prompt plus `AGENT.md`.
-- 144 total runs.
+- 72 runs per candidate version.
+- Same hidden scoring for tests, scope, simplicity, dependency changes, and helper reuse.
 
 Every run passed tests. That is the point: pass rate did not show the difference.
 
-| model | baseline avg | disciplined avg | quality change | patch size change |
-| --- | ---: | ---: | ---: | ---: |
-| `gpt-5.3-codex-spark` | 98.82 | 97.64 | -5.56 | +0.17 lines |
-| `gpt-5.4` | 93.19 | 99.86 | +33.33 | +0.39 lines |
-| `gpt-5.4-mini` | 97.85 | 97.43 | -5.56 | -0.56 lines |
-| `gpt-5.5` | 98.82 | 98.54 | +0.00 | +0.22 lines |
+| version | avg total | avg quality | avg line delta |
+| --- | ---: | ---: | ---: |
+| 7-line | 98.37 | 93.05 | 5.56 |
+| 10-line balanced | 98.92 | 97.22 | 5.69 |
+| 10-line helper-explicit | 98.80 | 94.44 | 5.16 |
+| longer original | 99.39 | 98.61 | 5.17 |
 
-The result is mixed. The simplified `AGENT.md` strongly helped `gpt-5.4`, but did not consistently improve the other three models in this single rerun. Every run still passed tests, so the benchmark remains about patch discipline rather than task completion.
+The longer version still wins the benchmark. The 10-line balanced version is the current repo default because it recovers most of the quality benefit while staying short enough to be memorable.
 
-Do not read this table as a model leaderboard. The quality score is intentionally discipline-shaped: it rewards using existing helpers and staying local. A stronger model can pass tests with an equivalent inline fix and score lower than a weaker model that happened to reuse the helper.
+Do not read these tables as model leaderboards. The quality score is intentionally discipline-shaped: it rewards using existing helpers and staying local. A stronger model can pass tests with an equivalent inline fix and score lower than a weaker model that happened to reuse the helper.
 
-See [`RESULTS.md`](RESULTS.md) for the short analysis and [`bench/results/2026-06-22-slim-agent-rerun-benchmark.md`](bench/results/2026-06-22-slim-agent-rerun-benchmark.md) for the detailed latest report.
+See [`RESULTS.md`](RESULTS.md) for the short analysis and [`bench/results/2026-06-22-sweet-spot-search.md`](bench/results/2026-06-22-sweet-spot-search.md) for the detailed latest report.
 
 ## Use It
 
@@ -64,10 +64,13 @@ The file is intentionally short. It is not a framework, policy system, or prompt
 
 - Build only what is needed now.
 - Prefer the smallest readable change.
+- Read the existing code before editing.
+- Use existing helpers and patterns before adding new code.
+- Use built-ins before adding dependencies.
 - Touch the fewest files needed.
-- Use existing code before adding new code.
 - Do not add abstractions for one-shot code.
-- Verify the result.
+- Preserve existing behavior unless asked to change it.
+- Verify with the smallest relevant test.
 - Stop when done.
 
 ## Run The Benchmark

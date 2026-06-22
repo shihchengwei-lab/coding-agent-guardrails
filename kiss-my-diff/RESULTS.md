@@ -4,68 +4,56 @@
 
 現在的 AI 多半已經能完成小型 coding 任務；`AGENT.md` 的價值不在提高「能不能過測」，而是在嘗試降低繞路、偏離既有寫法、漏用既有 helper、改太多檔案這類工程紀律問題。
 
-新版 7 行 `AGENT.md` 重跑後，結果變成 mixed：它仍然是低成本 discipline nudge，但這一輪不能再說它對所有模型都穩定有效。
+7 行版太短，效果變得不穩；完整版效果最好，但比較像 checklist。最新 sweet-spot search 顯示：目前最適合放在 repo 首頁的是 10 行 balanced 版。
 
-## 測試設計
+## 目前推薦版本
 
-- 任務池：18 個自然 bugfix 任務。
-- 模型：`gpt-5.5`、`gpt-5.4`、`gpt-5.4-mini`、`gpt-5.3-codex-spark`。
-- 分組：
-  - `baseline`：只給一般 bug report。
-  - `disciplined`：同樣 bug report，加上 repo 內的 7 行 `AGENT.md`。
-- 總 runs：144 次，來自 `4 models x 2 variants x 18 tasks`。
-- Prompt 特性：沒有 future-feature bait，沒有明講不要加依賴，沒有明講不要重構，也沒有暴露評分規則。
+```text
+Build only what is needed now.
+Prefer the smallest readable change.
+Read the existing code before editing.
+Use existing helpers and patterns before adding new code.
+Use built-ins before adding dependencies.
+Touch the fewest files needed.
+Do not add abstractions for one-shot code.
+Preserve existing behavior unless asked to change it.
+Verify with the smallest relevant test.
+Stop when done.
+```
 
-## 最新核心結果
+## 核心比較
 
-| model | baseline avg | disciplined avg | quality change | patch size change |
-| --- | ---: | ---: | ---: | ---: |
-| `gpt-5.3-codex-spark` | 98.82 | 97.64 | -5.56 | +0.17 lines |
-| `gpt-5.4` | 93.19 | 99.86 | +33.33 | +0.39 lines |
-| `gpt-5.4-mini` | 97.85 | 97.43 | -5.56 | -0.56 lines |
-| `gpt-5.5` | 98.82 | 98.54 | +0.00 | +0.22 lines |
+| version | avg total | avg quality | avg line delta |
+| --- | ---: | ---: | ---: |
+| 7-line | 98.37 | 93.05 | 5.56 |
+| 10-line balanced | 98.92 | 97.22 | 5.69 |
+| 10-line helper-explicit | 98.80 | 94.44 | 5.16 |
+| longer original | 99.39 | 98.61 | 5.17 |
 
-所有 144 次都通過測試，沒有 dependency incident。也就是說，這組 benchmark 測到的仍然不是「會不會完成任務」，而是「完成時是否更貼近既有程式碼、更少繞路」。
+完整版仍是 benchmark 最強；10 行 balanced 版不是最高分，但它在可讀性和效果之間比較平衡。它比 7 行版穩，quality 接近完整版，又不需要回到長清單。
 
-不要把這張表當成模型能力排行。這次分數可能出現「弱模型 baseline 比強模型 baseline 高」，原因是 quality check 很二元：有用既有 helper 就給分，寫出等價 inline 修法也會被扣成 0。例如 `natural_coupon_case` 裡，`gpt-5.4 baseline` 寫了 `code.strip().upper()`，`spark baseline` 則呼叫既有的 `normalize_code()`；兩者都過測，但只有後者拿到 quality 分。
+## 重要限制
 
-## 這代表什麼
+不要把這張表當成模型能力排行。這份 benchmark 測的是 coding discipline，例如是否沿用既有 helper、是否少改檔案、是否避免不必要抽象。強模型如果寫出等價 inline 修法，仍可能在 quality check 上輸給剛好用了 helper 的弱模型。
 
-`gpt-5.4` 在新版 7 行 discipline 下改善很明顯：總分從 93.19 到 99.86，quality 從 66.67 到 100.00。
-
-但其他三個模型沒有同步改善：`spark`、`mini`、`gpt-5.5` 的 total delta 都是小幅負值。`mini` 的 patch size 有變小，但 quality 掉了。這代表 7 行版本的效果比舊長版更不穩，或者單次 run 的隨機波動還太大。
-
-## 這沒有證明什麼
-
-- 沒有證明 `AGENT.md` 會讓模型更會修 bug；這輪所有模型本來都修得過。
-- 沒有測出依賴膨脹；這 18 題裡沒有任何 dependency incident。
-- 沒有覆蓋大型 repo、模糊需求、多檔重構、前端 UI、資料庫 migration、第三方 API 這類更容易繞路的場景。
-- 目前每個 model/variant/task 只跑一次，還不能估計 run-to-run variance。
+目前每個 model/variant/task 只跑一次，還不能估計 run-to-run variance。
 
 ## 可採用說法
 
-比較保守但符合最新數據的說法：
+> `AGENT.md` 不會讓模型更會完成小型 bugfix；這些模型本來就能過測。它的價值是當模型已經能完成任務時，提醒它用更局部、更符合既有程式碼的修法。
 
-> 在這組自然 bugfix benchmark 裡，`AGENT.md` 不影響任務是否完成，因為所有 runs 都通過測試。新版 7 行 `AGENT.md` 對工程紀律的效果是模型相關且有噪音：對 `gpt-5.4` 很明顯，對其他三個模型這輪沒有穩定正效果。
-
-再加一個重要限制：
-
-> 這份 benchmark 可以比較同一模型內 baseline vs disciplined 的行為變化，但不適合拿來排序不同模型的能力。
-
-更短的 repo 定位：
-
-> A tiny `AGENT.md` discipline file for coding agents. It does not teach agents to pass tests; it asks them to shave off unnecessary abstraction, scope, and ceremony.
+> 7 行版比較像漂亮標語；完整版比較像操作 checklist；10 行 balanced 版是目前比較好的折衷。
 
 ## 詳細報告
 
-最新重跑報告：
+Sweet-spot search:
+
+- `bench/results/2026-06-22-sweet-spot-search.md`
+
+7 行版重跑報告：
 
 - `bench/results/2026-06-22-slim-agent-rerun-benchmark.md`
 
 歷史長版 `AGENT.md` 報告：
 
 - `bench/results/2026-06-22-natural-v2-expanded-benchmark.md`
-
-原始 runs 保留在本機但不進 git：
-
-- `bench/runs-natural-slim/`

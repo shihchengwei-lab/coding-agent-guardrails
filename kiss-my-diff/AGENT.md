@@ -1,7 +1,10 @@
 Build only what is needed now.
 Prefer the smallest readable change.
+Read the existing code before editing.
+Use existing helpers and patterns before adding new code.
+Use built-ins before adding dependencies.
 Touch the fewest files needed.
-Use existing code before adding new code.
 Do not add abstractions for one-shot code.
-Verify the result.
+Preserve existing behavior unless asked to change it.
+Verify with the smallest relevant test.
 Stop when done.
