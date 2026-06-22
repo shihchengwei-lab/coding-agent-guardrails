@@ -54,6 +54,66 @@ Scoring: correctness is public tests (35%) plus hidden tests (65%). Clean-diff i
 
 The useful part is the diff shape: agents touched fewer files and produced much smaller patches.
 
+### Example Diff
+
+One benchmark task asked the agent to fix CSV imports with quoted fields and thousands separators. Both runs passed public and hidden tests.
+
+Without `kiss-my-diff`: 2 files touched, 19 diff lines.
+
+```diff
+diff --git a/orders/importer.py b/orders/importer.py
++import csv
++from io import StringIO
++
+ from .money import cents_from_price
+ 
+ def order_totals(csv_text):
+-    lines = csv_text.strip().splitlines()
+     totals = {}
+-    for line in lines[1:]:
+-        if not line.strip():
++    reader = csv.DictReader(StringIO(csv_text))
++    for row in reader:
++        if not row or not any(value and str(value).strip() for value in row.values()):
+             continue
+-        order_id, sku, quantity, price = line.split(",")
++        order_id = row["order_id"].strip()
++        quantity = row["quantity"]
++        price = row["price"]
+         totals[order_id] = totals.get(order_id, 0) + int(quantity) * cents_from_price(price)
+     return totals
+
+diff --git a/tests/test_importer.py b/tests/test_importer.py
++def test_quoted_price_with_currency_and_thousands_separator():
++    csv_text = 'order_id,sku,quantity,price\nA1,desk,2,"$1,200.00"\n'
++    assert order_totals(csv_text) == {"A1": 240000}
+```
+
+With `kiss-my-diff`: 1 file touched, 12 diff lines.
+
+```diff
+diff --git a/orders/importer.py b/orders/importer.py
++import csv
++from io import StringIO
++
+ from .money import cents_from_price
+ 
+ def order_totals(csv_text):
+-    lines = csv_text.strip().splitlines()
+     totals = {}
+-    for line in lines[1:]:
+-        if not line.strip():
++    reader = csv.reader(StringIO(csv_text.strip()))
++    next(reader, None)
++    for row in reader:
++        if not row or not any(cell.strip() for cell in row):
+             continue
+-        order_id, sku, quantity, price = line.split(",")
++        order_id, sku, quantity, price = row
+         totals[order_id] = totals.get(order_id, 0) + int(quantity) * cents_from_price(price)
+     return totals
+```
+
 | model | correctness | clean-diff change | patch size |
 | --- | ---: | ---: | ---: |
 | `gpt-5.5` | 100.00 -> 100.00 | +10.92% | 35.83 -> 24.00 lines |
