@@ -30,30 +30,31 @@ Modern coding agents can usually make tests pass. The common failure mode is ove
 
 This file is the small reminder: make the diff small enough to love.
 
-## Evidence
+## Benchmark Snapshot
 
-First, the benchmark had to pass a sanity check. Model strength is checked with correctness only, because clean-diff score measures coding discipline, not raw capability:
+This is a small single-run benchmark, not proof or a model leaderboard. It asks a narrower question: on tasks the models could already solve, does the rule file make the solution smaller and more local?
 
-| baseline only | correctness |
+8 bugfix tasks were run across 4 models, with and without `kiss-my-diff`.
+
+| metric | result |
 | --- | ---: |
-| `gpt-5.5` | 100.00 |
-| `gpt-5.4` | 100.00 |
-| `gpt-5.4-mini` | 100.00 |
-| `gpt-5.3-codex-spark` | 100.00 |
+| correctness | 100.00 -> 100.00 |
+| clean-diff score | +12.32% |
+| files touched | 19.05% fewer |
+| patch size | 37.57% smaller |
 
-Then the same 8 bugfix tasks were rerun with and without `kiss-my-diff`.
+Clean-diff is the average of file count, patch size, dependency changes, and task-specific quality checks. Correctness is public tests (35%) plus hidden tests (65%).
 
-| what changed | baseline | kiss-my-diff | result |
+### Per Model
+
+Use this table to judge whether your model is likely to benefit from this repo: higher clean-diff gain means the same model tended to produce smaller, more local patches when the file was present.
+
+| model | correctness | clean-diff change | patch size |
 | --- | ---: | ---: | ---: |
-| correctness | 100.00 | 100.00 | no change |
-| clean-diff score | 78.23 | 87.87 | +12.32% |
-| overall score | 93.47 | 96.36 | +3.09% |
-| files touched | 1.97 | 1.59 | 19.05% fewer |
-| patch size | 43.25 lines | 27.00 lines | 37.57% smaller |
-
-Scoring: correctness is public tests (35%) plus hidden tests (65%). Clean-diff is the average of file count, patch size, dependency changes, and task-specific quality checks. Overall score is 70% correctness and 30% clean-diff.
-
-The useful part is the diff shape: agents touched fewer files and produced much smaller patches.
+| `gpt-5.5` | 100.00 -> 100.00 | +10.12% | 30.63 -> 25.38 lines |
+| `gpt-5.4` | 100.00 -> 100.00 | +12.21% | 37.13 -> 27.50 lines |
+| `gpt-5.4-mini` | 100.00 -> 100.00 | +16.29% | 70.38 -> 30.63 lines |
+| `gpt-5.3-codex-spark` | 100.00 -> 100.00 | +11.04% | 34.88 -> 24.50 lines |
 
 ### Example Diff
 
@@ -140,14 +141,7 @@ diff --git a/api/response.py b/api/response.py
      }
 ```
 
-| model | correctness | clean-diff change | patch size |
-| --- | ---: | ---: | ---: |
-| `gpt-5.5` | 100.00 -> 100.00 | +10.12% | 30.63 -> 25.38 lines |
-| `gpt-5.4` | 100.00 -> 100.00 | +12.21% | 37.13 -> 27.50 lines |
-| `gpt-5.4-mini` | 100.00 -> 100.00 | +16.29% | 70.38 -> 30.63 lines |
-| `gpt-5.3-codex-spark` | 100.00 -> 100.00 | +11.04% | 34.88 -> 24.50 lines |
-
-This is still a small single-run benchmark, not a model leaderboard. The narrow claim is simpler: with the same tasks and models, `kiss-my-diff` made the patches smaller and more local.
+The narrow claim is simple: with the same tasks and models, `kiss-my-diff` made the patches smaller and more local.
 
 ## Use
 
