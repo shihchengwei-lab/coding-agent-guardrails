@@ -29,28 +29,35 @@ This file is the small reminder: make the diff small enough to love.
 
 ## Evidence
 
-In a calibrated benchmark of 6 bugfix tasks across 4 coding models, the baseline was checked first. It did not show the weak model beating stronger models: `gpt-5.3-codex-spark` scored 83.33 capability, while `gpt-5.4-mini`, `gpt-5.4`, and `gpt-5.5` reached 100.00 on this small suite.
+First, the benchmark had to pass a sanity check. The weak model did not beat the stronger models:
 
-After that sanity check, the same tasks were rerun with `kiss-my-diff`.
+| baseline only | correctness |
+| --- | ---: |
+| `gpt-5.5` | 100.00 |
+| `gpt-5.4` | 100.00 |
+| `gpt-5.4-mini` | 100.00 |
+| `gpt-5.3-codex-spark` | 83.33 |
 
-| metric | baseline | kiss-my-diff | relative change |
+Then the same 6 bugfix tasks were rerun with `kiss-my-diff`.
+
+| what changed | baseline | kiss-my-diff | result |
 | --- | ---: | ---: | ---: |
-| capability score | 95.83 | 100.00 | +4.35% |
-| discipline score | 77.26 | 86.23 | +11.62% |
-| total score | 90.26 | 95.87 | +6.21% |
-| avg changed files | 2.08 | 1.75 | -16.00% |
-| avg line delta | 57.75 | 27.08 | -53.10% |
+| correctness | 95.83 | 100.00 | +4.35% |
+| clean-diff score | 77.26 | 86.23 | +11.62% |
+| overall score | 90.26 | 95.87 | +6.21% |
+| files touched | 2.08 | 1.75 | 16.00% fewer |
+| patch size | 57.75 lines | 27.08 lines | 53.10% smaller |
 
-Per-model discipline change:
+The useful part is the diff shape: agents touched fewer files and produced much smaller patches.
 
-| model | capability | discipline change | total change | line delta |
-| --- | ---: | ---: | ---: | ---: |
-| `gpt-5.5` | 100.00 -> 100.00 | +10.92% | +2.77% | 35.83 -> 24.00 |
-| `gpt-5.4` | 100.00 -> 100.00 | +9.72% | +2.51% | 30.17 -> 26.00 |
-| `gpt-5.4-mini` | 100.00 -> 100.00 | +11.08% | +2.66% | 124.33 -> 31.00 |
-| `gpt-5.3-codex-spark` | 83.33 -> 100.00 | +14.97% | +18.61% | 40.67 -> 27.33 |
+| model | correctness | clean-diff change | patch size |
+| --- | ---: | ---: | ---: |
+| `gpt-5.5` | 100.00 -> 100.00 | +10.92% | 35.83 -> 24.00 lines |
+| `gpt-5.4` | 100.00 -> 100.00 | +9.72% | 30.17 -> 26.00 lines |
+| `gpt-5.4-mini` | 100.00 -> 100.00 | +11.08% | 124.33 -> 31.00 lines |
+| `gpt-5.3-codex-spark` | 83.33 -> 100.00 | +14.97% | 40.67 -> 27.33 lines |
 
-This is still a small single-run benchmark, not a model leaderboard. The useful signal is narrower: once the baseline sanity check is reasonable, this file nudges agents toward smaller, more local patches.
+This is still a small single-run benchmark, not a model leaderboard. The narrow claim is simpler: with the same tasks and models, `kiss-my-diff` made the patches smaller and more local.
 
 ## Use
 
