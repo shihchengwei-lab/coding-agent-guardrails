@@ -38,7 +38,7 @@ Stop when done.
 
 這是一組小型 benchmark，不是嚴格證明，也不是模型排行榜。它問的是比較窄的問題：在模型本來就能解的任務上，這份規則能不能讓解法更小、更集中？
 
-這裡合併了兩組 benchmark snapshot：8 個 bugfix 任務、4 個模型，各跑一次 baseline 和一次 `kiss-my-diff`。合計是 64 次 baseline run 和 64 次 `kiss-my-diff` run。
+這裡合併了兩組 benchmark snapshot：8 個 bugfix 任務、4 個模型，各跑兩次 baseline 和兩次 `kiss-my-diff`。合計是 64 次 baseline run 和 64 次 `kiss-my-diff` run。
 
 | 指標 | 結果 |
 | --- | ---: |

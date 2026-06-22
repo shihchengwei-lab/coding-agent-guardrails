@@ -38,7 +38,7 @@ This file is the small reminder: make the diff small enough to love.
 
 This is a small benchmark, not proof or a model leaderboard. It asks a narrower question: on tasks the models could already solve, does the rule file make the solution smaller and more local?
 
-Two benchmark snapshots were combined: 8 bugfix tasks across 4 models, run with and without `kiss-my-diff` each time. That gives 64 baseline runs and 64 `kiss-my-diff` runs.
+Two benchmark snapshots were combined: 8 bugfix tasks across 4 models, run with and without `kiss-my-diff` twice. That gives 64 baseline runs and 64 `kiss-my-diff` runs.
 
 | metric | result |
 | --- | ---: |
