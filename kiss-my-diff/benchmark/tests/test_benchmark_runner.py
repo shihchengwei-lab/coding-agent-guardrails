@@ -187,6 +187,58 @@ def test_write_summary_reports_capability_and_discipline_separately(tmp_path):
     assert "| gpt-5.5 | baseline | 1 | 100.00 | 80.00 | 94.00 |" in text
 
 
+def test_write_calibration_reports_pass_for_ordered_baseline_capability(tmp_path):
+    rows = [
+        {"model": "gpt-5.5", "variant": "baseline", "capability": 94.0},
+        {"model": "gpt-5.4", "variant": "baseline", "capability": 92.0},
+        {"model": "gpt-5.4-mini", "variant": "baseline", "capability": 89.0},
+        {"model": "gpt-5.3-codex-spark", "variant": "baseline", "capability": 85.0},
+        {"model": "gpt-5.3-codex-spark", "variant": "kiss", "capability": 99.0},
+    ]
+
+    output = tmp_path / "calibration.md"
+    runner.write_calibration(rows, output)
+
+    text = output.read_text(encoding="utf-8")
+    assert "status: pass" in text
+    assert "| model | baseline capability |" in text
+    assert "| gpt-5.5 | 94.00 |" in text
+    assert "| gpt-5.3-codex-spark | 85.00 |" in text
+    assert "kiss" not in text
+
+
+def test_write_calibration_reports_failure_when_weak_model_wins(tmp_path):
+    rows = [
+        {"model": "gpt-5.5", "variant": "baseline", "capability": 90.0},
+        {"model": "gpt-5.4-mini", "variant": "baseline", "capability": 80.0},
+        {"model": "gpt-5.3-codex-spark", "variant": "baseline", "capability": 91.0},
+    ]
+
+    output = tmp_path / "calibration.md"
+    runner.write_calibration(rows, output)
+
+    text = output.read_text(encoding="utf-8")
+    assert "status: fail" in text
+    assert "spark baseline is above mini" in text
+    assert "spark baseline is above frontier" in text
+
+
+def test_write_calibration_reports_saturated_capability(tmp_path):
+    rows = [
+        {"model": "gpt-5.5", "variant": "baseline", "capability": 100.0},
+        {"model": "gpt-5.4", "variant": "baseline", "capability": 100.0},
+        {"model": "gpt-5.4-mini", "variant": "baseline", "capability": 100.0},
+        {"model": "gpt-5.3-codex-spark", "variant": "baseline", "capability": 100.0},
+    ]
+
+    output = tmp_path / "calibration.md"
+    runner.write_calibration(rows, output)
+
+    text = output.read_text(encoding="utf-8")
+    assert "status: pass" in text
+    assert "note: baseline capability is saturated" in text
+
+
 def test_codex_command_prefers_windows_cmd_shim(monkeypatch):
     calls = []
 

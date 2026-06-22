@@ -52,6 +52,8 @@ Stop when done.
 
 Benchmark harness 和題目都放在 [`benchmark/`](benchmark/) 裡。hidden tests 也有放進 repo，方便重現；只是 runner 在 agent 解題時不會把 hidden tests 放進工作區。
 
+Calibration check：pass，但已經飽和。合併後的 baseline runs 裡，四個模型的 baseline capability 都是 100.00，所以沒有出現弱模型在正確性上高於強模型。這個 sanity check 不能證明題目能分出模型強弱，只能排除先前那種 baseline 倒掛問題。
+
 ### 各模型結果
 
 這張表不是在排模型強弱，而是讓你看同一個模型在不同 prompt 下的變化。觸碰檔案和 patch 大小越低，代表修改越集中。

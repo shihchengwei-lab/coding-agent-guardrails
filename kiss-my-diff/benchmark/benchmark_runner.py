@@ -178,6 +178,32 @@ def write_summary(rows: list[dict], output: Path) -> None:
     output.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def write_calibration(rows: list[dict], output: Path) -> None:
+    baseline_scores = _baseline_score_summary(rows)
+    verdict = core.calibration_verdict(baseline_scores)
+    lines = [
+        f"status: {'pass' if verdict.ok else 'fail'}",
+        "",
+        "| model | baseline capability |",
+        "| --- | ---: |",
+    ]
+    for model in MODELS:
+        if model in baseline_scores:
+            lines.append(f"| {model} | {baseline_scores[model]:.2f} |")
+    if _is_saturated(baseline_scores):
+        lines.extend(
+            [
+                "",
+                "note: baseline capability is saturated; this only checks that no weaker model scored higher.",
+            ]
+        )
+    if verdict.reasons:
+        lines.extend(["", "reasons:"])
+        lines.extend(f"- {reason}" for reason in verdict.reasons)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def _build_prompt(task: dict, variant: str) -> str:
     lines = [
         "You are a coding agent. Complete the task using the files in this workspace.",
@@ -270,13 +296,28 @@ def _summarize(rows: list[dict]) -> list[dict]:
     return summary
 
 
+def _baseline_score_summary(rows: list[dict]) -> dict[str, float]:
+    grouped = {}
+    for row in rows:
+        if row["variant"] == "baseline":
+            grouped.setdefault(row["model"], []).append(row)
+    return {
+        model: _average(group, "capability")
+        for model, group in grouped.items()
+    }
+
+
+def _is_saturated(scores: dict[str, float]) -> bool:
+    return len(scores) > 1 and len(set(scores.values())) == 1
+
+
 def _average(rows: list[dict], key: str) -> float:
     return round(sum(row[key] for row in rows) / len(rows), 2)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the kiss-my-diff benchmark lab.")
-    parser.add_argument("command", choices=["prepare", "run", "collect", "summary"])
+    parser.add_argument("command", choices=["prepare", "run", "collect", "summary", "calibrate"])
     parser.add_argument("--lab-dir", default=".")
     parser.add_argument("--run-root", default="runs")
     parser.add_argument("--model", choices=MODELS)
@@ -310,6 +351,10 @@ def main() -> None:
     elif args.command == "summary":
         output = run_root / "summary.md"
         write_summary(find_results(run_root), output)
+        print(output)
+    elif args.command == "calibrate":
+        output = run_root / "calibration.md"
+        write_calibration(find_results(run_root), output)
         print(output)
 
 

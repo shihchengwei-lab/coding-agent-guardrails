@@ -52,6 +52,8 @@ In this larger pool, stronger models kept correctness at 100% with `kiss-my-diff
 
 The benchmark harness and tasks are open source in [`benchmark/`](benchmark/). Hidden tests are checked in for reproducibility, but the runner keeps them out of the agent workspace during a run.
 
+Calibration check: pass, but saturated. On the combined baseline runs, all four models scored 100.00 baseline capability, so no weaker model scored higher on correctness. This sanity check does not prove the task pool separates model strength; it only rules out the earlier inverted-baseline failure mode.
+
 ### Per Model
 
 Use this table to judge whether your model is likely to benefit from this repo. Lower files touched and patch size mean the change stayed smaller and more local.

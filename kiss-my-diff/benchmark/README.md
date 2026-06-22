@@ -14,6 +14,7 @@ python benchmark_runner.py prepare --run-root runs-local --variant baseline --fo
 python benchmark_runner.py run --run-root runs-local --model gpt-5.5 --variant baseline --task api_response_decode
 python benchmark_runner.py collect --run-root runs-local --model gpt-5.5 --variant baseline --task api_response_decode
 python benchmark_runner.py summary --run-root runs-local
+python benchmark_runner.py calibrate --run-root runs-local
 ```
 
 Variants:
@@ -28,3 +29,5 @@ The runner creates a fresh worktree under `runs-local/`, gives the agent only `t
 - hidden tests: copied from `tasks/<task>/hidden` only during collection
 
 Generated run folders are ignored by git.
+
+`calibrate` checks baseline capability ordering only. It is a sanity check for the task pool, not the main benchmark claim.
