@@ -4,6 +4,8 @@
 
 Agents usually finish the task. The question is whether you want to kiss the diff afterward.
 
+Benchmark result: 53% smaller patches, 16% fewer files touched.
+
 `kiss-my-diff` is a tiny [`AGENT.md`](AGENT.md) for coding agents. It asks the agent to read first, use existing code, make the smallest readable change, verify, and stop.
 
 ## The File
