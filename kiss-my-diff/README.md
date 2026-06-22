@@ -27,6 +27,17 @@ Modern coding agents can usually make tests pass. The common failure mode is ove
 
 This file is the small reminder: shave off unnecessary abstraction, scope, and ceremony.
 
+## Evidence
+
+In an internal benchmark of 18 small bugfix tasks across 4 coding models, every run passed tests. The difference showed up in discipline checks: using existing helpers, staying local, and avoiding unnecessary code.
+
+| variant | pass rate | avg total | avg quality | avg line delta | dependency incidents |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| baseline | 100.00 | 97.17 | 87.50 | 5.50 | 0 |
+| Occam Agent | 100.00 | 98.92 | 97.22 | 5.69 | 0 |
+
+This is not a model leaderboard. It is a small discipline benchmark, and single-run differences are noisy. The useful signal is narrower: when agents already pass tests, this file nudges them toward existing code and smaller local fixes.
+
 ## Use
 
 Copy [`AGENT.md`](AGENT.md) into the root of a repo where coding agents work.
