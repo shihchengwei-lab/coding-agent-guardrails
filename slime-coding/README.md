@@ -66,21 +66,15 @@ cd /你的專案
 
 **關卡本身會動**：該擋的地方會擋、安裝不會壞、可以重跑——29 個自動測試 + CI 都過。
 
-**Slime 對「AI 寫過多 code」這目標：沒看到正效果，且有微弱代價。**
+**Slime 對「AI 寫過多 code」這目標，現有證據答不出來**。
 
-跨 06-21 / 06-22 多個 fixture（cli-notes、csv-tsv-pipeline）、多個 model（Haiku / Sonnet / Opus）、bait 跟 no-bait 兩種 prompt、共約 90 個 cell 對照下來：
+06-21 跟 06-22 跑的那 ~90 個對照 cell 都是 sandbox fixture（115 行的 cli-notes、115 行的 csv-tsv-pipeline）、單檔加一個 subcommand 等級的任務。在這個規模上沒有架構決定空間、AI 自然不會蓋 garbage——不論裝不裝 Slime。當這幾份報告原本要把這描述成「Slime 沒效果」時、結論其實是「測試沒給 Slime 機會發揮」，不是「Slime 不行」。要真的回答這條問題，需要的不是更大的 sandbox，而是真實生產任務上的 instrumentation（大 codebase、模糊規格、AI 自然選擇怎麼做、不靠合成 bait）——超出 sandbox benchmark 能做的範圍。
 
-| 量到的軸 | baseline | 裝了 Slime | 差 |
-|---|---|---|---|
-| 行數 / 結構 | 跟需求成比例 | 同 | 無差 |
-| 蓋 registry / dispatch dict | prompt 有「之後會加更多」暗示時 1-3/9（Opus），沒暗示 ~0/9 | 跟 baseline 同範圍、Opus 條件下還微高 | 無差 / 微負 |
-| cell 沒寫到 code | 0–1/9 | 1–2/9（含 Anthropic API 過載引起的污染、無法乾淨歸因） | 微負 |
-
-**關鍵 caveat**：hooks 設計的另一面用處——接住「AI 偷加套件」「AI 引用不存在的函數或變數」「跨 session 把上次否決的設計復活」——在這些 benchmark 裡 **agents 不誘發、所以沒測到、不在這結論的射程內**。06-18 的 mechanism verification 測過這幾條 gate 在 git fact 上會 trigger、但沒測「真實任務中它們多常需要 trigger」。
+**hooks 設計的另一面用處——接住「AI 偷加套件」「AI 引用不存在的函數或變數」「跨 session 把上次否決的設計復活」**——06-18 的 mechanism verification 測過這幾條 gate 在 git fact 上**會 trigger**、但「真實任務裡這些 failure mode 多常出現、Slime 接住多少」沒 effect-size 證據。這幾個 gate 在 sandbox benchmark 也沒被 agents 誘發、所以同樣沒進入結論射程。
 
 **讀者該怎麼用這結果**：
-- 想靠 Slime 讓 AI 寫少一點 garbage——這份證據裡看不到效果。**真正抑制 garbage 的是寫進 `CLAUDE.md` 的紀律 prose**，不是 hook。Slime 可以幫你貼那段 prose、但 prose 本身不需要 Slime。
-- 想接住「偷加套件 / 寫憑空捏的 reference / 帶紅燈收工」這幾種 git 事實——hook 是設計來幹這個的，但這份 benchmark 沒給你這條的 effect-size 證據。
+- 想靠 Slime 抑制 AI 過度實作——目前沒任何證據支持也沒任何證據反對。**真正抑制 garbage 的核心機制是寫進 `CLAUDE.md` 的紀律 prose**（06-18 extensibility 測到的訊號是 prose 的、不是 hook 的）；Slime 可以幫你貼那段 prose、但 prose 本身不需要 hook。
+- 想接住「偷加套件 / 寫憑空捏的 reference / 帶紅燈收工」這幾種 git 事實——hook 是設計來幹這個的，機制有測過、effect size 沒測過。
 
 詳細數據：[`reports/2026-06-21-bvc.md`](reports/2026-06-21-bvc.md)（B vs C, Opus）、[`reports/2026-06-22-model-class.md`](reports/2026-06-22-model-class.md)（跨 model + baseline）、[`reports/2026-06-22-bench.md`](reports/2026-06-22-bench.md)（含 architectural room 的 fixture）。後續驗證計畫：[`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)。
 
