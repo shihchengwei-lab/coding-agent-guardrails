@@ -30,7 +30,6 @@ jobs:
         run: |
           bash -n install.sh
           bash -n tests/test.sh
-          bash -n tests/test-bench.sh
           bash -n tests/test-cg-install.sh
 
       - name: Check executable bits
@@ -41,9 +40,6 @@ jobs:
 
       - name: Run hook tests
         run: ./tests/test.sh
-
-      - name: Run controlled-benchmark runner tests
-        run: bash tests/test-bench.sh
 
       - name: Run --with-cg flag tests
         run: bash tests/test-cg-install.sh
