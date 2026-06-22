@@ -1,6 +1,0 @@
-# experiment run artifacts — never committed as part of the fixture baseline
-notes.json
-.slime/
-.claude/
-__pycache__/
-.pytest_cache/

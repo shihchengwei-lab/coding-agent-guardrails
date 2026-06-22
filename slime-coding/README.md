@@ -64,19 +64,11 @@ cd /你的專案
 
 還在實驗階段。
 
-**關卡本身會動**：該擋的地方會擋、安裝不會壞、可以重跑——29 個自動測試 + CI 都過。
+**機制層**：hook 在它宣稱要觸發的 git 事實上會觸發（沒走廊就擋編輯、新增依賴就擋收工、type checker 紅燈就擋收工），安裝可重跑、不壞既有設定——`tests/test.sh` 跑 29 個自動測試 + CI 都過。
 
-**Slime 對「AI 寫過多 code」這目標，現有證據答不出來**。
+**效果層（裝了 Slime，AI 真的會少寫 garbage 嗎？）**：**這個 repo 沒有證據**。
 
-06-21 跟 06-22 跑的那 ~90 個對照 cell 都是 sandbox fixture（115 行的 cli-notes、115 行的 csv-tsv-pipeline）、單檔加一個 subcommand 等級的任務。在這個規模上沒有架構決定空間、AI 自然不會蓋 garbage——裝不裝 Slime 都一樣。**sandbox 量到的 null 不能讀成 Slime 對這目標的判決**——測試本身沒給 Slime 機會發揮。要真的回答這條問題、需要真實生產任務上的觀察（大 codebase、模糊規格、AI 自然選擇怎麼做、不靠合成 bait），超出 sandbox benchmark 能做的範圍。
-
-**hooks 設計的另一面用處——接住「AI 偷加套件」「AI 引用不存在的函數或變數」「跨 session 把上次否決的設計復活」**——06-18 的 mechanism verification 測過這幾條 gate 在 git fact 上**會 trigger**、但「真實任務裡這些 failure mode 多常出現、Slime 接住多少」沒 effect-size 證據。這幾個 gate 在 sandbox benchmark 也沒被 agents 誘發、所以同樣沒進入結論射程。
-
-**讀者該怎麼用這結果**：
-- 想靠 Slime 抑制 AI 過度實作——目前沒任何證據支持也沒任何證據反對。**真正抑制 garbage 的核心機制是寫進 `CLAUDE.md` 的紀律 prose**（06-18 extensibility 測到的訊號是 prose 的、不是 hook 的）；Slime 可以幫你貼那段 prose、但 prose 本身不需要 hook。
-- 想接住「偷加套件 / 寫憑空捏的 reference / 帶紅燈收工」這幾種 git 事實——hook 是設計來幹這個的，機制有測過、effect size 沒測過。
-
-詳細數據：[`reports/2026-06-21-bvc.md`](reports/2026-06-21-bvc.md)（B vs C, Opus）、[`reports/2026-06-22-model-class.md`](reports/2026-06-22-model-class.md)（跨 model + baseline）、[`reports/2026-06-22-bench.md`](reports/2026-06-22-bench.md)（含 architectural room 的 fixture）。後續驗證計畫：[`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)。
+之前跑過的 sandbox benchmark 都是百行級單檔加一個 subcommand 的小 fixture、AI 在那規模本來就不會蓋 garbage——裝不裝 Slime 都一樣。要真的回答這條問題、需要在真實專案上 instrument 用一段時間——這 repo 不做那件事。如果你打算用 Slime、請當作「概念有趣、機制驗過、effect size 未知」來評估。
 
 ## License
 

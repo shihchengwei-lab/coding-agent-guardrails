@@ -1,7 +1,7 @@
 # 設計與參考
 
-Slime Coding 的機制細節。理念與手動流程見 [`CONCEPT.md`](CONCEPT.md);實際驗證
-到哪見 [README 的驗證狀態](../README.md) 與 [`../reports/`](../reports/)。
+Slime Coding 的機制細節。理念與手動流程見 [`CONCEPT.md`](CONCEPT.md);機制驗證
+狀態見 [README](../README.md)。
 
 ## 核心原則：請求 vs 強制
 
@@ -128,7 +128,7 @@ slime-coding/
 │   ├── CLAUDE.slime.md                 # L0 貼進專案 CLAUDE.md
 │   └── .slime/{corridor.md,PRUNED.md}  # artifact 範例
 ├── tests/test.sh                       # hook 行為測試
-├── docs/、experiments/、reports/        # 概念、驗證 harness、結果
+├── docs/                                # 概念、機制設計
 └── README.md
 ```
 

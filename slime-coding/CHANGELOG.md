@@ -6,6 +6,20 @@ cloning, so "versions" track the git history rather than published releases.
 
 ## [Unreleased]
 
+### Removed
+- `experiments/` (fixtures, runners, score.py, slime-bench, runs), `reports/`
+  (06-18 / 06-21 / 06-22 benchmarks), `docs/VALIDATION_PLAN.md`, and
+  `tests/test-bench.sh`. The sandbox-benchmark approach could not measure
+  effect-size on the "AI writes too much code" target — the fixtures were
+  small enough that AI baseline behaviour was already minimal, so the matrix
+  produced nulls that didn't isolate Slime's effect from the test's lack of
+  pressure. The earlier reports' framings of those nulls as "Slime doesn't
+  help" or "Slime adds cost" overstated what the cells supported. Rather than
+  let them stand and mislead, the data and the reports are removed; the
+  effect-size question is now openly marked unanswered in the README. The
+  mechanism tests (`tests/test.sh`, 29 checks) and the gate implementations
+  themselves are unchanged.
+
 ### Added
 - L2 **typecheck gate** (`SLIME_TYPECHECK_CMD`, opt-in): at Stop, runs a type
   checker (e.g. `dart analyze`) as a contact sensor and blocks if it is red —

@@ -1,7 +1,0 @@
-name: notes_mini
-description: Tiny fixture for exercising the Slime Coding dependency gate.
-version: 0.1.0
-environment:
-  sdk: ">=3.0.0 <4.0.0"
-dependencies:
-  collection: ^1.18.0
