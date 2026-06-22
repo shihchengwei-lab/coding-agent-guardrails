@@ -36,7 +36,16 @@ In an internal benchmark of 18 small bugfix tasks across 4 coding models, every 
 | baseline | 100.00 | 97.17 | 87.50 | 5.50 | 0 |
 | Occam Agent | 100.00 | 98.92 | 97.22 | 5.69 | 0 |
 
-This is not a model leaderboard. It is a small discipline benchmark, and single-run differences are noisy. The useful signal is narrower: when agents already pass tests, this file nudges them toward existing code and smaller local fixes.
+Per-model breakdown:
+
+| model | baseline total | Occam total | total delta | baseline quality | Occam quality | line delta change |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `gpt-5.3-codex-spark` | 98.82 | 98.40 | -0.42 | 94.44 | 100.00 | +0.61 |
+| `gpt-5.4` | 93.19 | 98.75 | +5.56 | 66.67 | 94.44 | +0.44 |
+| `gpt-5.4-mini` | 97.85 | 99.72 | +1.87 | 94.44 | 100.00 | -0.23 |
+| `gpt-5.5` | 98.82 | 98.82 | +0.00 | 94.44 | 94.44 | -0.06 |
+
+This is not a model leaderboard. It is a small discipline benchmark, and single-run differences are noisy. The useful signal is narrower: when agents already pass tests, this file nudges them toward existing code and local fixes.
 
 ## Use
 
