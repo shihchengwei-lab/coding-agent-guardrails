@@ -1,0 +1,4 @@
+[project]
+name = "natural-invoice-cents"
+version = "0.0.0"
+dependencies = []
