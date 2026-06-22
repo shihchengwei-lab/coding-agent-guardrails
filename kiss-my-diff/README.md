@@ -6,9 +6,11 @@
 
 Agents usually finish the task. The question is whether you want to kiss the diff afterward.
 
+Keep It Simple, Stupid for coding-agent diffs: smaller patches, fewer touched files.
+
 Benchmark result: 38% smaller patches, 19% fewer files touched.
 
-`kiss-my-diff` is a tiny [`AGENT.md`](AGENT.md) for coding agents. It asks the agent to read first, use existing code, make the smallest readable change, avoid hiding invalid states, verify, and stop.
+`kiss-my-diff` is a tiny [`AGENT.md`](AGENT.md) for coding agents. It turns KISS into a small rule file: read first, use existing code, make the smallest readable change, avoid hiding invalid states, verify, and stop.
 
 ## The File
 
