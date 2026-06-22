@@ -1,16 +1,16 @@
 # kiss-my-diff
 
-[繁體中文](README.zh-TW.md)
+[English](README.md)
 
 ![kiss-my-diff hero](assets/kiss-my-diff-hero.png)
 
-Agents usually finish the task. The question is whether you want to kiss the diff afterward.
+Agent 通常能把任務做完。問題是：做完之後，你還想不想親一下那個 diff。
 
-Benchmark result: 38% smaller patches, 19% fewer files touched.
+Benchmark 結果：patch 少 38%，觸碰檔案少 19%。
 
-`kiss-my-diff` is a tiny [`AGENT.md`](AGENT.md) for coding agents. It asks the agent to read first, use existing code, make the smallest readable change, avoid hiding invalid states, verify, and stop.
+`kiss-my-diff` 是一份很小的 [`AGENT.md`](AGENT.md)，給 coding agent 用。它提醒 agent 先讀現有程式、優先使用既有程式碼、做最小且可讀的修改、不要把非法狀態藏起來、驗證結果，然後停下來。
 
-## The File
+## 檔案內容
 
 ```text
 Build only what is needed now.
@@ -26,43 +26,43 @@ Verify with the smallest relevant test.
 Stop when done.
 ```
 
-## Why
+## 為什麼
 
-Modern coding agents can usually make tests pass. The common failure mode is overbuilding: extra files, new abstractions, duplicated helper logic, broader rewrites, or dependencies that were not needed.
+現代 coding agent 通常能讓測試通過。常見問題不是做不出來，而是做太多：多改檔案、加不必要的抽象、重複既有 helper、擴大重寫範圍，或加入其實不需要的依賴。
 
-This file is the small reminder: make the diff small enough to love.
+這份檔案就是一個小提醒：把 diff 做到小到值得喜歡。
 
 ## Benchmark Snapshot
 
-This is a small single-run benchmark, not proof or a model leaderboard. It asks a narrower question: on tasks the models could already solve, does the rule file make the solution smaller and more local?
+這是一組小型、單次執行的 benchmark，不是證明，也不是模型排行榜。它問的是比較窄的問題：在模型本來就能解的任務上，這份規則檔會不會讓解法更小、更集中？
 
-8 bugfix tasks were run across 4 models, with and without `kiss-my-diff`.
+8 個 bugfix 任務，跨 4 個模型，各自跑有無 `kiss-my-diff` 的版本。
 
-| metric | result |
+| 指標 | 結果 |
 | --- | ---: |
 | correctness | 100.00 -> 100.00 |
 | clean-diff score | +12.32% |
-| files touched | 19.05% fewer |
-| patch size | 37.57% smaller |
+| 觸碰檔案 | 少 19.05% |
+| patch size | 小 37.57% |
 
-Clean-diff is the average of file count, patch size, dependency changes, and task-specific quality checks. Correctness is public tests (35%) plus hidden tests (65%).
+Clean-diff 是檔案數、patch 大小、依賴變更、任務特定品質檢查的平均。Correctness 是公開測試 35% 加隱藏測試 65%。
 
-### Per Model
+### 各模型結果
 
-Use this table to judge whether your model is likely to benefit from this repo: higher clean-diff gain means the same model tended to produce smaller, more local patches when the file was present.
+可以用這張表判斷你使用的模型是否可能受益：clean-diff gain 越高，代表同一個模型在有這份檔案時，傾向產生更小、更集中的 patch。
 
-| model | correctness | clean-diff change | patch size |
+| 模型 | correctness | clean-diff 變化 | patch size |
 | --- | ---: | ---: | ---: |
 | `gpt-5.5` | 100.00 -> 100.00 | +10.12% | 30.63 -> 25.38 lines |
 | `gpt-5.4` | 100.00 -> 100.00 | +12.21% | 37.13 -> 27.50 lines |
 | `gpt-5.4-mini` | 100.00 -> 100.00 | +16.29% | 70.38 -> 30.63 lines |
 | `gpt-5.3-codex-spark` | 100.00 -> 100.00 | +11.04% | 34.88 -> 24.50 lines |
 
-### Example Diff
+### Before / After Diff
 
-One benchmark task asked the agent to stop hiding bad API responses. Both runs passed public and hidden tests.
+其中一個 benchmark 任務要求 agent 不要再隱藏壞掉的 API response。兩次執行都通過公開測試和隱藏測試。
 
-Without `kiss-my-diff`: 2 files touched, 32 diff lines.
+沒有 `kiss-my-diff`：觸碰 2 個檔案，32 行 diff。
 
 ```diff
 diff --git a/api/response.py b/api/response.py
@@ -71,7 +71,7 @@ diff --git a/api/response.py b/api/response.py
 +from api.errors import ResponseDecodeError
 +
 +REQUIRED_FIELDS = ("id", "status", "items")
- 
+
  def parse_response(raw):
      try:
          payload = json.loads(raw)
@@ -91,7 +91,7 @@ diff --git a/api/response.py b/api/response.py
 +
 +    if not isinstance(payload["items"], list):
 +        raise ResponseDecodeError("Response payload field 'items' must be a list")
- 
+
      return {
 -        "id": payload.get("id"),
 -        "status": payload.get("status", "unknown"),
@@ -107,14 +107,14 @@ diff --git a/tests/test_response.py b/tests/test_response.py
 +        parse_response('["not", "an", "object"]')
 ```
 
-With `kiss-my-diff`: 1 file touched, 22 diff lines.
+有 `kiss-my-diff`：觸碰 1 個檔案，22 行 diff。
 
 ```diff
 diff --git a/api/response.py b/api/response.py
  import json
 +
 +from api.errors import ResponseDecodeError
- 
+
  def parse_response(raw):
      try:
          payload = json.loads(raw)
@@ -132,7 +132,7 @@ diff --git a/api/response.py b/api/response.py
 +
 +    if not isinstance(payload["items"], list):
 +        raise ResponseDecodeError("Response field 'items' must be a list.")
- 
+
      return {
 -        "id": payload.get("id"),
 -        "status": payload.get("status", "unknown"),
@@ -143,12 +143,12 @@ diff --git a/api/response.py b/api/response.py
      }
 ```
 
-The narrow claim is simple: with the same tasks and models, `kiss-my-diff` made the patches smaller and more local.
+主張很窄：在同一組任務和模型上，`kiss-my-diff` 讓 patch 更小、更集中。
 
-## Use
+## 使用方式
 
-Copy [`AGENT.md`](AGENT.md) into the root of a repo where coding agents work.
+把 [`AGENT.md`](AGENT.md) 複製到 coding agent 會工作的 repo 根目錄。
 
-## License
+## 授權
 
-MIT. See [`LICENSE`](LICENSE).
+MIT。見 [`LICENSE`](LICENSE)。
