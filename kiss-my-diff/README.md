@@ -143,7 +143,7 @@ diff --git a/api/response.py b/api/response.py
 | model | correctness | clean-diff change | patch size |
 | --- | ---: | ---: | ---: |
 | `gpt-5.5` | 100.00 -> 100.00 | +10.12% | 30.63 -> 25.38 lines |
-| `gpt-5.4` | 100.00 -> 100.00 | +12.21% | 37.12 -> 27.50 lines |
+| `gpt-5.4` | 100.00 -> 100.00 | +12.21% | 37.13 -> 27.50 lines |
 | `gpt-5.4-mini` | 100.00 -> 100.00 | +16.29% | 70.38 -> 30.63 lines |
 | `gpt-5.3-codex-spark` | 100.00 -> 100.00 | +11.04% | 34.88 -> 24.50 lines |
 
