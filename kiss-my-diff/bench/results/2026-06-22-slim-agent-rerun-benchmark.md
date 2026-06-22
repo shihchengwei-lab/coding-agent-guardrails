@@ -83,11 +83,14 @@ Positive total and quality deltas favor `disciplined`. Negative line delta chang
 
 - Every run passed tests. As before, pass rate does not expose the relevant difference.
 - No run changed dependencies. This suite still does not reproduce dependency bloat.
+- Do not read the absolute score table as a model-strength ranking. The benchmark uses binary quality checks for discipline behaviors such as helper reuse, so a model can pass tests with an equivalent inline implementation and still receive `quality = 0`.
 - The 7-line `AGENT.md` produced mixed results rather than a uniform win.
 - `gpt-5.4` showed a strong discipline benefit: total average improved from 93.19 to 99.86, and quality improved from 66.67 to 100.00.
 - `gpt-5.3-codex-spark`, `gpt-5.4-mini`, and `gpt-5.5` did not improve on total score in this single rerun.
 - `gpt-5.4-mini` did produce a smaller average patch under `disciplined`, but lost quality on two tasks.
 - The fresh baselines differ from the previous report, so this suite still needs repeated runs before treating small deltas as stable.
+
+Example: in `natural_coupon_case`, `gpt-5.4` baseline used `code.strip().upper()` inline, while `gpt-5.3-codex-spark` baseline called the existing `normalize_code()` helper. Both passed tests, but only the helper-reuse solution passed the hidden quality check. That explains why a weaker/faster model can score higher than a stronger model in this benchmark.
 
 ## Conclusion
 
@@ -95,4 +98,4 @@ The simplified 7-line `AGENT.md` preserves the core positioning but weakens the 
 
 `AGENT.md` still does not affect whether agents can complete these small bugfix tasks. All variants passed all tests. Its effect on coding discipline is now model-dependent and noisy: strongly positive for `gpt-5.4`, neutral or slightly negative for the other three models in this single rerun.
 
-The conservative conclusion is that the tiny file is directionally useful as a low-cost discipline nudge, but this benchmark no longer supports saying it is consistently beneficial across all tested models.
+The conservative conclusion is that the tiny file is directionally useful as a low-cost discipline nudge, but this benchmark no longer supports saying it is consistently beneficial across all tested models. It also should not be used to rank model capability across models without repeated runs and a less binary quality rubric.

@@ -52,6 +52,8 @@ Every run passed tests. That is the point: pass rate did not show the difference
 
 The result is mixed. The simplified `AGENT.md` strongly helped `gpt-5.4`, but did not consistently improve the other three models in this single rerun. Every run still passed tests, so the benchmark remains about patch discipline rather than task completion.
 
+Do not read this table as a model leaderboard. The quality score is intentionally discipline-shaped: it rewards using existing helpers and staying local. A stronger model can pass tests with an equivalent inline fix and score lower than a weaker model that happened to reuse the helper.
+
 See [`RESULTS.md`](RESULTS.md) for the short analysis and [`bench/results/2026-06-22-slim-agent-rerun-benchmark.md`](bench/results/2026-06-22-slim-agent-rerun-benchmark.md) for the detailed latest report.
 
 ## Use It

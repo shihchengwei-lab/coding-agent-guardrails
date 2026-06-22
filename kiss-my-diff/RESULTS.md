@@ -27,6 +27,8 @@
 
 所有 144 次都通過測試，沒有 dependency incident。也就是說，這組 benchmark 測到的仍然不是「會不會完成任務」，而是「完成時是否更貼近既有程式碼、更少繞路」。
 
+不要把這張表當成模型能力排行。這次分數可能出現「弱模型 baseline 比強模型 baseline 高」，原因是 quality check 很二元：有用既有 helper 就給分，寫出等價 inline 修法也會被扣成 0。例如 `natural_coupon_case` 裡，`gpt-5.4 baseline` 寫了 `code.strip().upper()`，`spark baseline` 則呼叫既有的 `normalize_code()`；兩者都過測，但只有後者拿到 quality 分。
+
 ## 這代表什麼
 
 `gpt-5.4` 在新版 7 行 discipline 下改善很明顯：總分從 93.19 到 99.86，quality 從 66.67 到 100.00。
@@ -45,6 +47,10 @@
 比較保守但符合最新數據的說法：
 
 > 在這組自然 bugfix benchmark 裡，`AGENT.md` 不影響任務是否完成，因為所有 runs 都通過測試。新版 7 行 `AGENT.md` 對工程紀律的效果是模型相關且有噪音：對 `gpt-5.4` 很明顯，對其他三個模型這輪沒有穩定正效果。
+
+再加一個重要限制：
+
+> 這份 benchmark 可以比較同一模型內 baseline vs disciplined 的行為變化，但不適合拿來排序不同模型的能力。
 
 更短的 repo 定位：
 
