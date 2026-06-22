@@ -4,13 +4,15 @@
 
 ![kiss-my-diff hero](assets/kiss-my-diff-hero.png)
 
-Agent 通常能把任務做完。問題是：做完之後，你還想不想親一下那個 diff。
+AI coding agent 通常能把任務做完。麻煩的是，它也常順手多改幾個檔案、多包一層抽象，或加一個其實不需要的依賴。
 
-Benchmark 結果：patch 少 38%，觸碰檔案少 19%。
+`kiss-my-diff` 想做的事很小：讓最後那個 diff 乾淨到你願意看完。
 
-`kiss-my-diff` 是一份很小的 [`AGENT.md`](AGENT.md)，給 coding agent 用。它提醒 agent 先讀現有程式、優先使用既有程式碼、做最小且可讀的修改、不要把非法狀態藏起來、驗證結果，然後停下來。
+Benchmark 結果：patch 小 38%，觸碰檔案少 19%。
 
-## 檔案內容
+`kiss-my-diff` 是一份很小的 [`AGENT.md`](AGENT.md)，給 coding agent 用。它提醒 agent 先讀現有程式、沿用既有模式、做最小且可讀的修改、不要把錯誤或非法狀態藏起來、驗證結果，然後停下來。
+
+## 這份檔案
 
 ```text
 Build only what is needed now.
@@ -26,32 +28,32 @@ Verify with the smallest relevant test.
 Stop when done.
 ```
 
-## 為什麼
+## 為什麼需要
 
-現代 coding agent 通常能讓測試通過。常見問題不是做不出來，而是做太多：多改檔案、加不必要的抽象、重複既有 helper、擴大重寫範圍，或加入其實不需要的依賴。
+會過測，不代表 diff 好維護。常見的問題不是 AI 寫不出來，而是它做太多：多改檔案、重複既有 helper、擴大重寫範圍、加不必要的抽象，或把一個小 bugfix 做成一個小框架。
 
-這份檔案就是一個小提醒：把 diff 做到小到值得喜歡。
+這份檔案不是要 agent 變保守，而是把它拉回當前任務：先理解現有程式，做剛好需要的修改，驗證，然後收手。
 
-## Benchmark Snapshot
+## Benchmark 摘要
 
-這是一組小型、單次執行的 benchmark，不是證明，也不是模型排行榜。它問的是比較窄的問題：在模型本來就能解的任務上，這份規則檔會不會讓解法更小、更集中？
+這是一組小型、單次執行的 benchmark，不是嚴格證明，也不是模型排行榜。它只看一件事：在模型本來就能修好的任務上，這份規則檔會不會讓解法更小、更集中。
 
 8 個 bugfix 任務，跨 4 個模型，各自跑有無 `kiss-my-diff` 的版本。
 
 | 指標 | 結果 |
 | --- | ---: |
-| correctness | 100.00 -> 100.00 |
-| clean-diff score | +12.32% |
-| 觸碰檔案 | 少 19.05% |
-| patch size | 小 37.57% |
+| 正確率 | 100.00 -> 100.00 |
+| clean-diff 分數 | +12.32% |
+| 觸碰檔案數 | 少 19.05% |
+| patch 大小 | 小 37.57% |
 
-Clean-diff 是檔案數、patch 大小、依賴變更、任務特定品質檢查的平均。Correctness 是公開測試 35% 加隱藏測試 65%。
+Clean-diff 是檔案數、patch 大小、依賴變更、任務特定品質檢查的平均。正確率是公開測試 35% 加隱藏測試 65%。
 
 ### 各模型結果
 
-可以用這張表判斷你使用的模型是否可能受益：clean-diff gain 越高，代表同一個模型在有這份檔案時，傾向產生更小、更集中的 patch。
+這張表不是在排模型強弱，而是讓你看同一個模型加上 `kiss-my-diff` 之後的變化。如果你用的模型 clean-diff gain 越高，代表它越容易被這份規則拉回小 patch。
 
-| 模型 | correctness | clean-diff 變化 | patch size |
+| 模型 | 正確率 | clean-diff 變化 | patch 大小 |
 | --- | ---: | ---: | ---: |
 | `gpt-5.5` | 100.00 -> 100.00 | +10.12% | 30.63 -> 25.38 lines |
 | `gpt-5.4` | 100.00 -> 100.00 | +12.21% | 37.13 -> 27.50 lines |
@@ -60,7 +62,7 @@ Clean-diff 是檔案數、patch 大小、依賴變更、任務特定品質檢查
 
 ### Before / After Diff
 
-其中一個 benchmark 任務要求 agent 不要再隱藏壞掉的 API response。兩次執行都通過公開測試和隱藏測試。
+其中一題是 API response decoding。原本的程式會用預設值吞掉壞掉的 upstream response；任務要求改成明確丟出 `ResponseDecodeError`。兩次都通過公開測試和隱藏測試，但 diff 長相不同。
 
 沒有 `kiss-my-diff`：觸碰 2 個檔案，32 行 diff。
 
@@ -143,11 +145,11 @@ diff --git a/api/response.py b/api/response.py
      }
 ```
 
-主張很窄：在同一組任務和模型上，`kiss-my-diff` 讓 patch 更小、更集中。
+重點不在誰比較聰明，而是在同樣能修好的情況下，`kiss-my-diff` 比較常把修改留在該改的地方。
 
 ## 使用方式
 
-把 [`AGENT.md`](AGENT.md) 複製到 coding agent 會工作的 repo 根目錄。
+把 [`AGENT.md`](AGENT.md) 放到 coding agent 會工作的 repo 根目錄。
 
 ## 授權
 
