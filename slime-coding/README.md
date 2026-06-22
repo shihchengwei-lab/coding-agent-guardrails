@@ -67,7 +67,12 @@ cd /你的專案
 - **關卡本身會動**：該擋的地方會擋、安裝不會壞、可以重跑——29 個自動測試 + CI 都過。
 - **效果有訊號、但很窄**。在小型 Python/Node 對照測試裡，當題目暗示「之後還會加更多」（例如「之後可能要支援其他格式」），沒用 Slime 的版本會蓋一個大架構（13/13），用了 Slime 的版本不會（1/13）——同功能、程式剩一半。**沒有那個暗示，看不出差異。** 其他容易誘發過度實作的場景（沒事亂重構、為了好看堆抽象）目前測不出差異。
 - **關卡是安全網，不是放大鏡**。最近的同條件對照（[`reports/2026-06-21-bvc.md`](reports/2026-06-21-bvc.md)）顯示：真正讓 AI 守規矩的，是寫在 prompt 裡的紀律。關卡負責接住「紀律失靈」的那幾種情況：加進新套件、引用不存在的函數或變數。
-- **弱模型上的測試方法本身有問題、結論還沒辦法下**。06-22 把 Haiku/Sonnet 拉進來跑了 baseline 對照（[`reports/2026-06-22-model-class.md`](reports/2026-06-22-model-class.md)），但 fixture 太小（全 codebase 115 行、單檔加一個 subcommand），三個 model 在 baseline 條件下都本來就寫 minimal——「Slime 要壓的東西」在這個 fixture 上根本沒出現。觀察到的只有 Slime 在 Sonnet 上加的代價（2/9 cell timeout 在 corridor 探索）。**這份證據既不能說 Slime 對弱模型有用、也不能說沒用**——測試題目太簡單、沒給 model 亂寫的空間。要回答這問題，需要在更難的 fixture（多檔、規格模糊、含可被致敬的既有 abstraction）重做。
+- **跨 model + 更難 fixture 上 Slime 沒抑制 garbage、反而在 Sonnet 上加代價**。06-22 補了一個含 architectural room 的新 fixture（[`reports/2026-06-22-bench.md`](reports/2026-06-22-bench.md)）：multi-module Python 包、有 `readers/` 子目錄暗示 plugin pattern。跑 Haiku / Sonnet / Opus × baseline / hooked × N=3 = 18 cell。事實：
+  - **Slime 沒抑制 dict-form registry**。Opus baseline 1/3 蓋 `READERS = {...}` dispatch dict、hooked **2/3**——hooked 比 baseline 更多。Sonnet/Haiku 兩條件都不蓋（但 Sonnet hooked 2/3 沒寫到 code、無從觀察）。
+  - **Sonnet 在 hooked 條件 2/3 cell 空 implementation**（baseline 0/3）。跟 cli-notes 上同方向訊號（cli-notes Sonnet hooked 2/9）。
+  - **沒任何 model 蓋 class-ABC garbage**（M1/M3/M5 全 18 cell 全 0）——score.py 設計的 class-form rubric 沒被觸發、garbage 都以 dict-form 出現。
+  - 結論：在這 fixture 上、**Slime 沒幫任何 model 寫更少 garbage、反而對 Sonnet 加 wall-clock 代價、Opus 還可能蓋更多 dispatch dict**。N=3 個別 cell 是 noise 級、方向是 load-bearing 訊號。
+  - hooks 的另一面用處（接住偷加套件、引用不存在的東西）在這 matrix 同樣沒觸發、不在這個結論的射程內。
 
 詳細數據在 [`reports/`](reports/)、後續驗證計畫在 [`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)。
 
