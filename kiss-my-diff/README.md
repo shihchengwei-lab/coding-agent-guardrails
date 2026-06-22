@@ -41,22 +41,21 @@ This is a small single-run benchmark, not proof or a model leaderboard. It asks 
 | metric | result |
 | --- | ---: |
 | correctness | 100.00 -> 100.00 |
-| clean-diff score | +12.32% |
-| files touched | 19.05% fewer |
-| patch size | 37.57% smaller |
+| files touched | 1.97 -> 1.59, 19.05% fewer |
+| patch size | 43.25 -> 27.00 lines, 37.57% smaller |
 
-Clean-diff is the average of file count, patch size, dependency changes, and task-specific quality checks. Correctness is public tests (35%) plus hidden tests (65%).
+Correctness is public tests (35%) plus hidden tests (65%).
 
 ### Per Model
 
-Use this table to judge whether your model is likely to benefit from this repo: higher clean-diff gain means the same model tended to produce smaller, more local patches when the file was present.
+Use this table to judge whether your model is likely to benefit from this repo. The same model was run with and without the file; lower files touched and patch size mean the change stayed smaller and more local.
 
-| model | correctness | clean-diff change | patch size |
+| model | correctness | files touched | patch size |
 | --- | ---: | ---: | ---: |
-| `gpt-5.5` | 100.00 -> 100.00 | +10.12% | 30.63 -> 25.38 lines |
-| `gpt-5.4` | 100.00 -> 100.00 | +12.21% | 37.13 -> 27.50 lines |
-| `gpt-5.4-mini` | 100.00 -> 100.00 | +16.29% | 70.38 -> 30.63 lines |
-| `gpt-5.3-codex-spark` | 100.00 -> 100.00 | +11.04% | 34.88 -> 24.50 lines |
+| `gpt-5.5` | 100.00 -> 100.00 | 1.88 -> 1.50 | 30.63 -> 25.38 lines |
+| `gpt-5.4` | 100.00 -> 100.00 | 1.88 -> 1.75 | 37.13 -> 27.50 lines |
+| `gpt-5.4-mini` | 100.00 -> 100.00 | 2.38 -> 1.63 | 70.38 -> 30.63 lines |
+| `gpt-5.3-codex-spark` | 100.00 -> 100.00 | 1.75 -> 1.50 | 34.88 -> 24.50 lines |
 
 ### Example Diff
 
