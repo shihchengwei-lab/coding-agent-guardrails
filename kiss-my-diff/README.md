@@ -1,10 +1,10 @@
-# Occam Agent
+# kiss-my-diff
 
-![Occam Agent hero](assets/occam-agent-hero.png)
+![kiss-my-diff hero](assets/kiss-my-diff-hero.png)
 
-Agents usually finish the task. The question is how much extra machinery they build on the way.
+Agents usually finish the task. The question is whether you want to kiss the diff afterward.
 
-`Occam Agent` is a tiny [`AGENT.md`](AGENT.md) for coding agents. It asks the agent to read first, use existing code, make the smallest readable change, verify, and stop.
+`kiss-my-diff` is a tiny [`AGENT.md`](AGENT.md) for coding agents. It asks the agent to read first, use existing code, make the smallest readable change, verify, and stop.
 
 ## The File
 
@@ -25,13 +25,13 @@ Stop when done.
 
 Modern coding agents can usually make tests pass. The common failure mode is overbuilding: extra files, new abstractions, duplicated helper logic, broader rewrites, or dependencies that were not needed.
 
-This file is the small reminder: shave off unnecessary abstraction, scope, and ceremony.
+This file is the small reminder: make the diff small enough to love.
 
 ## Evidence
 
 In an internal benchmark of 18 small bugfix tasks across 4 coding models, every run passed tests. The difference showed up in discipline checks: using existing helpers, staying local, and avoiding unnecessary code.
 
-| metric | baseline | Occam Agent | relative change |
+| metric | baseline | kiss-my-diff | relative change |
 | --- | ---: | ---: | ---: |
 | pass rate | 100.00 | 100.00 | +0.00% |
 | total score | 97.17 | 98.92 | +1.80% |
