@@ -29,26 +29,28 @@ This file is the small reminder: make the diff small enough to love.
 
 ## Evidence
 
-In an internal benchmark of 18 small bugfix tasks across 4 coding models, every run passed tests. The difference showed up in discipline checks: using existing helpers, staying local, and avoiding unnecessary code.
+In a calibrated benchmark of 6 bugfix tasks across 4 coding models, the baseline was checked first. It did not show the weak model beating stronger models: `gpt-5.3-codex-spark` scored 83.33 capability, while `gpt-5.4-mini`, `gpt-5.4`, and `gpt-5.5` reached 100.00 on this small suite.
+
+After that sanity check, the same tasks were rerun with `kiss-my-diff`.
 
 | metric | baseline | kiss-my-diff | relative change |
 | --- | ---: | ---: | ---: |
-| pass rate | 100.00 | 100.00 | +0.00% |
-| total score | 97.17 | 98.92 | +1.80% |
-| quality score | 87.50 | 97.22 | +11.11% |
-| avg line delta | 5.50 | 5.69 | +3.45% |
-| dependency incidents | 0 | 0 | 0 |
+| capability score | 95.83 | 100.00 | +4.35% |
+| discipline score | 77.26 | 86.23 | +11.62% |
+| total score | 90.26 | 95.87 | +6.21% |
+| avg changed files | 2.08 | 1.75 | -16.00% |
+| avg line delta | 57.75 | 27.08 | -53.10% |
 
-Per-model breakdown:
+Per-model discipline change:
 
-| model | total score | total change | quality score | quality change | avg line delta | line delta change |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `gpt-5.3-codex-spark` | 98.82 -> 98.40 | -0.43% | 94.44 -> 100.00 | +5.89% | 5.28 -> 5.89 | +11.55% |
-| `gpt-5.4` | 93.19 -> 98.75 | +5.97% | 66.67 -> 94.44 | +41.65% | 5.17 -> 5.61 | +8.51% |
-| `gpt-5.4-mini` | 97.85 -> 99.72 | +1.91% | 94.44 -> 100.00 | +5.89% | 6.06 -> 5.83 | -3.80% |
-| `gpt-5.5` | 98.82 -> 98.82 | +0.00% | 94.44 -> 94.44 | +0.00% | 5.50 -> 5.44 | -1.09% |
+| model | capability | discipline change | total change | line delta |
+| --- | ---: | ---: | ---: | ---: |
+| `gpt-5.5` | 100.00 -> 100.00 | +10.92% | +2.77% | 35.83 -> 24.00 |
+| `gpt-5.4` | 100.00 -> 100.00 | +9.72% | +2.51% | 30.17 -> 26.00 |
+| `gpt-5.4-mini` | 100.00 -> 100.00 | +11.08% | +2.66% | 124.33 -> 31.00 |
+| `gpt-5.3-codex-spark` | 83.33 -> 100.00 | +14.97% | +18.61% | 40.67 -> 27.33 |
 
-Relative change is computed against the baseline. For avg line delta, negative means a smaller patch. This is not a model leaderboard. It is a small discipline benchmark, and single-run differences are noisy. The useful signal is narrower: when agents already pass tests, this file nudges them toward existing code and local fixes.
+This is still a small single-run benchmark, not a model leaderboard. The useful signal is narrower: once the baseline sanity check is reasonable, this file nudges agents toward smaller, more local patches.
 
 ## Use
 
