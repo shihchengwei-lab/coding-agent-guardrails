@@ -38,28 +38,36 @@ This file is the small reminder: make the diff small enough to love.
 
 This is a small benchmark, not proof or a model leaderboard. It asks a narrower question: on tasks the models could already solve, does the rule file make the solution smaller and more local?
 
-Two benchmark snapshots were combined: 8 bugfix tasks across 4 models, run with and without `kiss-my-diff` twice. That gives 64 baseline runs and 64 `kiss-my-diff` runs.
+Two benchmark snapshots were combined for baseline vs `kiss-my-diff`: 8 bugfix tasks across 4 models, run twice. That gives 64 baseline runs and 64 `kiss-my-diff` runs. A one-line KISS prompt was run separately across the same 8 tasks and 4 models, for 32 more runs.
 
-| metric | result |
-| --- | ---: |
-| correctness | 100.00 -> 96.88 |
-| files touched | 1.97 -> 1.58, 19.84% fewer |
-| patch size | 39.34 -> 27.23 lines, 30.78% smaller |
+| variant | runs | correctness | files touched | patch size |
+| --- | ---: | ---: | ---: | ---: |
+| baseline | 64 | 100.00 | 1.97 | 39.34 lines |
+| `kiss-my-diff` | 64 | 96.88 | 1.58, 19.84% fewer | 27.23 lines, 30.78% smaller |
+| one-line KISS | 32 | 93.75 | 1.62, 17.77% fewer | 24.50 lines, 37.72% smaller |
 
 Correctness is public tests (35%) plus hidden tests (65%).
 
-In this larger pool, stronger models kept correctness at 100%. The weakest model had 2 regressions, so this is a diff-discipline harness, not a correctness guarantee.
+In this larger pool, stronger models kept correctness at 100% with `kiss-my-diff`. The one-line prompt made patches shorter, but it had lower correctness, so this is a diff-discipline harness, not a correctness guarantee.
 
 ### Per Model
 
-Use this table to judge whether your model is likely to benefit from this repo. The same model was run with and without the file; lower files touched and patch size mean the change stayed smaller and more local.
+Use this table to judge whether your model is likely to benefit from this repo. Lower files touched and patch size mean the change stayed smaller and more local.
 
-| model | correctness | files touched | patch size |
-| --- | ---: | ---: | ---: |
-| `gpt-5.5` | 100.00 -> 100.00 | 1.88 -> 1.44 | 34.19 -> 23.31 lines |
-| `gpt-5.4` | 100.00 -> 100.00 | 1.94 -> 1.69 | 36.69 -> 29.38 lines |
-| `gpt-5.4-mini` | 100.00 -> 100.00 | 2.31 -> 1.69 | 54.56 -> 31.50 lines |
-| `gpt-5.3-codex-spark` | 100.00 -> 87.50 | 1.75 -> 1.50 | 31.94 -> 24.75 lines |
+| model | variant | correctness | files touched | patch size |
+| --- | --- | ---: | ---: | ---: |
+| `gpt-5.5` | baseline | 100.00 | 1.88 | 34.19 lines |
+| `gpt-5.5` | `kiss-my-diff` | 100.00 | 1.44 | 23.31 lines |
+| `gpt-5.5` | one-line KISS | 87.50 | 1.25 | 16.38 lines |
+| `gpt-5.4` | baseline | 100.00 | 1.94 | 36.69 lines |
+| `gpt-5.4` | `kiss-my-diff` | 100.00 | 1.69 | 29.38 lines |
+| `gpt-5.4` | one-line KISS | 100.00 | 1.62 | 24.38 lines |
+| `gpt-5.4-mini` | baseline | 100.00 | 2.31 | 54.56 lines |
+| `gpt-5.4-mini` | `kiss-my-diff` | 100.00 | 1.69 | 31.50 lines |
+| `gpt-5.4-mini` | one-line KISS | 100.00 | 1.88 | 26.00 lines |
+| `gpt-5.3-codex-spark` | baseline | 100.00 | 1.75 | 31.94 lines |
+| `gpt-5.3-codex-spark` | `kiss-my-diff` | 87.50 | 1.50 | 24.75 lines |
+| `gpt-5.3-codex-spark` | one-line KISS | 87.50 | 1.75 | 31.25 lines |
 
 ### Example Diff
 

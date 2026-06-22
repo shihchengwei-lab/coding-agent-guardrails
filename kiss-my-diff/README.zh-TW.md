@@ -38,28 +38,36 @@ Stop when done.
 
 這是一組小型 benchmark，不是嚴格證明，也不是模型排行榜。它問的是比較窄的問題：在模型本來就能解的任務上，這份規則能不能讓解法更小、更集中？
 
-這裡合併了兩組 benchmark snapshot：8 個 bugfix 任務、4 個模型，各跑兩次 baseline 和兩次 `kiss-my-diff`。合計是 64 次 baseline run 和 64 次 `kiss-my-diff` run。
+這裡合併了兩組 benchmark snapshot：8 個 bugfix 任務、4 個模型，baseline 和 `kiss-my-diff` 各跑兩次。合計是 64 次 baseline run 和 64 次 `kiss-my-diff` run。另外也用同一組 8 題、4 個模型，單獨重跑一句 KISS prompt，共 32 次。
 
-| 指標 | 結果 |
-| --- | ---: |
-| 正確率 | 100.00 -> 96.88 |
-| 觸碰檔案數 | 1.97 -> 1.58，少 19.84% |
-| patch 大小 | 39.34 -> 27.23 lines，小 30.78% |
+| variant | runs | 正確率 | 觸碰檔案數 | patch 大小 |
+| --- | ---: | ---: | ---: | ---: |
+| baseline | 64 | 100.00 | 1.97 | 39.34 lines |
+| `kiss-my-diff` | 64 | 96.88 | 1.58，少 19.84% | 27.23 lines，小 30.78% |
+| 一句 KISS | 32 | 93.75 | 1.62，少 17.77% | 24.50 lines，小 37.72% |
 
 正確率是公開測試 35% 加隱藏測試 65%。
 
-在這個較大的池子裡，較強模型維持 100% 正確率；最弱模型出現 2 次 regression。所以這是 diff discipline harness，不是正確率保證。
+在這個較大的池子裡，較強模型加上 `kiss-my-diff` 後維持 100% 正確率。一句版 patch 更短，但正確率更差。所以這是 diff discipline harness，不是正確率保證。
 
 ### 各模型結果
 
-這張表不是在排模型強弱，而是讓你看同一個模型加上 `kiss-my-diff` 之後的變化。觸碰檔案和 patch 大小越低，代表修改越集中。
+這張表不是在排模型強弱，而是讓你看同一個模型在不同 prompt 下的變化。觸碰檔案和 patch 大小越低，代表修改越集中。
 
-| 模型 | 正確率 | 觸碰檔案數 | patch 大小 |
-| --- | ---: | ---: | ---: |
-| `gpt-5.5` | 100.00 -> 100.00 | 1.88 -> 1.44 | 34.19 -> 23.31 lines |
-| `gpt-5.4` | 100.00 -> 100.00 | 1.94 -> 1.69 | 36.69 -> 29.38 lines |
-| `gpt-5.4-mini` | 100.00 -> 100.00 | 2.31 -> 1.69 | 54.56 -> 31.50 lines |
-| `gpt-5.3-codex-spark` | 100.00 -> 87.50 | 1.75 -> 1.50 | 31.94 -> 24.75 lines |
+| 模型 | variant | 正確率 | 觸碰檔案數 | patch 大小 |
+| --- | --- | ---: | ---: | ---: |
+| `gpt-5.5` | baseline | 100.00 | 1.88 | 34.19 lines |
+| `gpt-5.5` | `kiss-my-diff` | 100.00 | 1.44 | 23.31 lines |
+| `gpt-5.5` | 一句 KISS | 87.50 | 1.25 | 16.38 lines |
+| `gpt-5.4` | baseline | 100.00 | 1.94 | 36.69 lines |
+| `gpt-5.4` | `kiss-my-diff` | 100.00 | 1.69 | 29.38 lines |
+| `gpt-5.4` | 一句 KISS | 100.00 | 1.62 | 24.38 lines |
+| `gpt-5.4-mini` | baseline | 100.00 | 2.31 | 54.56 lines |
+| `gpt-5.4-mini` | `kiss-my-diff` | 100.00 | 1.69 | 31.50 lines |
+| `gpt-5.4-mini` | 一句 KISS | 100.00 | 1.88 | 26.00 lines |
+| `gpt-5.3-codex-spark` | baseline | 100.00 | 1.75 | 31.94 lines |
+| `gpt-5.3-codex-spark` | `kiss-my-diff` | 87.50 | 1.50 | 24.75 lines |
+| `gpt-5.3-codex-spark` | 一句 KISS | 87.50 | 1.75 | 31.25 lines |
 
 ### Before / After Diff
 
