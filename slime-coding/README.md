@@ -68,7 +68,7 @@ cd /你的專案
 
 **Slime 對「AI 寫過多 code」這目標，現有證據答不出來**。
 
-06-21 跟 06-22 跑的那 ~90 個對照 cell 都是 sandbox fixture（115 行的 cli-notes、115 行的 csv-tsv-pipeline）、單檔加一個 subcommand 等級的任務。在這個規模上沒有架構決定空間、AI 自然不會蓋 garbage——不論裝不裝 Slime。當這幾份報告原本要把這描述成「Slime 沒效果」時、結論其實是「測試沒給 Slime 機會發揮」，不是「Slime 不行」。要真的回答這條問題，需要的不是更大的 sandbox，而是真實生產任務上的 instrumentation（大 codebase、模糊規格、AI 自然選擇怎麼做、不靠合成 bait）——超出 sandbox benchmark 能做的範圍。
+06-21 跟 06-22 跑的那 ~90 個對照 cell 都是 sandbox fixture（115 行的 cli-notes、115 行的 csv-tsv-pipeline）、單檔加一個 subcommand 等級的任務。在這個規模上沒有架構決定空間、AI 自然不會蓋 garbage——裝不裝 Slime 都一樣。**sandbox 量到的 null 不能讀成 Slime 對這目標的判決**——測試本身沒給 Slime 機會發揮。要真的回答這條問題、需要真實生產任務上的觀察（大 codebase、模糊規格、AI 自然選擇怎麼做、不靠合成 bait），超出 sandbox benchmark 能做的範圍。
 
 **hooks 設計的另一面用處——接住「AI 偷加套件」「AI 引用不存在的函數或變數」「跨 session 把上次否決的設計復活」**——06-18 的 mechanism verification 測過這幾條 gate 在 git fact 上**會 trigger**、但「真實任務裡這些 failure mode 多常出現、Slime 接住多少」沒 effect-size 證據。這幾個 gate 在 sandbox benchmark 也沒被 agents 誘發、所以同樣沒進入結論射程。
 
