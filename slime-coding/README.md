@@ -62,19 +62,27 @@ cd /你的專案
 
 ## 目前驗證到哪？
 
-還在實驗階段。下面是目前測到的事實：
+還在實驗階段。
 
-- **關卡本身會動**：該擋的地方會擋、安裝不會壞、可以重跑——29 個自動測試 + CI 都過。
-- **效果有訊號、但很窄**。在小型 Python/Node 對照測試裡，當題目暗示「之後還會加更多」（例如「之後可能要支援其他格式」），沒用 Slime 的版本會蓋一個大架構（13/13），用了 Slime 的版本不會（1/13）——同功能、程式剩一半。**沒有那個暗示，看不出差異。** 其他容易誘發過度實作的場景（沒事亂重構、為了好看堆抽象）目前測不出差異。
-- **關卡是安全網，不是放大鏡**。最近的同條件對照（[`reports/2026-06-21-bvc.md`](reports/2026-06-21-bvc.md)）顯示：真正讓 AI 守規矩的，是寫在 prompt 裡的紀律。關卡負責接住「紀律失靈」的那幾種情況：加進新套件、引用不存在的函數或變數。
-- **跨 model + 更難 fixture 上 Slime 沒抑制 garbage、反而在 Sonnet 上加代價**。06-22 補了一個含 architectural room 的新 fixture（[`reports/2026-06-22-bench.md`](reports/2026-06-22-bench.md)）：multi-module Python 包、有 `readers/` 子目錄暗示 plugin pattern。跑 Haiku / Sonnet / Opus × baseline / hooked × N=3 = 18 cell。事實：
-  - **Slime 沒抑制 dict-form registry**。Opus baseline 1/3 蓋 `READERS = {...}` dispatch dict、hooked **2/3**——hooked 比 baseline 更多。Sonnet/Haiku 兩條件都不蓋（但 Sonnet hooked 2/3 沒寫到 code、無從觀察）。
-  - **Sonnet 在 hooked 條件 2/3 cell 空 implementation**（baseline 0/3）。跟 cli-notes 上同方向訊號（cli-notes Sonnet hooked 2/9）。
-  - **沒任何 model 蓋 class-ABC garbage**（M1/M3/M5 全 18 cell 全 0）——score.py 設計的 class-form rubric 沒被觸發、garbage 都以 dict-form 出現。
-  - 結論：在這 fixture 上、**Slime 沒幫任何 model 寫更少 garbage、反而對 Sonnet 加 wall-clock 代價、Opus 還可能蓋更多 dispatch dict**。N=3 個別 cell 是 noise 級、方向是 load-bearing 訊號。
-  - hooks 的另一面用處（接住偷加套件、引用不存在的東西）在這 matrix 同樣沒觸發、不在這個結論的射程內。
+**關卡本身會動**：該擋的地方會擋、安裝不會壞、可以重跑——29 個自動測試 + CI 都過。
 
-詳細數據在 [`reports/`](reports/)、後續驗證計畫在 [`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)。
+**Slime 對「AI 寫過多 code」這目標：沒看到正效果，且有微弱代價。**
+
+跨 06-21 / 06-22 多個 fixture（cli-notes、csv-tsv-pipeline）、多個 model（Haiku / Sonnet / Opus）、bait 跟 no-bait 兩種 prompt、共約 90 個 cell 對照下來：
+
+| 量到的軸 | baseline | 裝了 Slime | 差 |
+|---|---|---|---|
+| 行數 / 結構 | 跟需求成比例 | 同 | 無差 |
+| 蓋 registry / dispatch dict | prompt 有「之後會加更多」暗示時 1-3/9（Opus），沒暗示 ~0/9 | 跟 baseline 同範圍、Opus 條件下還微高 | 無差 / 微負 |
+| cell 沒寫到 code | 0–1/9 | 1–2/9（含 Anthropic API 過載引起的污染、無法乾淨歸因） | 微負 |
+
+**關鍵 caveat**：hooks 設計的另一面用處——接住「AI 偷加套件」「AI 引用不存在的函數或變數」「跨 session 把上次否決的設計復活」——在這些 benchmark 裡 **agents 不誘發、所以沒測到、不在這結論的射程內**。06-18 的 mechanism verification 測過這幾條 gate 在 git fact 上會 trigger、但沒測「真實任務中它們多常需要 trigger」。
+
+**讀者該怎麼用這結果**：
+- 想靠 Slime 讓 AI 寫少一點 garbage——這份證據裡看不到效果。**真正抑制 garbage 的是寫進 `CLAUDE.md` 的紀律 prose**，不是 hook。Slime 可以幫你貼那段 prose、但 prose 本身不需要 Slime。
+- 想接住「偷加套件 / 寫憑空捏的 reference / 帶紅燈收工」這幾種 git 事實——hook 是設計來幹這個的，但這份 benchmark 沒給你這條的 effect-size 證據。
+
+詳細數據：[`reports/2026-06-21-bvc.md`](reports/2026-06-21-bvc.md)（B vs C, Opus）、[`reports/2026-06-22-model-class.md`](reports/2026-06-22-model-class.md)（跨 model + baseline）、[`reports/2026-06-22-bench.md`](reports/2026-06-22-bench.md)（含 architectural room 的 fixture）。後續驗證計畫：[`docs/VALIDATION_PLAN.md`](docs/VALIDATION_PLAN.md)。
 
 ## License
 
