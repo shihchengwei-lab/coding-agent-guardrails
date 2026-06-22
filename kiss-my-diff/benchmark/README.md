@@ -1,0 +1,30 @@
+# Benchmark
+
+This folder contains the small benchmark used by `kiss-my-diff`.
+
+It is intentionally open: the task code, public tests, hidden tests, runner, and scoring code are all checked in. "Hidden" means hidden from the agent workspace during a run, not hidden from readers of this repo.
+
+## Run The Harness
+
+From this folder:
+
+```powershell
+python -m pytest -q
+python benchmark_runner.py prepare --run-root runs-local --variant baseline --force
+python benchmark_runner.py run --run-root runs-local --model gpt-5.5 --variant baseline --task api_response_decode
+python benchmark_runner.py collect --run-root runs-local --model gpt-5.5 --variant baseline --task api_response_decode
+python benchmark_runner.py summary --run-root runs-local
+```
+
+Variants:
+
+- `baseline`: no local `AGENT.md`
+- `kiss`: copies the repo root `AGENT.md` into the agent workspace
+- `kiss_one_line`: uses `Follow the KISS principle (Keep It Simple, Stupid).`
+
+The runner creates a fresh worktree under `runs-local/`, gives the agent only `tasks/<task>/base`, then verifies the result twice:
+
+- public tests: restored from `tasks/<task>/base/tests`
+- hidden tests: copied from `tasks/<task>/hidden` only during collection
+
+Generated run folders are ignored by git.

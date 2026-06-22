@@ -50,6 +50,8 @@ Stop when done.
 
 在這個較大的池子裡，較強模型加上 `kiss-my-diff` 後維持 100% 正確率。一句版 patch 更短，但正確率更差。所以這是 diff discipline harness，不是正確率保證。
 
+Benchmark harness 和題目都放在 [`benchmark/`](benchmark/) 裡。hidden tests 也有放進 repo，方便重現；只是 runner 在 agent 解題時不會把 hidden tests 放進工作區。
+
 ### 各模型結果
 
 這張表不是在排模型強弱，而是讓你看同一個模型在不同 prompt 下的變化。觸碰檔案和 patch 大小越低，代表修改越集中。

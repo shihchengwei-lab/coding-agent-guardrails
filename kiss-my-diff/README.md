@@ -50,6 +50,8 @@ Correctness is public tests (35%) plus hidden tests (65%).
 
 In this larger pool, stronger models kept correctness at 100% with `kiss-my-diff`. The one-line prompt made patches shorter, but it had lower correctness, so this is a diff-discipline harness, not a correctness guarantee.
 
+The benchmark harness and tasks are open source in [`benchmark/`](benchmark/). Hidden tests are checked in for reproducibility, but the runner keeps them out of the agent workspace during a run.
+
 ### Per Model
 
 Use this table to judge whether your model is likely to benefit from this repo. Lower files touched and patch size mean the change stayed smaller and more local.
