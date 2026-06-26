@@ -15,8 +15,61 @@ MODELS = [
     "gpt-5.4-mini",
     "gpt-5.3-codex-spark",
 ]
-VARIANTS = ["baseline", "kiss", "kiss_one_line"]
+VARIANTS = [
+    "baseline",
+    "kiss",
+    "kiss_one_line",
+    "kiss_contrast_core",
+    "kiss_weighted_core",
+    "kiss_weighted_contrast_core",
+]
 KISS_ONE_LINE_AGENT = "Follow the KISS principle (Keep It Simple, Stupid).\n"
+KISS_CONTRAST_CORE_AGENT = """Read the existing code before editing; do not guess APIs, helpers, or patterns.
+Use existing helpers and patterns before adding new code; do not duplicate helper logic.
+Prefer the smallest readable change; do not rewrite nearby code just because you saw it.
+Verify with the smallest relevant test; do not stop on an unverified change.
+
+Build only what is needed now.
+Use built-ins before adding dependencies.
+Touch the fewest files needed.
+Do not add abstractions for one-shot code.
+Preserve existing behavior unless asked to change it.
+Do not hide errors or invalid states.
+Stop when done.
+"""
+KISS_WEIGHTED_CORE_AGENT = """Optimize for the smallest correct diff.
+Read first, reuse existing code, then make the smallest readable change.
+Verify the relevant behavior, then stop.
+
+Build only what is needed now.
+Prefer the smallest readable change.
+Read the existing code before editing.
+Use existing helpers and patterns before adding new code.
+Use built-ins before adding dependencies.
+Touch the fewest files needed.
+Do not add abstractions for one-shot code.
+Preserve existing behavior unless asked to change it.
+Do not hide errors or invalid states.
+Verify with the smallest relevant test.
+Stop when done.
+"""
+KISS_WEIGHTED_CONTRAST_CORE_AGENT = """Optimize for the smallest correct diff.
+Read first, reuse existing code, then make the smallest readable change.
+Verify the relevant behavior, then stop.
+
+Read the existing code before editing; do not guess APIs, helpers, or patterns.
+Use existing helpers and patterns before adding new code; do not duplicate helper logic.
+Prefer the smallest readable change; do not rewrite nearby code just because you saw it.
+Verify with the smallest relevant test; do not stop on an unverified change.
+
+Build only what is needed now.
+Use built-ins before adding dependencies.
+Touch the fewest files needed.
+Do not add abstractions for one-shot code.
+Preserve existing behavior unless asked to change it.
+Do not hide errors or invalid states.
+Stop when done.
+"""
 
 
 def load_tasks(lab_dir: Path) -> list[dict]:
@@ -48,6 +101,12 @@ def prepare_run(
         shutil.copy2(agent_file(lab_dir), work_dir / "AGENT.md")
     elif variant == "kiss_one_line":
         (work_dir / "AGENT.md").write_text(KISS_ONE_LINE_AGENT, encoding="utf-8")
+    elif variant == "kiss_contrast_core":
+        (work_dir / "AGENT.md").write_text(KISS_CONTRAST_CORE_AGENT, encoding="utf-8")
+    elif variant == "kiss_weighted_core":
+        (work_dir / "AGENT.md").write_text(KISS_WEIGHTED_CORE_AGENT, encoding="utf-8")
+    elif variant == "kiss_weighted_contrast_core":
+        (work_dir / "AGENT.md").write_text(KISS_WEIGHTED_CONTRAST_CORE_AGENT, encoding="utf-8")
 
     (run_dir / "PROMPT.md").write_text(_build_prompt(task, variant), encoding="utf-8")
     (run_dir / "RUN.json").write_text(

@@ -159,6 +159,44 @@ def test_prepare_kiss_one_line_run_adds_minimal_agent_file(tmp_path):
     assert "Follow the local AGENT.md" in (run_dir / "PROMPT.md").read_text(encoding="utf-8")
 
 
+def test_prepare_experimental_kiss_variants_add_agent_file(tmp_path):
+    lab = tmp_path / "lab"
+    task_dir = lab / "tasks" / "demo"
+    (task_dir / "base").mkdir(parents=True)
+    (task_dir / "hidden").mkdir()
+    (task_dir / "base" / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    manifest = {
+        "id": "demo",
+        "prompt": "Fix it.",
+        "public_command": "python -m pytest -q",
+        "hidden_command": "python -m pytest -q",
+        "max_files": 1,
+        "max_line_delta": 8,
+        "quality_checks": [],
+    }
+
+    expected = {
+        "kiss_contrast_core": "do not guess APIs, helpers, or patterns.",
+        "kiss_weighted_core": "Optimize for the smallest correct diff.",
+        "kiss_weighted_contrast_core": "do not stop on an unverified change.",
+    }
+
+    for variant, marker in expected.items():
+        run_dir = runner.prepare_run(
+            task=manifest,
+            lab_dir=lab,
+            run_root=tmp_path / "runs",
+            model="gpt-test",
+            variant=variant,
+            force=False,
+        )
+
+        agent_text = (run_dir / "work" / "AGENT.md").read_text(encoding="utf-8")
+        assert marker in agent_text
+        assert agent_text.endswith("\n")
+        assert "Follow the local AGENT.md" in (run_dir / "PROMPT.md").read_text(encoding="utf-8")
+
+
 def test_write_summary_reports_capability_and_discipline_separately(tmp_path):
     rows = [
         {

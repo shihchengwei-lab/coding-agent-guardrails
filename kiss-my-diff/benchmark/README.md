@@ -22,6 +22,9 @@ Variants:
 - `baseline`: no local `AGENT.md`
 - `kiss`: copies the repo root `AGENT.md` into the agent workspace
 - `kiss_one_line`: uses `Follow the KISS principle (Keep It Simple, Stupid).`
+- `kiss_contrast_core`: experimental prompt with positive rules paired with explicit "do not" boundaries
+- `kiss_weighted_core`: experimental prompt that repeats the smallest-correct-diff objective before the rule list
+- `kiss_weighted_contrast_core`: experimental prompt that combines core weighting with contrast boundaries
 
 The runner creates a fresh worktree under `runs-local/`, gives the agent only `tasks/<task>/base`, then verifies the result twice:
 
@@ -31,3 +34,5 @@ The runner creates a fresh worktree under `runs-local/`, gives the agent only `t
 Generated run folders are ignored by git.
 
 `calibrate` checks baseline capability ordering only. It is a sanity check for the task pool, not the main benchmark claim.
+
+See [`context-weighting-experiment.md`](context-weighting-experiment.md) for the extra prompt-strength experiment behind the experimental KISS variants.

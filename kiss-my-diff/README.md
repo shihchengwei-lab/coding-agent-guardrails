@@ -54,6 +54,10 @@ The benchmark harness and tasks are open source in [`benchmark/`](benchmark/). H
 
 Calibration check: pass, but saturated. On the combined baseline runs, all four models scored 100.00 baseline capability, so no weaker model scored higher on correctness. This sanity check does not prove the task pool separates model strength; it only rules out the earlier inverted-baseline failure mode.
 
+### Context Weighting
+
+At the model level, a coding agent is still generating the next token from its context. `AGENT.md` is soft pressure, not a hard boundary: it changes the next-token distribution, but it does not mechanically enforce a rule. I tested heavier variants to look for the sweet spot between smaller patches and missed requirements. Details: [`benchmark/context-weighting-experiment.md`](benchmark/context-weighting-experiment.md).
+
 ### Per Model
 
 Use this table to judge whether your model is likely to benefit from this repo. Lower files touched and patch size mean the change stayed smaller and more local.
