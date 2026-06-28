@@ -1,0 +1,240 @@
+{
+  "benchmark": "Ponytail-derived Haiku comparison for slime-coding",
+  "date": "2026-06-29",
+  "model": "claude-haiku-4-5-20251001",
+  "task_pool": {
+    "total_tasks": 19,
+    "safety_tasks": [
+      "safe-path",
+      "critic-email",
+      "rate-limit",
+      "sql-user",
+      "auth-token",
+      "csv-sum",
+      "cache"
+    ],
+    "feature_tasks": [
+      "tmpl-fe-datepicker",
+      "tmpl-fe-colorpicker",
+      "tmpl-fe-command",
+      "tmpl-fe-dropzone",
+      "tmpl-fe-wizard",
+      "tmpl-fe-rating",
+      "tmpl-be-duplicate",
+      "tmpl-be-search",
+      "tmpl-be-count",
+      "tmpl-be-archive",
+      "tmpl-be-bulkdelete",
+      "tmpl-be-csv"
+    ],
+    "runs_per_task_arm": 4,
+    "arms": [
+      "baseline",
+      "ponytail",
+      "slime-coding"
+    ]
+  },
+  "source": {
+    "ponytail_repo": "https://github.com/DietrichGebert/ponytail",
+    "ponytail_commit": "c4d1925",
+    "slime_coding_commit_before_docs_update": "b26762e"
+  },
+  "cleanup_policy": [
+    "Claude 429/session-limit cells were excluded and rerun after reset.",
+    "Baseline timeout cells were treated as infrastructure failures and replaced with clean baseline samples.",
+    "The slime-coding cache safety failure was kept because it was a valid model/task failure, not infrastructure."
+  ],
+  "aggregates": {
+    "safety": {
+      "baseline": {
+        "samples": 28,
+        "pass": 28,
+        "pass_rate": 1.0,
+        "safe": 28,
+        "safe_rate": 1.0,
+        "total_loc": 380,
+        "median_loc": 12.0,
+        "mean_loc": 13.571428571428571,
+        "mean_cost_usd": 0.042532689285714284,
+        "mean_tokens": 120897,
+        "mean_duration_s": 22.143464285714284,
+        "delta_vs_baseline": {
+          "pass_rate_pp": 0.0,
+          "total_loc_pct": 0.0,
+          "mean_cost_pct": 0.0,
+          "mean_tokens_pct": 0.0,
+          "mean_duration_pct": 0.0
+        }
+      },
+      "ponytail": {
+        "samples": 28,
+        "pass": 28,
+        "pass_rate": 1.0,
+        "safe": 28,
+        "safe_rate": 1.0,
+        "total_loc": 629,
+        "median_loc": 11.0,
+        "mean_loc": 22.464285714285715,
+        "mean_cost_usd": 0.1026796875,
+        "mean_tokens": 141351.7857142857,
+        "mean_duration_s": 53.188607142857144,
+        "delta_vs_baseline": {
+          "pass_rate_pp": 0.0,
+          "total_loc_pct": 65.52631578947367,
+          "mean_cost_pct": 141.41357911851503,
+          "mean_tokens_pct": 16.91918386253233,
+          "mean_duration_pct": 140.20002677345946
+        }
+      },
+      "slime-coding": {
+        "samples": 28,
+        "pass": 27,
+        "pass_rate": 0.9642857142857143,
+        "safe": 27,
+        "safe_rate": 0.9642857142857143,
+        "total_loc": 375,
+        "median_loc": 14.0,
+        "mean_loc": 13.392857142857142,
+        "mean_cost_usd": 0.07512630000000001,
+        "mean_tokens": 277606.75,
+        "mean_duration_s": 44.340964285714286,
+        "delta_vs_baseline": {
+          "pass_rate_pp": -3.57142857142857,
+          "total_loc_pct": -1.3157894736842146,
+          "mean_cost_pct": 76.63190656799861,
+          "mean_tokens_pct": 129.62252992216517,
+          "mean_duration_pct": 100.24402556704092
+        }
+      }
+    },
+    "feature": {
+      "baseline": {
+        "samples": 48,
+        "pass": 41,
+        "pass_rate": 0.8541666666666666,
+        "safe": 48,
+        "safe_rate": 1.0,
+        "total_loc": 5364,
+        "median_loc": 45.5,
+        "mean_loc": 111.75,
+        "mean_cost_usd": 0.1172543875,
+        "mean_tokens": 454311.2291666667,
+        "mean_duration_s": 65.91960416666667,
+        "delta_vs_baseline": {
+          "pass_rate_pp": 0.0,
+          "total_loc_pct": 0.0,
+          "mean_cost_pct": 0.0,
+          "mean_tokens_pct": 0.0,
+          "mean_duration_pct": 0.0
+        }
+      },
+      "ponytail": {
+        "samples": 48,
+        "pass": 44,
+        "pass_rate": 0.9166666666666666,
+        "safe": 48,
+        "safe_rate": 1.0,
+        "total_loc": 4426,
+        "median_loc": 34.0,
+        "mean_loc": 92.20833333333333,
+        "mean_cost_usd": 0.10588604583333334,
+        "mean_tokens": 391437.7708333333,
+        "mean_duration_s": 57.03335416666667,
+        "delta_vs_baseline": {
+          "pass_rate_pp": 6.25,
+          "total_loc_pct": -17.48695003728561,
+          "mean_cost_pct": -9.695450984012567,
+          "mean_tokens_pct": -13.83929216292118,
+          "mean_duration_pct": -13.480435922419387
+        }
+      },
+      "slime-coding": {
+        "samples": 48,
+        "pass": 47,
+        "pass_rate": 0.9791666666666666,
+        "safe": 48,
+        "safe_rate": 1.0,
+        "total_loc": 4169,
+        "median_loc": 43.5,
+        "mean_loc": 86.85416666666667,
+        "mean_cost_usd": 0.13974680625,
+        "mean_tokens": 574028.9791666666,
+        "mean_duration_s": 84.77560416666667,
+        "delta_vs_baseline": {
+          "pass_rate_pp": 12.5,
+          "total_loc_pct": -22.278150633855333,
+          "mean_cost_pct": 19.182581760533267,
+          "mean_tokens_pct": 26.351483809809338,
+          "mean_duration_pct": 28.604540695247138
+        }
+      }
+    },
+    "all": {
+      "baseline": {
+        "samples": 76,
+        "pass": 69,
+        "pass_rate": 0.9078947368421053,
+        "safe": 76,
+        "safe_rate": 1.0,
+        "total_loc": 5744,
+        "median_loc": 23.0,
+        "mean_loc": 75.57894736842105,
+        "mean_cost_usd": 0.08972534078947368,
+        "mean_tokens": 331474.40789473685,
+        "mean_duration_s": 49.791552631578945,
+        "delta_vs_baseline": {
+          "pass_rate_pp": 0.0,
+          "total_loc_pct": 0.0,
+          "mean_cost_pct": 0.0,
+          "mean_tokens_pct": 0.0,
+          "mean_duration_pct": 0.0
+        }
+      },
+      "ponytail": {
+        "samples": 76,
+        "pass": 72,
+        "pass_rate": 0.9473684210526315,
+        "safe": 76,
+        "safe_rate": 1.0,
+        "total_loc": 5055,
+        "median_loc": 22.5,
+        "mean_loc": 66.51315789473684,
+        "mean_cost_usd": 0.10470475592105263,
+        "mean_tokens": 299300.8289473684,
+        "mean_duration_s": 55.61686842105263,
+        "delta_vs_baseline": {
+          "pass_rate_pp": 3.9473684210526216,
+          "total_loc_pct": -11.995125348189417,
+          "mean_cost_pct": 16.694743090166455,
+          "mean_tokens_pct": -9.706203007257653,
+          "mean_duration_pct": 11.69940578591062
+        }
+      },
+      "slime-coding": {
+        "samples": 76,
+        "pass": 74,
+        "pass_rate": 0.9736842105263158,
+        "safe": 75,
+        "safe_rate": 0.9868421052631579,
+        "total_loc": 4544,
+        "median_loc": 24.5,
+        "mean_loc": 59.78947368421053,
+        "mean_cost_usd": 0.11593925131578947,
+        "mean_tokens": 464820.7894736842,
+        "mean_duration_s": 69.87863157894736,
+        "delta_vs_baseline": {
+          "pass_rate_pp": 6.578947368421051,
+          "total_loc_pct": -20.891364902506957,
+          "mean_cost_pct": 29.215726901302695,
+          "mean_tokens_pct": 40.228258472760544,
+          "mean_duration_pct": 40.34234299942021
+        }
+      }
+    }
+  },
+  "known_downside": {
+    "task": "cache",
+    "arm": "slime-coding",
+    "result": "3/4 pass; one run placed lru_cache where _calls still incremented, so the behavior check failed."
+  }
+}

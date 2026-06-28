@@ -64,11 +64,19 @@ cd /你的專案
 
 還在實驗階段。
 
-**機制層**：hook 在它宣稱要觸發的 git 事實上會觸發（沒走廊就擋編輯、新增依賴就擋收工、type checker 紅燈就擋收工），安裝可重跑、不壞既有設定——`tests/test.sh` 跑 29 個自動測試 + CI 都過。
+**機制層**：hook 在它宣稱要觸發的 git 事實上會觸發（沒走廊就擋編輯、新增依賴就擋收工、type checker 紅燈就擋收工），安裝可重跑、不壞既有設定。自動測試與 CI 用來守住這一層。
 
-**效果層（裝了 Slime，AI 真的會少寫 garbage 嗎？）**：**這個 repo 沒有證據**。
+**效果層（裝了 Slime，AI 真的會少寫 garbage 嗎？）**：現在有一組可公開、但只算方向性的 benchmark。
 
-之前跑過的 sandbox benchmark 都是百行級單檔加一個 subcommand 的小 fixture、AI 在那規模本來就不會蓋 garbage——裝不裝 Slime 都一樣。要真的回答這條問題、需要在真實專案上 instrument 用一段時間——這 repo 不做那件事。如果你打算用 Slime、請當作「概念有趣、機制驗過、effect size 未知」來評估。
+2026-06-29，用 Ponytail-derived task pool 跑 Claude Haiku：19 題，`baseline` / `ponytail` / `slime-coding` 三組，每題每組 4 次，共 228 個有效樣本。429 額度失敗與 timeout 樣本已重跑；Slime 的 `cache` safety 失敗保留，因為那是真失敗，不是基礎設施問題。
+
+| 組別 | 通過率 | 總 LOC | vs baseline LOC | 平均 cost | 平均 tokens | 平均時間 |
+|---|---:|---:|---:|---:|---:|---:|
+| baseline | 69/76 = 90.8% | 5744 | baseline | $0.0897 | 331k | 49.8s |
+| ponytail | 72/76 = 94.7% | 5055 | -12.0% | $0.1047 | 299k | 55.6s |
+| slime-coding | 74/76 = 97.4% | 4544 | -20.9% | $0.1159 | 465k | 69.9s |
+
+讀法很簡單：Slime 在這組任務提高通過率、縮小總 diff；代價是更多 token、更多錢、更久時間，並且有 1 次 safety regression。完整資料在 [`benchmark/`](benchmark/)。
 
 ## License
 
