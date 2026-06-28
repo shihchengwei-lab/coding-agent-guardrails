@@ -46,6 +46,11 @@ agentcam = "agentcam.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentcam"]
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "docs/demo.gif",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
