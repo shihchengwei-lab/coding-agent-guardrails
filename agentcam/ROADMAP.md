@@ -155,10 +155,10 @@ it'll be considered.
 - Existing `agentcam run -- ...` wrapping path still works unchanged.
   Hook mode is additive, not a replacement.
 
-### 2. PTY-backed wrapping — SHIPPED 2026-06-28
+### 2. PTY-backed wrapping — SHIPPED 2026-06-28 (v0.2.0 on PyPI)
 
-Both backends shipped as a 7-commit batch in the [Unreleased] section
-of CHANGELOG.md (will be promoted to a tagged 0.2 release later).
+Both backends shipped as a 7-commit batch in CHANGELOG.md `[0.2.0]`
+section, tagged `v0.2.0` on GitHub, released to PyPI.
 Implementation in `src/agentcam/runner.py`: `_run_pipe`,
 `_run_pty_posix` (standard-library `pty.openpty`), `_run_pty_windows`
 (pywinpty + ConPTY). Dispatched via the new `--backend` flag on
