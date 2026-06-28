@@ -7,6 +7,8 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-06-28
+
 ### Added (2026-06-28, PTY-backed wrap for bare interactive TUI agents)
 
 - **PTY-backed wrap backends.** New `--backend` flag on
