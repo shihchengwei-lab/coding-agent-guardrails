@@ -303,6 +303,107 @@ def _run_pipe(
     )
 
 
+def _run_pty_posix(
+    *,
+    resolved: ResolvedCommand,
+    cwd: Path,
+    stdout_raw_path: Path,
+    stderr_raw_path: Path,
+) -> RunResult:
+    """POSIX PTY backend: subprocess attached to a pseudo-terminal.
+
+    TUI agents render because stdout is a TTY. stdout and stderr merge
+    into one PTY stream — both go to ``stdout_raw_path``; ``stderr_raw_path``
+    is created empty to keep the file-exists invariant the rest of the
+    pipeline relies on. POSIX-only; raises NotImplementedError on Windows.
+
+    Non-interactive only: no stdin forward, no SIGWINCH / resize handling.
+    """
+    if platform.system().lower() == "windows":
+        raise NotImplementedError(
+            "agentcam: 'pty_posix' backend is POSIX-only."
+        )
+
+    import pty  # POSIX-only stdlib; import here so the module
+                # stays importable on Windows.
+
+    cmd_arg: list[str] | str = (
+        resolved.argv[0] if resolved.use_shell else list(resolved.argv)
+    )
+
+    master_fd, slave_fd = pty.openpty()
+
+    try:
+        proc = subprocess.Popen(
+            cmd_arg,
+            cwd=str(cwd),
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            close_fds=True,
+            shell=resolved.use_shell,
+        )
+    finally:
+        # Parent never reads/writes the slave; close it so EOF propagates
+        # when the child closes its end.
+        os.close(slave_fd)
+
+    # stderr.log invariant: file always exists (empty under PTY merge).
+    stderr_raw_path.write_bytes(b"")
+
+    degraded = False
+    with stdout_raw_path.open("wb") as raw_fp:
+        while True:
+            try:
+                chunk = os.read(master_fd, _CHUNK_SIZE)
+            except OSError:
+                # Linux: read after slave EOF raises EIO. Treat as EOF.
+                break
+            if not chunk:
+                break
+            raw_fp.write(chunk)
+            raw_fp.flush()
+            # Forward to terminal (same degraded handling as PIPE backend
+            # in _TeeThread._forward_to_terminal).
+            buf = getattr(sys.stdout, "buffer", None)
+            if buf is not None:
+                try:
+                    buf.write(chunk)
+                    buf.flush()
+                    continue
+                except (OSError, UnicodeEncodeError):
+                    degraded = True
+            try:
+                text = chunk.decode("utf-8", errors="replace")
+                sys.stdout.write(text)
+                sys.stdout.flush()
+                degraded = True
+            except Exception:
+                degraded = True
+
+    try:
+        proc.wait()
+    except KeyboardInterrupt:
+        # Same escalation ladder as _run_pipe.
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+    finally:
+        os.close(master_fd)
+
+    return RunResult(
+        exit_detail=interpret_exit(proc.returncode),
+        terminal_forward_degraded=degraded,
+        shell_used=resolved.use_shell,
+    )
+
+
 def run_wrapped(
     argv: list[str],
     *,
@@ -328,7 +429,15 @@ def run_wrapped(
             stdout_raw_path=stdout_raw_path,
             stderr_raw_path=stderr_raw_path,
         )
+    if backend == "pty_posix":
+        return _run_pty_posix(
+            resolved=resolved,
+            cwd=cwd,
+            stdout_raw_path=stdout_raw_path,
+            stderr_raw_path=stderr_raw_path,
+        )
 
     raise UnknownBackendError(
-        f"agentcam: unknown wrap backend {backend!r}; supported: 'pipe'."
+        f"agentcam: unknown wrap backend {backend!r}; "
+        f"supported: 'pipe', 'pty_posix'."
     )

@@ -356,3 +356,76 @@ class TestBackendDispatch:
                 stderr_raw_path=tmp_path / "stderr.log",
                 backend="not-a-real-backend",
             )
+
+
+# ---------------------------------------------------------------------------
+# Stage 2: POSIX PTY backend (roadmap §2)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(
+    platform.system().lower() == "windows",
+    reason="POSIX-only PTY backend",
+)
+class TestPtyPosixBackend:
+    """``backend='pty_posix'``: subprocess attached to a POSIX pty.
+
+    TUI agents render because stdout is a TTY. stdout and stderr merge
+    into one PTY stream — both go to stdout.log; stderr.log is created
+    empty to keep the file-exists invariant the rest of the pipeline
+    relies on. This stage covers non-interactive cases (no stdin
+    forward); interactive support is a follow-up.
+    """
+
+    def test_simple_stdout_captured(self, tmp_path: Path):
+        result = run_wrapped(
+            [PYTHON, "-c", "print('hello-pty')"],
+            cwd=tmp_path,
+            stdout_raw_path=tmp_path / "stdout.log",
+            stderr_raw_path=tmp_path / "stderr.log",
+            backend="pty_posix",
+        )
+        assert result.exit_detail.wrapper_exit == 0
+        assert b"hello-pty" in (tmp_path / "stdout.log").read_bytes()
+
+    def test_exit_code_propagates(self, tmp_path: Path):
+        result = run_wrapped(
+            [PYTHON, "-c", "import sys; sys.exit(2)"],
+            cwd=tmp_path,
+            stdout_raw_path=tmp_path / "stdout.log",
+            stderr_raw_path=tmp_path / "stderr.log",
+            backend="pty_posix",
+        )
+        assert result.exit_detail.wrapper_exit == 1
+        assert result.exit_detail.raw_returncode == 2
+
+    def test_stderr_merges_into_stdout_log(self, tmp_path: Path):
+        # PTY single-stream nature: stderr content surfaces in stdout.log;
+        # stderr.log exists but is empty (file-exists invariant).
+        result = run_wrapped(
+            [PYTHON, "-c", "import sys; sys.stderr.write('boom\\n')"],
+            cwd=tmp_path,
+            stdout_raw_path=tmp_path / "stdout.log",
+            stderr_raw_path=tmp_path / "stderr.log",
+            backend="pty_posix",
+        )
+        assert result.exit_detail.wrapper_exit == 0
+        assert b"boom" in (tmp_path / "stdout.log").read_bytes()
+        assert (tmp_path / "stderr.log").is_file()
+        assert (tmp_path / "stderr.log").read_bytes() == b""
+
+
+@pytest.mark.skipif(
+    platform.system().lower() != "windows",
+    reason="Windows-only check that pty_posix rejects on Windows",
+)
+class TestPtyPosixBackendOnWindows:
+    def test_raises_not_implemented_on_windows(self, tmp_path: Path):
+        # No silent fallback to pipe; POSIX-only backend rejects explicitly.
+        with pytest.raises(NotImplementedError, match="POSIX"):
+            run_wrapped(
+                [PYTHON, "-c", "pass"],
+                cwd=tmp_path,
+                stdout_raw_path=tmp_path / "stdout.log",
+                stderr_raw_path=tmp_path / "stderr.log",
+                backend="pty_posix",
+            )
