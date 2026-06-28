@@ -155,36 +155,40 @@ it'll be considered.
 - Existing `agentcam run -- ...` wrapping path still works unchanged.
   Hook mode is additive, not a replacement.
 
-### 2. PTY-backed wrapping
+### 2. PTY-backed wrapping — SHIPPED 2026-06-28
 
-**What.** Replace agentcam's current `PIPE`-based stdio handling with
-PTY-backed wrapping (Windows ConPTY, POSIX pty). Lets
-`agentcam run -- claude` (bare, interactive) work — TUI renders
-correctly, agentcam still records what happened.
+Both backends shipped as a 7-commit batch in the [Unreleased] section
+of CHANGELOG.md (will be promoted to a tagged 0.2 release later).
+Implementation in `src/agentcam/runner.py`: `_run_pipe`,
+`_run_pty_posix` (standard-library `pty.openpty`), `_run_pty_windows`
+(pywinpty + ConPTY). Dispatched via the new `--backend` flag on
+`cli.py`; default changed from implicit pipe to `pty` (auto-picks per
+platform).
 
-**Why second.** Two motivations rolled into one feature:
-1. Today, wrapping interactive TUI agents fails (`PIPE` breaks TUI).
-   v0.1 README documents this as a known limitation.
-2. Combined with auto-aliasing `claude` → `agentcam run -- claude` (or
-   equivalent for any TUI agent), this extends always-on recording to
-   any agent with a TUI — not just Claude Code (which has hooks). The
-   vendor-agnostic version of always-on.
+**What.** Replaced agentcam's PIPE-only stdio with PTY-backed
+wrapping. Lets `agentcam run -- claude` and `agentcam run -- codex`
+(bare, interactive) work — TUI renders, agentcam still records what
+happened.
 
-**Free or paid.** Free / OSS.
+**Acceptance (as shipped).**
+- ✓ `agentcam run -- claude` (no `-p`, no positional prompt) works
+  on Windows: TUI rendered, keystrokes including Enter delivered,
+  output captured to `stdout.log`, run report generated. **Owner
+  manual-verified.**
+- ✓ Same for `agentcam run -- codex` on Windows (npm `.cmd` shim
+  path; wrapped via `cmd.exe /c` since pywinpty has no
+  `shell=True`).
+- ✓ Windows + macOS + Linux all pass CI on the dispatch + capture
+  metadata + non-interactive PTY paths (echo / sys.exit / piped
+  stdin via Python child).
+- ✓ Existing `PIPE` path remains available via `--backend pipe`.
+- ⚠ POSIX bare interactive TUI agents (Aider, OpenHands, real
+  POSIX claude/codex) NOT implementation-verified — owner is on
+  Windows. CI covers the structural PTY path but not real TUI
+  agent rendering on POSIX.
 
-**Timing.** Open. Hook-mode entry #1 already covers always-on for Claude
-Code users. PTY's main payoff is extending always-on to Codex /
-OpenHands / Aider users — file an issue if you're using one of those
-and want this.
-
-**Acceptance criteria (when built).**
-- `agentcam run -- claude` (no `-p`, no positional prompt) works: TUI
-  renders correctly, raw stdout/stderr are still captured to disk, the
-  run report still generates.
-- Same for `agentcam run -- codex` and other TUI agents.
-- Windows + macOS + Linux all pass CI.
-- Existing `PIPE`-based path remains available behind a flag for cases
-  where users explicitly want the non-PTY behavior.
+See CHANGELOG `[Unreleased]` 2026-06-28 entry for full detail and
+`docs/design.md` decision #32 for the rationale.
 
 ### 3. GitHub Action / GitLab CI plugin
 

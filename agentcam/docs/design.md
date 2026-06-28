@@ -1236,6 +1236,120 @@ code paths always set it.
 
 ---
 
+## 32. PTY-backed wrap backends (POSIX pty + Windows ConPTY)
+
+**Decision.** `runner.py` now exposes three backends behind a single
+`run_wrapped(..., backend=...)` dispatcher: `pipe` (the original
+`subprocess.Popen` + tee threads), `pty_posix` (standard-library
+`pty.openpty()` + `subprocess.Popen(stdin=stdout=stderr=slave_fd)`),
+and `pty_windows` (pywinpty `PtyProcess.spawn`). The new `--backend`
+flag on `agentcam run` exposes the choice plus a cross-platform
+alias `pty` that resolves to `pty_posix` on POSIX or `pty_windows`
+on Windows. **Default changed from implicit pipe to `pty`**.
+
+**Why default `pty`, not opt-in.** PIPE-only stdio cannot render
+TUI agents — `claude` and `codex` both detect that stdout is not
+a TTY and refuse the interactive interface. Shipping PTY as an
+opt-in flag means new users would find that `agentcam run -- claude`
+"doesn't work" and either give up or read docs for a workaround;
+new functionality should reach users by default. Existing PIPE
+behavior is preserved one flag away (`--backend pipe`). This is
+explicitly noted as a soft breaking change for v0.1 users in
+CHANGELOG.
+
+**Why one dispatcher with three named backends, not platform
+autodetect.** Tests need to force a specific backend independent of
+where they run; advanced users want explicit `pty_posix` /
+`pty_windows` when scripting against a known host. The `pty` alias
+is the convenience layer on top — typical users write one
+cross-platform command line. The shipped form mirrors the precedent
+set by `capture_for_wrap_pipe` / `capture_for_claude_hook` factories
+(decision #28): one named entry per mode, no implicit platform branch.
+
+**Why stdout/stderr merge into one stream under PTY.** A pty
+delivers a single character stream (the master fd on POSIX, the
+ConPTY pseudo-console on Windows) — there is no separate stderr
+channel to capture independently. `stderr_raw_path` is therefore
+created as an empty file by both PTY backends so the rest of the
+pipeline (`scanner.scan_output`, `redaction`, `export`) continues to
+find the file at its known path; the corresponding `capture.stderr`
+field is `merged_into_stdout` so report readers know the empty file
+is intentional, not a missing-data case. The `stderr.log` invariant
+matches the PIPE backend's behavior when the subprocess simply
+wrote nothing to stderr — both pre-existing consumers and new ones
+treat empty stderr.log the same way.
+
+**Why `pywinpty` is a required Windows-only dep, not optional.**
+Without it, `--backend pty_windows` cannot import; making it
+optional would mean shipping a default backend (`pty`) whose
+Windows path could silently fail at runtime on a partial install.
+The marker `sys_platform == "win32"` keeps the Linux/macOS install
+closure unchanged (no pywinpty wheel exists for POSIX). The reverse
+also holds: on POSIX, `from winpty import ...` lives inside
+`_run_pty_windows` after the platform raise, so the module stays
+importable without pywinpty.
+
+**Why stdin forward is a daemon thread, not the main loop.** The
+parent reads pty output in the main loop until EOF; stdin needs an
+independent reader because both directions block. `daemon=True` is
+load-bearing: subprocess exit closes the master fd and the main loop
+returns, but the stdin thread may still be parked in a blocking
+`read` on the parent terminal. A non-daemon thread would block
+Python from exiting; the daemon flag lets it be reaped without
+ceremony. POSIX uses `os.read(sys.stdin.fileno(), N)` for raw
+bytes; Windows uses `sys.stdin.read(1)` through the TextIOWrapper.
+
+**Why Windows path swaps LF back to CR before forwarding.** Python's
+TextIOWrapper applies universal-newline translation: when the
+console raw mode is on and the user hits Enter, `sys.stdin.read(1)`
+returns LF (`\n`) instead of CR (`\r`). The Windows console
+expects CR to register an Enter event; forwarding LF leaves
+ConPTY-hosted TUIs unable to send messages. Owner dogfood of
+`agentcam run -- claude` reproduced this exactly: text typed
+forward, Enter did nothing. The fix is a one-line `\n -> \r`
+swap inside the forward thread. POSIX is unaffected because its
+forward uses `os.read` on the stdin fd, bypassing the text wrapper.
+
+**Why `.cmd` / `.bat` shims wrap into `cmd.exe /c` on Windows.**
+`resolve_command` already detects shim paths and sets
+`use_shell=True` plus a pre-escaped cmdline (see `_escape_for_cmd_shim`).
+The PIPE backend handed this to `subprocess.Popen(shell=True)`,
+which internally runs `cmd.exe /c <cmdline>`. pywinpty has no
+`shell=True`, so `_run_pty_windows` reconstructs that envelope
+explicitly: `PtyProcess.spawn(['cmd.exe', '/c', cmdline])`.
+Owner's `codex` install is a `.cmd` shim (npm-installed); without
+this wrap, `agentcam run -- codex` raised `NotImplementedError`
+on the first try.
+
+**Why SIGWINCH dynamic resize is NOT forwarded.** Initial winsize
+is copied to the slave at spawn (so TUI doesn't render at default
+80×24), which covers the common case where the parent terminal
+doesn't change size during a run. Forwarding terminal resize means
+a signal handler on POSIX and console-buffer-info polling on
+Windows; both fight thread-safety and add code that breaks rarely
+but mysteriously. Owner-confirmed: resize during a session not in
+the v0.2 acceptance criteria.
+
+**Known limitations.**
+- *POSIX bare interactive TUI agents not implementation-verified.*
+  Owner is on Windows. CI covers the structural path (POSIX
+  `pty.openpty` + echo / sys.exit / piped stdin) but not real
+  TUI rendering on Linux/macOS. Real Codex / Aider / OpenHands
+  POSIX users will be the first to find rendering quirks.
+- *Forward-to-terminal code is inlined three times* (pipe via
+  `_TeeThread`, pty_posix loop, pty_windows loop) rather than
+  shared. The shape is the same (write raw chunk + degrade
+  fallback) but each backend's chunk type and source differ
+  enough that a single helper would need a discriminator
+  parameter. Acceptable until a fourth backend or a refactor
+  driven by a real bug.
+- *pywinpty `read()` returns `str`, not `bytes`*; the Windows
+  backend encodes to UTF-8 for the raw log. Non-UTF8 byte
+  content (rare in agent output) is lossy. POSIX `os.read` on
+  the master fd preserves bytes.
+
+---
+
 ## Out-of-scope reminders (do not add these without re-reading §10–§22)
 
 - Sandbox / process isolation

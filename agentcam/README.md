@@ -138,6 +138,31 @@ agentcam run -- cmd /c "dir > files.txt"
 
 This is a deliberate constraint — see [`docs/design.md` § 4](docs/design.md).
 
+### Backends (PTY vs PIPE)
+
+`agentcam run` defaults to a **PTY backend** so bare interactive TUI
+agents (`claude`, `codex`) render normally and accept keyboard input.
+Override with `--backend`:
+
+```bash
+agentcam run --backend pty -- claude     # default; pty_posix on POSIX, pty_windows on Windows
+agentcam run --backend pipe -- claude    # original v0.1 PIPE behavior (TUI agents won't render)
+agentcam run --backend pty_posix -- ...  # force POSIX pty.openpty()
+agentcam run --backend pty_windows -- ...  # force Windows ConPTY (via pywinpty)
+```
+
+Under PTY, stdout and stderr deliver through one combined stream;
+`stderr.log` is created empty as a file-exists invariant and the
+report's Capture Visibility table shows `stderr = merged_into_stdout`.
+Output-pattern risk scanning runs over the merged stream in
+`stdout.log` exactly as it did for PIPE mode. SIGWINCH / terminal
+resize during a run is NOT forwarded (subprocess TUI won't reflow
+until restarted).
+
+Windows requires the `pywinpty` dependency (installed automatically
+on Windows by `pip install agentcam`; not installed on Linux/macOS).
+See [`docs/design.md` § 32](docs/design.md) for the design rationale.
+
 ---
 
 ## Hook mode (Claude Code: no wrapper needed)

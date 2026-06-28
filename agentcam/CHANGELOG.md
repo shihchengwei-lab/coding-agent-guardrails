@@ -7,6 +7,52 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Added (2026-06-28, PTY-backed wrap for bare interactive TUI agents)
+
+- **PTY-backed wrap backends.** New `--backend` flag on
+  `agentcam run` with choices `pipe` / `pty` / `pty_posix` /
+  `pty_windows`. **Default changed from implicit pipe to `pty`**,
+  which auto-resolves to `pty_posix` on POSIX or `pty_windows` on
+  Windows. Soft breaking for v0.1 users that depend on PIPE
+  behavior; opt out with `--backend pipe`.
+- **POSIX PTY backend** uses standard-library `pty.openpty()` +
+  `subprocess.Popen` with `stdin/stdout/stderr=slave_fd` + stdin
+  forward thread (parent → master_fd) + terminal raw mode +
+  initial winsize copy from parent stdin TTY. SIGWINCH dynamic
+  resize NOT forwarded (subprocess TUI won't reflow until restart).
+- **Windows ConPTY backend** uses pywinpty's `PtyProcess.spawn`
+  with the same stdin forward + Windows console raw mode
+  (`SetConsoleMode` removing line input / echo / processed-input
+  bits, restored on exit) + initial winsize. `.cmd` / `.bat` shim
+  commands are wrapped via `cmd.exe /c` since pywinpty has no
+  `shell=True` equivalent.
+- **New dep `pywinpty>=2.0; sys_platform == "win32"`.** Linux/macOS
+  install closure unchanged.
+- **Capture metadata** `mode = wrap_pty_posix` / `wrap_pty_windows`
+  in manifest + report. Under PTY, `stderr` field is
+  `merged_into_stdout` because ConPTY / POSIX pty deliver one
+  combined stream — `stderr.log` is created empty as a file-exists
+  invariant.
+- **Enter-key handling on Windows.** Python's text-wrapped
+  `sys.stdin` applies universal-newline translation: console Enter
+  (CR) reaches `read(1)` as LF. Forwarding LF unchanged left
+  ConPTY-hosted TUIs unable to register Enter. Forward thread
+  converts LF back to CR before `pty.write`. POSIX backend
+  unaffected (uses `os.read(fileno)` byte stream).
+- **Acceptance partial:** owner manual-verified bare interactive
+  `claude` and `codex` (npm `.cmd` shim) on Windows under default
+  pty backend — TUI rendered, keystrokes including Enter delivered.
+  POSIX, Aider, OpenHands NOT implementation-verified; CI covers
+  the dispatch + capture metadata + non-interactive PTY paths.
+- **+11 tests** added (`TestBackendDispatch`, `TestPtyPosixBackend`,
+  `TestPtyPosixStdinForward`, `TestPtyWindowsBackend`,
+  `TestPtyWindowsStdinForward`, `TestPtyWindowsCmdShim`,
+  `TestBackendFlag`).
+- Implementation in `src/agentcam/runner.py` (`_run_pipe`,
+  `_run_pty_posix`, `_run_pty_windows`, `UnknownBackendError`,
+  dispatcher) and `src/agentcam/cli.py` (`--backend` arg +
+  dispatch). See `docs/design.md` decision #32.
+
 ### Added (2026-05-22, `agentcam export` redacted share bundle)
 
 - **New `agentcam export <run_id>` CLI subcommand** producing a flat
