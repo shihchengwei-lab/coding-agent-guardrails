@@ -479,20 +479,12 @@ def _run_pty_windows(
     original mode restored on exit. SIGWINCH equivalent is NOT
     forwarded.
 
-    cmd.exe shim commands (``.cmd`` / ``.bat`` via ``use_shell``) are
-    not supported.
+    cmd.exe shims (``.cmd`` / ``.bat``) are spawned via ``cmd.exe /c``
+    because pywinpty has no ``shell=True`` equivalent.
     """
     if platform.system().lower() != "windows":
         raise NotImplementedError(
             "agentcam: 'pty_windows' backend is Windows-only."
-        )
-
-    # cmd shim carries a pre-escaped cmdline in argv[0] meant for
-    # subprocess.Popen(shell=True); pywinpty has no equivalent.
-    if resolved.use_shell:
-        raise NotImplementedError(
-            "agentcam: 'pty_windows' backend does not support "
-            "cmd.exe shim (.cmd / .bat) commands."
         )
 
     # Windows-only third-party dep; imported here so the module stays
@@ -501,6 +493,12 @@ def _run_pty_windows(
     # POSIX import paths clean.
     import ctypes
     from winpty import PtyProcess
+
+    # Wrap escaped cmd-shim cmdline through cmd.exe /c (pywinpty has no shell=True).
+    if resolved.use_shell:
+        spawn_argv = ["cmd.exe", "/c", resolved.argv[0]]
+    else:
+        spawn_argv = list(resolved.argv)
 
     # Initial dimensions: copy parent console size; fall back to 80x24.
     try:
@@ -537,7 +535,7 @@ def _run_pty_windows(
             saved_console_mode = None
 
     pty = PtyProcess.spawn(
-        list(resolved.argv),
+        spawn_argv,
         cwd=str(cwd),
         dimensions=(rows, cols),
     )

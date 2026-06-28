@@ -556,6 +556,33 @@ class TestPtyWindowsBackendOnPosix:
 
 @pytest.mark.skipif(
     platform.system().lower() != "windows",
+    reason="Windows-only cmd shim support",
+)
+class TestPtyWindowsCmdShim:
+    """Stage 4.5: `.cmd` / `.bat` shim commands run under pty_windows.
+
+    resolve_command sets ``use_shell=True`` for shim paths; the backend
+    wraps the resulting cmdline into ``['cmd.exe', '/c', cmdline]`` for
+    pywinpty (which has no shell=True equivalent).
+    """
+
+    def test_cmd_shim_runs(self, tmp_path: Path):
+        shim = tmp_path / "myshim.cmd"
+        shim.write_text("@echo off\r\necho shim-output-text\r\n")
+
+        result = run_wrapped(
+            [str(shim)],
+            cwd=tmp_path,
+            stdout_raw_path=tmp_path / "stdout.log",
+            stderr_raw_path=tmp_path / "stderr.log",
+            backend="pty_windows",
+        )
+        assert result.exit_detail.wrapper_exit == 0
+        assert b"shim-output-text" in (tmp_path / "stdout.log").read_bytes()
+
+
+@pytest.mark.skipif(
+    platform.system().lower() != "windows",
     reason="Windows-only stdin forward",
 )
 class TestPtyWindowsStdinForward:
