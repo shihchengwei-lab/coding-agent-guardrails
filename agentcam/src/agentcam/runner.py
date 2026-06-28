@@ -317,21 +317,49 @@ def _run_pty_posix(
     is created empty to keep the file-exists invariant the rest of the
     pipeline relies on. POSIX-only; raises NotImplementedError on Windows.
 
-    Non-interactive only: no stdin forward, no SIGWINCH / resize handling.
+    Forwards parent stdin to the subprocess via the master fd. When parent
+    stdin is a TTY, its original mode is saved and switched to raw so
+    keystrokes pass through immediately; the initial winsize is copied to
+    the slave. SIGWINCH / dynamic resize is NOT forwarded.
     """
     if platform.system().lower() == "windows":
         raise NotImplementedError(
             "agentcam: 'pty_posix' backend is POSIX-only."
         )
 
-    import pty  # POSIX-only stdlib; import here so the module
-                # stays importable on Windows.
+    # POSIX-only stdlib; imported here so the module stays importable on
+    # Windows.
+    import fcntl
+    import pty
+    import termios
+    import threading
+    import tty
 
     cmd_arg: list[str] | str = (
         resolved.argv[0] if resolved.use_shell else list(resolved.argv)
     )
 
     master_fd, slave_fd = pty.openpty()
+
+    # If parent stdin is a TTY: (1) copy its winsize to slave so the
+    # subprocess TUI renders at the right size, (2) switch parent terminal
+    # to raw mode so keystrokes reach master_fd immediately instead of
+    # being line-buffered/echoed by the host shell. Both best-effort.
+    saved_tty_attrs: tuple[int, list] | None = None
+    if sys.stdin.isatty():
+        try:
+            winsize = fcntl.ioctl(
+                sys.stdin.fileno(), termios.TIOCGWINSZ, b"\x00" * 8
+            )
+            fcntl.ioctl(slave_fd, termios.TIOCSWINSZ, winsize)
+        except (OSError, termios.error):
+            pass
+        try:
+            stdin_fd = sys.stdin.fileno()
+            saved_tty_attrs = (stdin_fd, termios.tcgetattr(stdin_fd))
+            tty.setraw(stdin_fd)
+        except (OSError, termios.error):
+            saved_tty_attrs = None
 
     try:
         proc = subprocess.Popen(
@@ -351,51 +379,77 @@ def _run_pty_posix(
     # stderr.log invariant: file always exists (empty under PTY merge).
     stderr_raw_path.write_bytes(b"")
 
-    degraded = False
-    with stdout_raw_path.open("wb") as raw_fp:
+    # stdin forward thread: parent stdin -> master_fd. Daemon so it cannot
+    # block process shutdown if it's still parked in os.read at exit. It
+    # exits naturally when stdin sees EOF or the master write fails.
+    def _stdin_forward() -> None:
         while True:
             try:
-                chunk = os.read(master_fd, _CHUNK_SIZE)
+                chunk = os.read(sys.stdin.fileno(), 4096)
             except OSError:
-                # Linux: read after slave EOF raises EIO. Treat as EOF.
                 break
             if not chunk:
                 break
-            raw_fp.write(chunk)
-            raw_fp.flush()
-            # Forward to terminal (same degraded handling as PIPE backend
-            # in _TeeThread._forward_to_terminal).
-            buf = getattr(sys.stdout, "buffer", None)
-            if buf is not None:
-                try:
-                    buf.write(chunk)
-                    buf.flush()
-                    continue
-                except (OSError, UnicodeEncodeError):
-                    degraded = True
             try:
-                text = chunk.decode("utf-8", errors="replace")
-                sys.stdout.write(text)
-                sys.stdout.flush()
-                degraded = True
-            except Exception:
-                degraded = True
+                os.write(master_fd, chunk)
+            except OSError:
+                break
 
+    stdin_thread = threading.Thread(target=_stdin_forward, daemon=True)
+    stdin_thread.start()
+
+    degraded = False
     try:
-        proc.wait()
-    except KeyboardInterrupt:
-        # Same escalation ladder as _run_pipe.
+        with stdout_raw_path.open("wb") as raw_fp:
+            while True:
+                try:
+                    chunk = os.read(master_fd, _CHUNK_SIZE)
+                except OSError:
+                    # Linux: read after slave EOF raises EIO. Treat as EOF.
+                    break
+                if not chunk:
+                    break
+                raw_fp.write(chunk)
+                raw_fp.flush()
+                # Forward to terminal (same degraded handling as PIPE
+                # backend in _TeeThread._forward_to_terminal).
+                buf = getattr(sys.stdout, "buffer", None)
+                if buf is not None:
+                    try:
+                        buf.write(chunk)
+                        buf.flush()
+                        continue
+                    except (OSError, UnicodeEncodeError):
+                        degraded = True
+                try:
+                    text = chunk.decode("utf-8", errors="replace")
+                    sys.stdout.write(text)
+                    sys.stdout.flush()
+                    degraded = True
+                except Exception:
+                    degraded = True
+
         try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.terminate()
+            proc.wait()
+        except KeyboardInterrupt:
+            # Same escalation ladder as _run_pipe.
             try:
-                proc.wait(timeout=2)
+                proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
     finally:
         os.close(master_fd)
+        if saved_tty_attrs is not None:
+            stdin_fd, attrs = saved_tty_attrs
+            try:
+                termios.tcsetattr(stdin_fd, termios.TCSADRAIN, attrs)
+            except (OSError, termios.error):
+                pass
 
     return RunResult(
         exit_detail=interpret_exit(proc.returncode),

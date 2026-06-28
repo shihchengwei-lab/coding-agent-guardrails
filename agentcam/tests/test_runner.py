@@ -429,3 +429,55 @@ class TestPtyPosixBackendOnWindows:
                 stderr_raw_path=tmp_path / "stderr.log",
                 backend="pty_posix",
             )
+
+
+# ---------------------------------------------------------------------------
+# Stage 2.5: stdin forward + raw mode + initial termsize for pty_posix
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(
+    platform.system().lower() == "windows",
+    reason="POSIX-only PTY backend",
+)
+class TestPtyPosixStdinForward:
+    """Stage 2.5: parent stdin reaches subprocess via the master fd.
+
+    Also verifies that the TTY-only helpers (raw mode, initial winsize)
+    degrade gracefully when parent stdin is not a TTY (CI environment).
+    """
+
+    def test_stdin_forwards_to_subprocess(self, tmp_path: Path, monkeypatch):
+        # Build a pipe whose read-end stands in for sys.stdin. The forward
+        # thread reads via sys.stdin.fileno(); we push input through the
+        # write-end. Subprocess echoes back via input() so we can assert
+        # the bytes traversed parent -> master_fd -> slave -> subprocess.
+        import os as _os
+        r_fd, w_fd = _os.pipe()
+        _os.write(w_fd, b"piped-input\n")
+        _os.close(w_fd)
+
+        class _FakeStdin:
+            def fileno(self_inner):
+                return r_fd
+
+            def isatty(self_inner):
+                return False  # not a TTY -> raw mode / winsize skipped
+
+        monkeypatch.setattr("agentcam.runner.sys.stdin", _FakeStdin())
+
+        try:
+            result = run_wrapped(
+                [PYTHON, "-c", "print('got:', input())"],
+                cwd=tmp_path,
+                stdout_raw_path=tmp_path / "stdout.log",
+                stderr_raw_path=tmp_path / "stderr.log",
+                backend="pty_posix",
+            )
+        finally:
+            try:
+                _os.close(r_fd)
+            except OSError:
+                pass
+
+        assert result.exit_detail.wrapper_exit == 0
+        assert b"got: piped-input" in (tmp_path / "stdout.log").read_bytes()
