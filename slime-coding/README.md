@@ -4,6 +4,8 @@
 
 ![Slime Coding — grow both frontiers, commit only the minimal corridor](assets/slime-coding.png)
 
+> **更容易做對、diff 更小，但不是更便宜。** 228-cell Haiku benchmark：通過率 90.8% → 97.4%，總 LOC -20.9%；代價是 cost +29.2%、tokens +40.2%、time +40.3%。
+
 黏菌走迷宮，會從兩頭同時伸觸鬚出去找食物。碰到食物的觸鬚變粗、沒碰到的萎縮。最後留下的，就是兩點之間活下來的那條路——沒人「設計」它。
 
 **Slime Coding** 把這條路長出來的方式，搬到 AI 寫程式上。
