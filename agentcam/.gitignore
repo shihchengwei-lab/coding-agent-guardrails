@@ -20,3 +20,5 @@ htmlcov/
 *.swo
 .DS_Store
 Thumbs.db
+.ccb/
+CLAUDE.md
