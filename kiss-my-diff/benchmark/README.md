@@ -21,7 +21,7 @@ Variants:
 
 - `baseline`: no local `AGENT.md`
 - `kiss`: copies the repo root `AGENT.md` into the agent workspace
-- `kiss_one_line`: uses `Follow the KISS principle (Keep It Simple, Stupid).`
+- `kiss_one_line`: uses `Follow the KISS principle (Keep It Simple, Stupid).` See [`one-line-kiss.md`](one-line-kiss.md).
 - `kiss_contrast_core`: experimental prompt with positive rules paired with explicit "do not" boundaries
 - `kiss_weighted_core`: experimental prompt that repeats the smallest-correct-diff objective before the rule list
 - `kiss_weighted_contrast_core`: experimental prompt that combines core weighting with contrast boundaries
