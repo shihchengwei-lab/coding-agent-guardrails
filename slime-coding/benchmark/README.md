@@ -2,7 +2,7 @@
 
 這個資料夾放的是 Slime Coding 的公開跑分資料，不是新的 runner。
 
-定位要講準：這是一組乾淨、誠實、可公開的 directional benchmark。它可以說明在這組任務裡 Slime Coding 的 trade-off，但不能證明所有 repo、所有模型、所有任務都會得到同樣結果。
+定位要講準：這是一組乾淨、誠實、可公開的 directional benchmark，也是一個 2026-06-29 的 dated snapshot。模型、Claude Code harness、Ponytail、Slime Coding 和題庫都可能隨時間漂移；這裡的數字可以說明這組任務裡的 trade-off，但不能被讀成穩定常數，也不能證明所有 repo、所有模型、所有任務都會得到同樣結果。
 
 ## 測什麼
 

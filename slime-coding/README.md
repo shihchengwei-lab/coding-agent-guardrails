@@ -4,7 +4,7 @@
 
 ![Slime Coding — grow both frontiers, commit only the minimal corridor](assets/slime-coding.png)
 
-> **更容易做對、diff 更小，但不是更便宜。** 228-cell Haiku benchmark：通過率 90.8% → 97.4%，總 LOC -20.9%；代價是 cost +29.2%、tokens +40.2%、time +40.3%。
+> **更容易做對、diff 更小，但不是更便宜。** 228-cell Haiku benchmark snapshot：通過率 90.8% → 97.4%，總 LOC -20.9%；代價是 cost +29.2%、tokens +40.2%、time +40.3%。
 
 黏菌走迷宮，會從兩頭同時伸觸鬚出去找食物。碰到食物的觸鬚變粗、沒碰到的萎縮。最後留下的，就是兩點之間活下來的那條路——沒人「設計」它。
 
@@ -70,7 +70,7 @@ cd /你的專案
 
 **效果層（裝了 Slime，AI 真的會少寫 garbage 嗎？）**：現在有一組可公開、但只算方向性的 benchmark。
 
-2026-06-29，用 Ponytail-derived task pool 跑 Claude Haiku：19 題，`baseline` / `ponytail` / `slime-coding` 三組，每題每組 4 次，共 228 個有效樣本。429 額度失敗與 timeout 樣本已重跑；Slime 的 `cache` safety 失敗保留，因為那是真失敗，不是基礎設施問題。
+2026-06-29，用 Ponytail-derived task pool 跑 Claude Haiku：19 題，`baseline` / `ponytail` / `slime-coding` 三組，每題每組 4 次，共 228 個有效樣本。這是一個 dated snapshot：模型、Claude Code harness、Ponytail、Slime Coding 和題庫都可能隨時間漂移，數字不應被讀成穩定常數。429 額度失敗與 timeout 樣本已重跑；Slime 的 `cache` safety 失敗保留，因為那是真失敗，不是基礎設施問題。
 
 | 組別 | 通過率 | 總 LOC | vs baseline LOC | 平均 cost | 平均 tokens | 平均時間 |
 |---|---:|---:|---:|---:|---:|---:|

@@ -1,6 +1,7 @@
 {
   "benchmark": "Ponytail-derived Haiku comparison for slime-coding",
   "date": "2026-06-29",
+  "snapshot_note": "Dated snapshot, not a stable product claim. Model behavior, Claude Code harness behavior, Ponytail, Slime Coding, and the task pool may drift over time.",
   "model": "claude-haiku-4-5-20251001",
   "task_pool": {
     "total_tasks": 19,
