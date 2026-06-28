@@ -234,20 +234,22 @@ class RunResult:
     shell_used: bool
 
 
-def run_wrapped(
-    argv: list[str],
+class UnknownBackendError(ValueError):
+    """Raised when an unknown wrap backend name is passed to ``run_wrapped``."""
+
+
+def _run_pipe(
     *,
+    resolved: ResolvedCommand,
     cwd: Path,
     stdout_raw_path: Path,
     stderr_raw_path: Path,
 ) -> RunResult:
-    """Run the wrapped command, capture raw logs, return :class:`RunResult`.
+    """PIPE backend: ``subprocess.Popen`` with piped stdout/stderr + tee threads.
 
-    Redaction is NOT done in this function. Callers consume the raw logs via
-    :class:`agentcam.redaction.StreamingRedactor` to produce ``*.redacted.log``.
+    Plan §2 / §3. TUI agents that detect non-TTY stdout refuse to render
+    under this backend.
     """
-    resolved = resolve_command(argv)
-
     # shell=True wants a single string; shell=False wants a list.
     cmd_arg: list[str] | str
     cmd_arg = resolved.argv[0] if resolved.use_shell else list(resolved.argv)
@@ -298,4 +300,35 @@ def run_wrapped(
             stdout_thread.degraded or stderr_thread.degraded
         ),
         shell_used=resolved.use_shell,
+    )
+
+
+def run_wrapped(
+    argv: list[str],
+    *,
+    cwd: Path,
+    stdout_raw_path: Path,
+    stderr_raw_path: Path,
+    backend: str = "pipe",
+) -> RunResult:
+    """Run the wrapped command via the chosen backend; return :class:`RunResult`.
+
+    ``backend`` selects the wrap implementation; currently only ``"pipe"``
+    (default) is supported.
+
+    Redaction is NOT done in this function. Callers consume the raw logs via
+    :class:`agentcam.redaction.StreamingRedactor` to produce ``*.redacted.log``.
+    """
+    resolved = resolve_command(argv)
+
+    if backend == "pipe":
+        return _run_pipe(
+            resolved=resolved,
+            cwd=cwd,
+            stdout_raw_path=stdout_raw_path,
+            stderr_raw_path=stderr_raw_path,
+        )
+
+    raise UnknownBackendError(
+        f"agentcam: unknown wrap backend {backend!r}; supported: 'pipe'."
     )

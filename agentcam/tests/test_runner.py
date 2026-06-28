@@ -307,3 +307,52 @@ class TestHighSigintCleanup:
         assert result.exit_detail is not None
         # Subprocess was reaped (no zombie).
         assert real_proc.returncode is not None
+
+
+# ---------------------------------------------------------------------------
+# Stage 1: backend dispatcher (roadmap §2 setup for PTY-backed wrap)
+# ---------------------------------------------------------------------------
+
+class TestBackendDispatch:
+    """``run_wrapped()`` routes to a named backend; default is ``'pipe'``.
+
+    Pure-refactor stage for PTY-backed wrapping. Future backends
+    (``'pty_posix'``, ``'pty_windows'``) plug in via the same dispatcher.
+    """
+
+    def test_default_backend_runs(self, tmp_path: Path):
+        # No ``backend=`` kwarg -> 'pipe' default. Verifies the dispatcher
+        # entry is reachable and forwards to the original behavior.
+        result = run_wrapped(
+            [PYTHON, "-c", "print('default-backend')"],
+            cwd=tmp_path,
+            stdout_raw_path=tmp_path / "stdout.log",
+            stderr_raw_path=tmp_path / "stderr.log",
+        )
+        assert result.exit_detail.wrapper_exit == 0
+        assert b"default-backend" in (tmp_path / "stdout.log").read_bytes()
+
+    def test_explicit_pipe_backend_runs(self, tmp_path: Path):
+        result = run_wrapped(
+            [PYTHON, "-c", "print('explicit-pipe')"],
+            cwd=tmp_path,
+            stdout_raw_path=tmp_path / "stdout.log",
+            stderr_raw_path=tmp_path / "stderr.log",
+            backend="pipe",
+        )
+        assert result.exit_detail.wrapper_exit == 0
+        assert b"explicit-pipe" in (tmp_path / "stdout.log").read_bytes()
+
+    def test_unknown_backend_raises(self, tmp_path: Path):
+        # CLAUDE.md "Do not hide errors or invalid states": an unknown backend
+        # name must raise, not silently fall back to pipe.
+        from agentcam.runner import UnknownBackendError
+
+        with pytest.raises(UnknownBackendError):
+            run_wrapped(
+                [PYTHON, "-c", "pass"],
+                cwd=tmp_path,
+                stdout_raw_path=tmp_path / "stdout.log",
+                stderr_raw_path=tmp_path / "stderr.log",
+                backend="not-a-real-backend",
+            )
