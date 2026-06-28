@@ -481,3 +481,74 @@ class TestPtyPosixStdinForward:
 
         assert result.exit_detail.wrapper_exit == 0
         assert b"got: piped-input" in (tmp_path / "stdout.log").read_bytes()
+
+
+# ---------------------------------------------------------------------------
+# Stage 3: Windows ConPTY backend via pywinpty (roadmap §2)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.skipif(
+    platform.system().lower() != "windows",
+    reason="Windows-only ConPTY backend",
+)
+class TestPtyWindowsBackend:
+    """``backend='pty_windows'``: subprocess via Windows ConPTY (pywinpty).
+
+    Same shape as TestPtyPosixBackend: stdout/stderr merge to stdout.log,
+    stderr.log stays empty (file-exists invariant), exit code propagates.
+    """
+
+    def test_simple_stdout_captured(self, tmp_path: Path):
+        result = run_wrapped(
+            ["cmd.exe", "/c", "echo win-pty-hello"],
+            cwd=tmp_path,
+            stdout_raw_path=tmp_path / "stdout.log",
+            stderr_raw_path=tmp_path / "stderr.log",
+            backend="pty_windows",
+        )
+        assert result.exit_detail.wrapper_exit == 0
+        assert b"win-pty-hello" in (tmp_path / "stdout.log").read_bytes()
+
+    def test_exit_code_propagates(self, tmp_path: Path):
+        result = run_wrapped(
+            ["cmd.exe", "/c", "exit 2"],
+            cwd=tmp_path,
+            stdout_raw_path=tmp_path / "stdout.log",
+            stderr_raw_path=tmp_path / "stderr.log",
+            backend="pty_windows",
+        )
+        assert result.exit_detail.wrapper_exit == 1
+        assert result.exit_detail.raw_returncode == 2
+
+    def test_stderr_merges_into_stdout_log(self, tmp_path: Path):
+        # ConPTY merges stdout and stderr into one stream. `1>&2` is cmd.exe
+        # stderr redirect; the text still surfaces in stdout.log under PTY.
+        # stderr.log stays empty (file-exists invariant).
+        result = run_wrapped(
+            ["cmd.exe", "/c", "echo boom-win 1>&2"],
+            cwd=tmp_path,
+            stdout_raw_path=tmp_path / "stdout.log",
+            stderr_raw_path=tmp_path / "stderr.log",
+            backend="pty_windows",
+        )
+        assert result.exit_detail.wrapper_exit == 0
+        assert b"boom-win" in (tmp_path / "stdout.log").read_bytes()
+        assert (tmp_path / "stderr.log").is_file()
+        assert (tmp_path / "stderr.log").read_bytes() == b""
+
+
+@pytest.mark.skipif(
+    platform.system().lower() == "windows",
+    reason="POSIX-only check that pty_windows rejects on POSIX",
+)
+class TestPtyWindowsBackendOnPosix:
+    def test_raises_not_implemented_on_posix(self, tmp_path: Path):
+        # No silent fallback; Windows-only backend rejects explicitly.
+        with pytest.raises(NotImplementedError, match="Windows"):
+            run_wrapped(
+                [PYTHON, "-c", "pass"],
+                cwd=tmp_path,
+                stdout_raw_path=tmp_path / "stdout.log",
+                stderr_raw_path=tmp_path / "stderr.log",
+                backend="pty_windows",
+            )

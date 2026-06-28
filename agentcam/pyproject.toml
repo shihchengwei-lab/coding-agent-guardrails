@@ -27,7 +27,12 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Quality Assurance",
 ]
-dependencies = []
+dependencies = [
+    # Windows ConPTY wrapper used by the ``pty_windows`` runner backend.
+    # POSIX wheels do not exist for pywinpty; the marker keeps the
+    # Linux/macOS install closure unchanged.
+    'pywinpty>=2.0; sys_platform == "win32"',
+]
 
 [project.optional-dependencies]
 dev = [

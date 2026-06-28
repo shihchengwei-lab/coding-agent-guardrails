@@ -458,6 +458,113 @@ def _run_pty_posix(
     )
 
 
+def _run_pty_windows(
+    *,
+    resolved: ResolvedCommand,
+    cwd: Path,
+    stdout_raw_path: Path,
+    stderr_raw_path: Path,
+) -> RunResult:
+    """Windows ConPTY backend via pywinpty.
+
+    TUI agents render because the subprocess has a pseudo-console.
+    stdout and stderr merge into one ConPTY stream — both go to
+    ``stdout_raw_path``; ``stderr_raw_path`` is created empty to keep
+    the file-exists invariant. Windows-only; raises NotImplementedError
+    on POSIX.
+
+    stdin forward is NOT supported by this backend. Subprocesses that
+    need interactive input under pty_windows will hang or skip input
+    prompts. cmd.exe shim commands (``.cmd`` / ``.bat`` via
+    ``use_shell``) are also not supported.
+    """
+    if platform.system().lower() != "windows":
+        raise NotImplementedError(
+            "agentcam: 'pty_windows' backend is Windows-only."
+        )
+
+    # cmd shim carries a pre-escaped cmdline in argv[0] meant for
+    # subprocess.Popen(shell=True); pywinpty has no equivalent.
+    if resolved.use_shell:
+        raise NotImplementedError(
+            "agentcam: 'pty_windows' backend does not support "
+            "cmd.exe shim (.cmd / .bat) commands."
+        )
+
+    # Windows-only third-party dep; imported here so the module stays
+    # importable on POSIX (Linux/macOS never install pywinpty).
+    from winpty import PtyProcess
+
+    # Initial dimensions: copy parent console size; fall back to 80x24.
+    try:
+        size = shutil.get_terminal_size((80, 24))
+        rows, cols = size.lines, size.columns
+    except Exception:
+        rows, cols = 24, 80
+
+    pty = PtyProcess.spawn(
+        list(resolved.argv),
+        cwd=str(cwd),
+        dimensions=(rows, cols),
+    )
+
+    # stderr.log invariant: file always exists (empty under PTY merge).
+    stderr_raw_path.write_bytes(b"")
+
+    degraded = False
+    with stdout_raw_path.open("wb") as raw_fp:
+        while True:
+            try:
+                chunk = pty.read(_CHUNK_SIZE)
+            except EOFError:
+                break
+            if not chunk:
+                break
+            # pywinpty returns str (UTF-8 decoded internally); encode
+            # for raw log. Non-UTF8 byte content (rare) is lossy.
+            chunk_bytes = chunk.encode("utf-8", errors="replace")
+            raw_fp.write(chunk_bytes)
+            raw_fp.flush()
+            # Forward to terminal (same handling shape as PIPE / POSIX
+            # backends).
+            buf = getattr(sys.stdout, "buffer", None)
+            if buf is not None:
+                try:
+                    buf.write(chunk_bytes)
+                    buf.flush()
+                    continue
+                except (OSError, UnicodeEncodeError):
+                    degraded = True
+            try:
+                sys.stdout.write(chunk)
+                sys.stdout.flush()
+                degraded = True
+            except Exception:
+                degraded = True
+
+    try:
+        pty.wait()
+    except KeyboardInterrupt:
+        try:
+            pty.sendintr()
+            pty.wait()
+        except Exception:
+            try:
+                pty.terminate()
+            except Exception:
+                pass
+
+    # pty.wait() populates exitstatus; treat None as failure (cannot
+    # confidently report success without an observed exit code).
+    raw_returncode = pty.exitstatus if pty.exitstatus is not None else 1
+
+    return RunResult(
+        exit_detail=interpret_exit(raw_returncode),
+        terminal_forward_degraded=degraded,
+        shell_used=resolved.use_shell,
+    )
+
+
 def run_wrapped(
     argv: list[str],
     *,
@@ -490,8 +597,15 @@ def run_wrapped(
             stdout_raw_path=stdout_raw_path,
             stderr_raw_path=stderr_raw_path,
         )
+    if backend == "pty_windows":
+        return _run_pty_windows(
+            resolved=resolved,
+            cwd=cwd,
+            stdout_raw_path=stdout_raw_path,
+            stderr_raw_path=stderr_raw_path,
+        )
 
     raise UnknownBackendError(
         f"agentcam: unknown wrap backend {backend!r}; "
-        f"supported: 'pipe', 'pty_posix'."
+        f"supported: 'pipe', 'pty_posix', 'pty_windows'."
     )
