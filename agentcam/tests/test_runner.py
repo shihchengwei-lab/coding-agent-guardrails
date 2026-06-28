@@ -552,3 +552,41 @@ class TestPtyWindowsBackendOnPosix:
                 stderr_raw_path=tmp_path / "stderr.log",
                 backend="pty_windows",
             )
+
+
+@pytest.mark.skipif(
+    platform.system().lower() != "windows",
+    reason="Windows-only stdin forward",
+)
+class TestPtyWindowsStdinForward:
+    """Stage 3.5: parent stdin reaches subprocess via the ConPTY master.
+
+    Uses a Python child blocking on ``sys.stdin.readline()``. Earlier
+    attempts with ``cmd /c set /p`` failed because set /p has PTY-
+    specific input handling (keyboard events, not chars) that fights
+    char-by-char forward; Python's readline reads bytes from PTY stdin
+    normally and is the deterministic CI pattern.
+    """
+
+    def test_stdin_forwards_to_subprocess(self, tmp_path: Path, monkeypatch):
+        # io.StringIO stands in for sys.stdin; the forward thread reads
+        # one char at a time via sys.stdin.read(1) and writes to the pty.
+        # isatty() returns False on StringIO, so the console raw-mode
+        # setup is skipped (matches CI / redirected stdin).
+        import io
+        fake_stdin = io.StringIO("forwarded-input\r\n")
+        monkeypatch.setattr("agentcam.runner.sys.stdin", fake_stdin)
+
+        result = run_wrapped(
+            [
+                PYTHON,
+                "-c",
+                "import sys; print('got:', sys.stdin.readline().rstrip())",
+            ],
+            cwd=tmp_path,
+            stdout_raw_path=tmp_path / "stdout.log",
+            stderr_raw_path=tmp_path / "stderr.log",
+            backend="pty_windows",
+        )
+        assert result.exit_detail.wrapper_exit == 0
+        assert b"got: forwarded-input" in (tmp_path / "stdout.log").read_bytes()

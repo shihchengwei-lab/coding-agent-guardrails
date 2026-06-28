@@ -473,10 +473,14 @@ def _run_pty_windows(
     the file-exists invariant. Windows-only; raises NotImplementedError
     on POSIX.
 
-    stdin forward is NOT supported by this backend. Subprocesses that
-    need interactive input under pty_windows will hang or skip input
-    prompts. cmd.exe shim commands (``.cmd`` / ``.bat`` via
-    ``use_shell``) are also not supported.
+    Forwards parent stdin via a daemon thread. When parent stdin is a
+    real console, line-input / echo / processed-input bits are removed
+    via ``SetConsoleMode`` so keystrokes reach the pty immediately;
+    original mode restored on exit. SIGWINCH equivalent is NOT
+    forwarded.
+
+    cmd.exe shim commands (``.cmd`` / ``.bat`` via ``use_shell``) are
+    not supported.
     """
     if platform.system().lower() != "windows":
         raise NotImplementedError(
@@ -492,7 +496,10 @@ def _run_pty_windows(
         )
 
     # Windows-only third-party dep; imported here so the module stays
-    # importable on POSIX (Linux/macOS never install pywinpty).
+    # importable on POSIX (Linux/macOS never install pywinpty). ctypes
+    # is stdlib but only this backend uses it, so lazy import keeps
+    # POSIX import paths clean.
+    import ctypes
     from winpty import PtyProcess
 
     # Initial dimensions: copy parent console size; fall back to 80x24.
@@ -501,6 +508,33 @@ def _run_pty_windows(
         rows, cols = size.lines, size.columns
     except Exception:
         rows, cols = 24, 80
+
+    # Switch parent console to raw-input mode so keystrokes reach the
+    # forward thread immediately (no line buffering, no echo, no
+    # Ctrl-C interception). Best-effort: stdin redirected / monkey-
+    # patched (CI) skips silently.
+    kernel32 = ctypes.windll.kernel32
+    STD_INPUT_HANDLE = -10  # win32 GetStdHandle constant
+    ENABLE_PROCESSED_INPUT = 0x0001
+    ENABLE_LINE_INPUT = 0x0002
+    ENABLE_ECHO_INPUT = 0x0004
+
+    saved_console_mode: int | None = None
+    stdin_handle = None
+    if sys.stdin.isatty():
+        try:
+            stdin_handle = kernel32.GetStdHandle(STD_INPUT_HANDLE)
+            mode_buf = ctypes.c_ulong(0)
+            if kernel32.GetConsoleMode(stdin_handle, ctypes.byref(mode_buf)):
+                saved_console_mode = mode_buf.value
+                new_mode = saved_console_mode & ~(
+                    ENABLE_LINE_INPUT
+                    | ENABLE_ECHO_INPUT
+                    | ENABLE_PROCESSED_INPUT
+                )
+                kernel32.SetConsoleMode(stdin_handle, new_mode)
+        except Exception:
+            saved_console_mode = None
 
     pty = PtyProcess.spawn(
         list(resolved.argv),
@@ -511,46 +545,74 @@ def _run_pty_windows(
     # stderr.log invariant: file always exists (empty under PTY merge).
     stderr_raw_path.write_bytes(b"")
 
-    degraded = False
-    with stdout_raw_path.open("wb") as raw_fp:
+    # stdin forward thread (daemon) — parent stdin -> pty.write.
+    # sys.stdin.read(1) per char; under raw console mode each keystroke
+    # arrives immediately. daemon=True is load-bearing: subprocess may
+    # exit while this thread is parked in read; a non-daemon thread
+    # would block process shutdown.
+    def _stdin_forward() -> None:
         while True:
             try:
-                chunk = pty.read(_CHUNK_SIZE)
-            except EOFError:
+                ch = sys.stdin.read(1)
+            except (OSError, EOFError, ValueError):
                 break
-            if not chunk:
+            if not ch:
                 break
-            # pywinpty returns str (UTF-8 decoded internally); encode
-            # for raw log. Non-UTF8 byte content (rare) is lossy.
-            chunk_bytes = chunk.encode("utf-8", errors="replace")
-            raw_fp.write(chunk_bytes)
-            raw_fp.flush()
-            # Forward to terminal (same handling shape as PIPE / POSIX
-            # backends).
-            buf = getattr(sys.stdout, "buffer", None)
-            if buf is not None:
-                try:
-                    buf.write(chunk_bytes)
-                    buf.flush()
-                    continue
-                except (OSError, UnicodeEncodeError):
-                    degraded = True
             try:
-                sys.stdout.write(chunk)
-                sys.stdout.flush()
-                degraded = True
-            except Exception:
-                degraded = True
+                pty.write(ch)
+            except (OSError, EOFError):
+                break
 
+    stdin_thread = threading.Thread(target=_stdin_forward, daemon=True)
+    stdin_thread.start()
+
+    degraded = False
     try:
-        pty.wait()
-    except KeyboardInterrupt:
+        with stdout_raw_path.open("wb") as raw_fp:
+            while True:
+                try:
+                    chunk = pty.read(_CHUNK_SIZE)
+                except EOFError:
+                    break
+                if not chunk:
+                    break
+                # pywinpty returns str (UTF-8 decoded internally); encode
+                # for raw log. Non-UTF8 byte content (rare) is lossy.
+                chunk_bytes = chunk.encode("utf-8", errors="replace")
+                raw_fp.write(chunk_bytes)
+                raw_fp.flush()
+                # Forward to terminal (same handling shape as PIPE /
+                # POSIX backends).
+                buf = getattr(sys.stdout, "buffer", None)
+                if buf is not None:
+                    try:
+                        buf.write(chunk_bytes)
+                        buf.flush()
+                        continue
+                    except (OSError, UnicodeEncodeError):
+                        degraded = True
+                try:
+                    sys.stdout.write(chunk)
+                    sys.stdout.flush()
+                    degraded = True
+                except Exception:
+                    degraded = True
+
         try:
-            pty.sendintr()
             pty.wait()
-        except Exception:
+        except KeyboardInterrupt:
             try:
-                pty.terminate()
+                pty.sendintr()
+                pty.wait()
+            except Exception:
+                try:
+                    pty.terminate()
+                except Exception:
+                    pass
+    finally:
+        if saved_console_mode is not None and stdin_handle is not None:
+            try:
+                kernel32.SetConsoleMode(stdin_handle, saved_console_mode)
             except Exception:
                 pass
 
