@@ -78,6 +78,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     run.add_argument(
+        "--backend",
+        choices=["pipe", "pty", "pty_posix", "pty_windows"],
+        default="pty",
+        help=(
+            "Wrap backend. 'pipe' is the original subprocess pipe path "
+            "(TUI agents won't render). 'pty' (default) auto-picks "
+            "pty_posix or pty_windows by platform; explicit "
+            "pty_posix / pty_windows force one. See ROADMAP §2."
+        ),
+    )
+    run.add_argument(
         "argv",
         nargs=argparse.REMAINDER,
         help="The command to run, after a `--` separator.",
@@ -223,7 +234,11 @@ def _run_command(args) -> int:
         resolve_git_dir,
         resolve_git_root,
     )
-    from agentcam.models import capture_for_wrap_pipe
+    from agentcam.models import (
+        capture_for_wrap_pipe,
+        capture_for_wrap_pty_posix,
+        capture_for_wrap_pty_windows,
+    )
     from agentcam.paths import RunIdCollisionError, create_run_dir
     from agentcam.redaction import StreamingRedactor, redact_argv
     from agentcam.report import write_run_artifacts
@@ -291,13 +306,20 @@ def _run_command(args) -> int:
         print(f"agentcam: {e}", file=sys.stderr)
         return 2
 
-    # 4) Run the wrapped subprocess with threads-based tee.
+    # 4) Resolve `pty` alias to the platform-specific backend, then run.
+    backend = args.backend
+    if backend == "pty":
+        backend = (
+            "pty_windows" if platform.system().lower() == "windows"
+            else "pty_posix"
+        )
     try:
         run_result = run_wrapped(
             run_argv,
             cwd=cwd,
             stdout_raw_path=Path(run_paths.stdout_raw),
             stderr_raw_path=Path(run_paths.stderr_raw),
+            backend=backend,
         )
     except CommandNotFoundError as e:
         print(str(e), file=sys.stderr)
@@ -410,7 +432,12 @@ def _run_command(args) -> int:
     # `empty_run_policy` distinguishes a normal run from one preserved
     # only because the scanner saw a risky output pattern. See
     # docs/design.md #28 + #30.
-    capture = capture_for_wrap_pipe(empty_run_policy=empty_run_policy)
+    if backend == "pipe":
+        capture = capture_for_wrap_pipe(empty_run_policy=empty_run_policy)
+    elif backend == "pty_posix":
+        capture = capture_for_wrap_pty_posix(empty_run_policy=empty_run_policy)
+    elif backend == "pty_windows":
+        capture = capture_for_wrap_pty_windows(empty_run_policy=empty_run_policy)
     write_run_artifacts(
         state_before=state_before,
         state_after=state_after,

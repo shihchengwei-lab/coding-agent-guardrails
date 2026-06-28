@@ -558,6 +558,9 @@ def _run_pty_windows(
                 break
             if not ch:
                 break
+            # Text wrapper turns CR into LF; ConPTY needs CR back for Enter.
+            if ch == "\n":
+                ch = "\r"
             try:
                 pty.write(ch)
             except (OSError, EOFError):

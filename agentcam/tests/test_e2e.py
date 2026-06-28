@@ -447,7 +447,7 @@ class TestNoDiffCleanup:
 class TestCaptureVisibility:
     def test_wrap_mode_records_wrap_pipe_capture(self, tmp_git_repo: Path):
         proc = _agentcam(
-            tmp_git_repo, "run", "--",
+            tmp_git_repo, "run", "--backend", "pipe", "--",
             sys.executable, "-c", "open('hi.txt','w').write('x')",
         )
         assert proc.returncode == 0
@@ -554,3 +554,70 @@ class TestNoDiffPreservation:
         assert proc.returncode == 0
         cap = _manifest(tmp_git_repo)["capture"]
         assert cap["empty_run_policy"] == "keep_empty_requested"
+
+
+# ---------------------------------------------------------------------------
+# Stage 4: `agentcam run --backend` flag (roadmap §2)
+# ---------------------------------------------------------------------------
+
+class TestBackendFlag:
+    """``agentcam run --backend X`` selects the wrap backend.
+
+    Default is ``pty`` which auto-picks ``pty_posix`` on POSIX or
+    ``pty_windows`` on Windows. The capture metadata reflects the
+    resolved backend so reports indicate which observation surface
+    was active.
+    """
+
+    def test_default_backend_is_platform_pty(self, tmp_git_repo: Path):
+        import platform as _platform
+        proc = _agentcam(
+            tmp_git_repo, "run", "--keep-empty", "--",
+            sys.executable, "-c", "print('default-pty')",
+        )
+        assert proc.returncode == 0
+        m = json.loads(
+            (_run_dir(tmp_git_repo) / "manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        expected = (
+            "wrap_pty_windows"
+            if _platform.system().lower() == "windows"
+            else "wrap_pty_posix"
+        )
+        assert m["capture"]["mode"] == expected
+
+    def test_explicit_backend_pipe(self, tmp_git_repo: Path):
+        proc = _agentcam(
+            tmp_git_repo, "run", "--keep-empty", "--backend", "pipe", "--",
+            sys.executable, "-c", "print('pipe-explicit')",
+        )
+        assert proc.returncode == 0
+        m = json.loads(
+            (_run_dir(tmp_git_repo) / "manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        assert m["capture"]["mode"] == "wrap_pipe"
+
+    def test_explicit_backend_pty_alias_expands(self, tmp_git_repo: Path):
+        # ``--backend pty`` resolves to the platform-specific backend so
+        # users can write one cross-platform invocation.
+        import platform as _platform
+        proc = _agentcam(
+            tmp_git_repo, "run", "--keep-empty", "--backend", "pty", "--",
+            sys.executable, "-c", "print('pty-alias')",
+        )
+        assert proc.returncode == 0
+        m = json.loads(
+            (_run_dir(tmp_git_repo) / "manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        expected = (
+            "wrap_pty_windows"
+            if _platform.system().lower() == "windows"
+            else "wrap_pty_posix"
+        )
+        assert m["capture"]["mode"] == expected

@@ -197,6 +197,54 @@ def capture_for_wrap_pipe(*, empty_run_policy: str) -> CaptureCapability:
     )
 
 
+def capture_for_wrap_pty_posix(*, empty_run_policy: str) -> CaptureCapability:
+    """Capture profile for the POSIX PTY wrap-mode subprocess path.
+
+    Same observation surface as wrap_pipe (output read via the pty
+    master fd, output-pattern risk scanning enabled), but stdout and
+    stderr merge into one stream under PTY — ``stderr="merged_into_stdout"``
+    so consumers know the stderr.log file is intentionally empty.
+    """
+    return CaptureCapability(
+        mode="wrap_pty_posix",
+        stdout="captured",
+        stderr="merged_into_stdout",
+        git_before_after="captured",
+        path_risk_scan="enabled",
+        output_risk_scan="enabled",
+        dependency_probe="enabled",
+        transcript="not_supported",
+        internal_tool_calls="not_visible",
+        file_reads="not_visible",
+        network_egress="not_visible",
+        empty_run_policy=empty_run_policy,
+    )
+
+
+def capture_for_wrap_pty_windows(*, empty_run_policy: str) -> CaptureCapability:
+    """Capture profile for the Windows ConPTY wrap-mode subprocess path.
+
+    Same observation surface as wrap_pipe (output read via the ConPTY
+    pseudo-console, output-pattern risk scanning enabled), but stdout
+    and stderr merge into one stream under PTY — ``stderr="merged_into_stdout"``
+    so consumers know the stderr.log file is intentionally empty.
+    """
+    return CaptureCapability(
+        mode="wrap_pty_windows",
+        stdout="captured",
+        stderr="merged_into_stdout",
+        git_before_after="captured",
+        path_risk_scan="enabled",
+        output_risk_scan="enabled",
+        dependency_probe="enabled",
+        transcript="not_supported",
+        internal_tool_calls="not_visible",
+        file_reads="not_visible",
+        network_egress="not_visible",
+        empty_run_policy=empty_run_policy,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class RulesetProvenance:
     """Which rule set produced the risk flags in this report.
