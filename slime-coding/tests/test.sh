@@ -144,6 +144,13 @@ case "$out" in
   *) bad "13 out-of-corridor file shown in Stop report" "$out" ;;
 esac
 
+# A3b: strict semantic-boundary mode turns out-of-corridor product code into a block.
+out=$(stop "$G" | SLIME_STRICT_CORRIDOR=1 python3 "$PATCH")
+case "$out" in
+  *'"block"'*"out-of-corridor"*) ok "13b strict corridor -> out-of-corridor product code blocks" ;;
+  *) bad "13b strict corridor -> out-of-corridor product code blocks" "$out" ;;
+esac
+
 # A4: missing pubspec.yaml -> dependency gate degrades (no block)
 H="$(mkrepo)"
 mkdir -p "$H/.slime"
@@ -288,6 +295,17 @@ out=$(pre "$N" "$N/README.md" | python3 "$PATCH")
 case "$out" in
   *'"deny"'*) ok "28 no corridor + edit README.md -> deny (not exempt)" ;;
   *) bad "28 no corridor + edit README.md -> deny (not exempt)" "$out" ;;
+esac
+
+# 29: strict corridor mode still ignores repo metadata; it is not product code.
+mkdir -p "$N/.slime"
+printf '# Corridor: meta\n## Paths\n- lib/**\n' > "$N/.slime/corridor.md"
+printf 'tmp/\n' > "$N/.gitignore"
+out=$(stop "$N" | SLIME_STRICT_CORRIDOR=1 python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "29 strict corridor + metadata edit -> no block" "$out" ;;
+  *systemMessage*) ok "29 strict corridor + metadata edit -> no block" ;;
+  *) bad "29 strict corridor + metadata edit -> no block" "$out" ;;
 esac
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

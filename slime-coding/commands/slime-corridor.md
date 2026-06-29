@@ -15,7 +15,8 @@ Steps:
    in the repo — read the relevant files first, cite file + symbol).
 3. Determine the **Meeting Corridor**: the minimal set of files/edits that
    connects an attachment point to a required behaviour. Express the allowed
-   surface as a list of path globs.
+   surface as a list of path globs. Also name the semantic displacement: what
+   behaviour/concept moves, and what existing boundaries must stay still.
 4. Write `.slime/corridor.md` with exactly this shape:
 
    ```markdown
@@ -23,6 +24,13 @@ Steps:
 
    ## Scope
    <one or two lines: what the minimal change is>
+
+   ## Semantic Delta
+   - This task changes: <the smallest observable behaviour/concept that must move>
+   - This task preserves: <existing API/data flow/component boundary/naming/ownership>
+
+   ## Non-goals
+   - <architecture/API/dependency/refactor path that is not part of this task>
 
    ## Paths
    - <glob of an allowed file/dir, e.g. lib/feature/x/**>

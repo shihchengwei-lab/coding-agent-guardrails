@@ -32,7 +32,9 @@ a spec.
 3. **Meeting Corridor** — where the two frontiers touch: the *minimal* set of
    files/edits that connects an attachment point to a required behaviour.
    This is the only place you are allowed to write. Anything outside it needs
-   new evidence.
+   new evidence. Minimize semantic displacement, not just LOC: name the
+   behaviour/concept that moves and the existing API, data flow, ownership,
+   naming, or architecture boundary that must stay still.
 
 4. **Pruned Paths** — the designs you considered and rejected, each with the
    reason (more deps, wider blast radius, no attachment point, speculative
@@ -46,8 +48,8 @@ a spec.
 
 Persist outputs 1–3 and 5 to `.slime/corridor.md` (use `/slime-corridor`) so
 the L2 corridor gate and the L3 out-of-corridor measurement can read it. The
-file must include a `# Corridor: <id>` line and a `## Paths` list of the
-allowed globs.
+file must include a `# Corridor: <id>` line, `## Semantic Delta`, `## Non-goals`,
+and a `## Paths` list of the allowed globs.
 
 ## Before editing
 

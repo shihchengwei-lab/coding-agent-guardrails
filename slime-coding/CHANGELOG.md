@@ -25,6 +25,15 @@ cloning, so "versions" track the git history rather than published releases.
   themselves are unchanged.
 
 ### Added
+- `SLIME_STRICT_CORRIDOR`: optional Stop-time hard stop for product-code edits
+  outside the current corridor `## Paths`. Default remains report-only; `.slime/`
+  artifacts and repo metadata stay exempt. This experiments with enforcing
+  "minimal semantic displacement" without turning every fuzzy L3 signal into a
+  block.
+- `Semantic Delta` and `Non-goals` fields in the corridor template, slash
+  command, and navigation guidance. They make each corridor name what behaviour
+  is allowed to move and which APIs, data flow, naming, architecture, or
+  ownership boundaries should stay still.
 - L2 **typecheck gate** (`SLIME_TYPECHECK_CMD`, opt-in): at Stop, runs a type
   checker (e.g. `dart analyze`) as a contact sensor and blocks if it is red —
   catching hallucinated attachment points (a reference to a symbol/file/API
