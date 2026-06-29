@@ -7,6 +7,10 @@ cloning, so "versions" track the git history rather than published releases.
 ## [Unreleased]
 
 ### Removed
+- `install.sh --with-cg <path>` and its coding-guidelines pairing path. The
+  combined setup showed poor fit for Slime Coding's current goal: it tends to
+  add testing wrappers and extra files in constrained agent benchmarks, reducing
+  the "small diff" benefit. The regression test now asserts the flag is rejected.
 - `experiments/` (fixtures, runners, score.py, slime-bench, runs), `reports/`
   (06-18 / 06-21 / 06-22 benchmarks), `docs/VALIDATION_PLAN.md`, and
   `tests/test-bench.sh`. The sandbox-benchmark approach could not measure
@@ -62,16 +66,6 @@ cloning, so "versions" track the git history rather than published releases.
   runner only sets the stage and reads the diff.
 - `tests/test-bench.sh`: behavioural tests for the runner (plan, new-cell
   across all four conditions, measure, validate, aggregate).
-- `install.sh --with-cg <path>`: opt-in flag to also install the owner's
-  user-level [coding-guidelines](https://github.com/shihchengwei-lab/coding-guidelines)
-  hooks. Copies its three scripts into `~/.claude/scripts/` and merges its
-  hook entries into `~/.claude/settings.json`, idempotent and with a backup.
-  Default flavour is `.sh`; set `CG_HOOK_EXT=py` to install the `.py` variant
-  with `python <path>` commands (needed when Claude Code runs as Windows
-  native and cannot directly execute `.sh`). Without the flag, behaviour is
-  unchanged.
-- `tests/test-cg-install.sh`: smoke tests for the new flag using a stubbed
-  `$HOME` and a fake cg directory; wired into CI as a separate step.
 - L3 report now includes `corridor changed this session: yes/no`, surfacing
   (without blocking) the fact that the `.slime/` bootstrap exemption lets a
   corridor be widened mid-task.

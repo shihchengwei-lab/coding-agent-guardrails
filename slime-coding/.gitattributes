@@ -1,0 +1,4 @@
+.gitattributes text eol=lf
+install.sh text eol=lf
+tests/*.sh text eol=lf
+bin/* text eol=lf

@@ -41,7 +41,7 @@ jobs:
       - name: Run hook tests
         run: ./tests/test.sh
 
-      - name: Run --with-cg flag tests
+      - name: Run removed --with-cg regression tests
         run: bash tests/test-cg-install.sh
 
       - name: install.sh smoke test (idempotent)

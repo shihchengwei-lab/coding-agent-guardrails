@@ -7,14 +7,7 @@
 # skill + slash commands into the project's .claude/ so Claude Code discovers
 # them. No plugin, no marketplace — just clone this repo anywhere and run:
 #
-#   ./install.sh [/path/to/target/project] [--with-cg /path/to/coding-guidelines]
-#
-# --with-cg additionally installs the owner's user-level coding-guidelines
-# hooks (rules + inventory_gate + review) into ~/.claude/scripts/ and merges
-# them into ~/.claude/settings.json. Skip the flag and that step is not run.
-# Script flavour is .sh by default; set CG_HOOK_EXT=py to copy the .py variant
-# and emit "python <path>" commands (needed when Claude Code runs as Windows
-# native, where .sh is not directly executable).
+#   ./install.sh [/path/to/target/project]
 #
 # Re-running is safe (idempotent): existing Slime Coding hooks are replaced,
 # not duplicated. A timestamped backup of settings.json is kept.
@@ -22,38 +15,16 @@ set -euo pipefail
 
 SLIME_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# --- arg parse: positional [target] + optional --with-cg <path> ---------------
-CG_HOME=""
+# --- arg parse: positional [target] -------------------------------------------
 ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --with-cg=*)  CG_HOME="${1#--with-cg=}"; shift ;;
-    --with-cg)    CG_HOME="${2:-}"; shift 2 ;;
     -*)           echo "error: unknown flag: $1" >&2; exit 2 ;;
     *)            ARGS+=("$1"); shift ;;
   esac
 done
 PROJECT="${ARGS[0]:-$PWD}"
 PROJECT="$(cd "$PROJECT" && pwd)"
-
-# --- cg hook script flavour: .sh (default) or .py via CG_HOOK_EXT -------------
-CG_EXT="${CG_HOOK_EXT:-sh}"
-case "$CG_EXT" in
-  sh) CG_CMD_PREFIX="" ;;
-  py) CG_CMD_PREFIX="python " ;;
-  *)  echo "error: CG_HOOK_EXT must be sh or py (got $CG_EXT)" >&2; exit 1 ;;
-esac
-
-# --- validate --with-cg path looks like a coding-guidelines repo --------------
-if [ -n "$CG_HOME" ]; then
-  CG_HOME="$(cd "$CG_HOME" 2>/dev/null && pwd)" || {
-    echo "error: --with-cg path not found" >&2; exit 1; }
-  for f in "rules.$CG_EXT" "inventory_gate.$CG_EXT" "review.$CG_EXT"; do
-    [ -f "$CG_HOME/$f" ] || {
-      echo "error: $CG_HOME does not look like coding-guidelines (missing $f)" >&2
-      exit 1; }
-  done
-fi
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "error: python3 is required (the hooks are python3 stdlib scripts)." >&2
@@ -62,7 +33,6 @@ fi
 
 echo "Slime Coding home : $SLIME_HOME"
 echo "Target project    : $PROJECT"
-[ -n "$CG_HOME" ] && echo "coding-guidelines : $CG_HOME (.$CG_EXT)"
 
 mkdir -p "$PROJECT/.claude/commands" "$PROJECT/.claude/skills"
 SETTINGS="$PROJECT/.claude/settings.json"
@@ -134,73 +104,6 @@ if [ ! -e "$PROJECT/.slime/corridor.md" ]; then
   echo "  seeded $PROJECT/.slime/ (replace the template before editing code)"
 else
   echo "  .slime/ already present — left untouched"
-fi
-
-# 4. Optional: also wire the owner's user-level coding-guidelines hooks.
-install_cg() {
-  local user_dir="$HOME/.claude"
-  local scripts="$user_dir/scripts"
-  mkdir -p "$scripts"
-  local s
-  for s in rules inventory_gate review; do
-    cp "$CG_HOME/$s.$CG_EXT" "$scripts/$s.$CG_EXT"
-    chmod +x "$scripts/$s.$CG_EXT"
-  done
-  echo "  copied cg scripts -> $scripts/*.$CG_EXT"
-
-  CG_SETTINGS="$user_dir/settings.json" \
-  CG_SCRIPTS="$scripts" \
-  CG_EXT="$CG_EXT" \
-  CG_CMD_PREFIX="$CG_CMD_PREFIX" \
-  python3 - <<'PY'
-import json, os, re, shutil, time
-
-settings_path = os.environ["CG_SETTINGS"]
-scripts       = os.environ["CG_SCRIPTS"]
-ext           = os.environ["CG_EXT"]
-cmd_prefix    = os.environ["CG_CMD_PREFIX"]
-
-def cmd(stem):
-    return f'{cmd_prefix}{scripts}/{stem}.{ext}'
-
-template = {
-    "UserPromptSubmit": [
-        {"hooks": [{"type": "command", "command": cmd("rules"),          "timeout": 5}]},
-        {"hooks": [{"type": "command", "command": cmd("inventory_gate"), "timeout": 5}]},
-    ],
-    "Stop": [
-        {"hooks": [{"type": "command", "command": cmd("review"),         "timeout": 5}]},
-    ],
-}
-
-settings = {}
-if os.path.exists(settings_path):
-    try:
-        with open(settings_path, encoding="utf-8") as f:
-            settings = json.load(f)
-    except (OSError, ValueError):
-        settings = {}
-    shutil.copy2(settings_path, settings_path + ".bak-" + time.strftime("%Y%m%d%H%M%S"))
-
-hooks = settings.setdefault("hooks", {})
-CG = re.compile(r"\.claude/scripts/(rules|inventory_gate|review)(\.en)?\.(sh|py)")
-
-def is_ours(group):
-    return any(CG.search(h.get("command", "")) for h in group.get("hooks", []))
-
-for event, groups in template.items():
-    existing = [g for g in hooks.get(event, []) if not is_ours(g)]
-    hooks[event] = existing + groups
-
-with open(settings_path, "w", encoding="utf-8") as f:
-    json.dump(settings, f, indent=2)
-    f.write("\n")
-print("  wired cg hooks -> " + settings_path)
-PY
-}
-
-if [ -n "$CG_HOME" ]; then
-  install_cg
 fi
 
 cat <<EOF
