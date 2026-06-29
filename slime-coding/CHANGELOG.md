@@ -20,16 +20,14 @@ cloning, so "versions" track the git history rather than published releases.
   pressure. The earlier reports' framings of those nulls as "Slime doesn't
   help" or "Slime adds cost" overstated what the cells supported. Rather than
   let them stand and mislead, the data and the reports are removed; the
-  effect-size question is now openly marked unanswered in the README. The
-  mechanism tests (`tests/test.sh`, 29 checks) and the gate implementations
-  themselves are unchanged.
+  effect-size question is now handled by the public Ponytail-derived benchmark
+  in `benchmark/`. The mechanism tests continue to cover the hooks directly.
 
 ### Added
-- `SLIME_STRICT_CORRIDOR`: optional Stop-time hard stop for product-code edits
-  outside the current corridor `## Paths`. Default remains report-only; `.slime/`
-  artifacts and repo metadata stay exempt. This experiments with enforcing
-  "minimal semantic displacement" without turning every fuzzy L3 signal into a
-  block.
+- `SLIME_STRICT_CORRIDOR=0`: escape hatch that downgrades out-of-corridor
+  product-code edits to report-only. The default is now strict: Stop blocks
+  product-code edits outside the current corridor `## Paths`; `.slime/`
+  artifacts and repo metadata stay exempt.
 - `Semantic Delta` and `Non-goals` fields in the corridor template, slash
   command, and navigation guidance. They make each corridor name what behaviour
   is allowed to move and which APIs, data flow, naming, architecture, or
@@ -41,7 +39,7 @@ cloning, so "versions" track the git history rather than published releases.
   escape: unresolved code is broken, not an abandoned-but-logged design, so the
   only way out is to fix the reference or scope it as new work. Exit-code only
   (no output parsing, no multi-language adapter); degrades when unset / command
-  not found / timeout. Behaviour tests AC1–AC6 in `tests/test.sh` (now 25). A
+  not found / timeout. Behaviour tests AC1–AC6 in `tests/test.sh`. A
   mechanism, with no claim that it reduces hallucinations in practice.
 - `install.sh`: clone-and-install flow. Wires the two hook scripts into a
   target project's `.claude/settings.json` (across SessionStart,
@@ -84,6 +82,11 @@ cloning, so "versions" track the git history rather than published releases.
 - README concept illustration (`assets/slime-coding.png`).
 
 ### Changed
+- Out-of-corridor product-code edits now block by default at Stop. This makes
+  "minimal semantic displacement" the default behaviour instead of an optional
+  strict mode; set `SLIME_STRICT_CORRIDOR=0` to downgrade that check to
+  report-only. The public benchmark rows for `slime-coding` were refreshed to
+  the strict-corridor default run.
 - Renamed the L2 "prune-logging" gate to what it actually enforces: a
   **failing-check-at-stop** gate. Its teeth are on the unambiguous git/exit
   fact "`SLIME_TEST_CMD` is red as you finish"; recording a path in `PRUNED.md`

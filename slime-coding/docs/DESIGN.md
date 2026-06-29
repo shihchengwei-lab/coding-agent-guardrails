@@ -8,7 +8,9 @@ Slime Coding 的機制細節。理念與手動流程見 [`CONCEPT.md`](CONCEPT.m
 - **prompt 是請求。** 寫在 `CLAUDE.md` 的「不要做 X」，模型可以略過。
 - **hook 是強制。** 條件命中就每次執行，不依賴模型記得。
 - **牙齒只能長在無歧義的訊號上。** 用模糊判斷去 hard-block，誤攔會訓練使用者把
-  hook 關掉，比沒有閘門更糟——所以閘門只收 git 事實，模糊訊號只回報。
+  hook 關掉，比沒有閘門更糟——所以閘門只收 git 事實。路徑是否落在
+  `corridor.md` 的 `## Paths` 內也是 git 事實，所以走廊外 product-code edit 預設擋；
+  touched files、API 變動這類模糊成本訊號只回報。
 
 ## 四層
 
@@ -63,18 +65,18 @@ Corridor、Semantic Delta、Non-goals、Pruned Paths、Stop Condition。把
   另放行 repo 元資料檔（`.gitignore`、`.gitattributes`、`.editorconfig`、
   `LICENSE`(`.md`/`.txt`)、`CHANGELOG.md`，basename 比對）——這些不是 product
   code，沒有 frontier 可算，硬擋只是摩擦。
+  Stop 時若 product-code edit 落在 `## Paths` 外，預設 `block`：要求先縮回走廊，
+  或更新 corridor 並寫出新 evidence。`.slime/` artifact 與 repo metadata 仍不擋。
   > 代價：這不是硬安全邊界——agent 可以先改 `corridor.md` 把走廊撐大再動別的
-  > 檔案。改走廊本身可能是合法的新 evidence，所以預設不擋，但會由 L3 顯示出來。
-  > 若設定 `SLIME_STRICT_CORRIDOR=1`，Stop 時會把走廊外 product-code edit 升級成
-  > block，要求先縮回走廊或更新 corridor 並寫出新 evidence。
+  > 檔案。改走廊本身可能是合法的新 evidence，所以不直接擋，但會由 L3 顯示出來。
+  > 若要退回只回報模式，可設定 `SLIME_STRICT_CORRIDOR=0`。
 
-### L3 量測（預設不 block）
+### L3 量測（成本訊號）
 `bin/patch-cost` 在 Stop 時當 `systemMessage` 回報模糊訊號：touched / new files
 計數、public API 變更（Dart `export` / `class` / …）、走廊外檔案（讀
 `corridor.md` 的 `## Paths` 判定）、**這輪是否動過 `corridor.md`**。
-`systemMessage` 是給**使用者**看的（L3 的定位就是給人看的成本訊號）。預設不擋，
-避免模糊訊號誤判時升級成棄用；`SLIME_STRICT_CORRIDOR=1` 是例外，只把明確走廊外
-product-code edit 升級成 hard stop。
+`systemMessage` 是給**使用者**看的（L3 的定位就是給人看的成本訊號）。其中
+走廊外 product-code edit 也會餵給 L2 Stop gate，預設 hard stop；其他成本訊號只回報。
 
 ## 安裝細節
 
@@ -105,7 +107,7 @@ product-code edit 升級成 hard stop。
 | `SLIME_TEST_CMD` | 無 | L2 收工紅燈閘的檢查指令；未設則此閘門退化 |
 | `SLIME_TEST_TIMEOUT` | `600` | typecheck 與 check 共用的 timeout（秒） |
 | `SLIME_PUBSPEC` | `pubspec.yaml` | 依賴清單路徑（非 Dart 專案可改） |
-| `SLIME_STRICT_CORRIDOR` | 無 | 設為 `1` / `true` / `yes` / `on` 時，Stop 會阻擋走廊外 product-code edit；repo metadata 與 `.slime/` artifact 不擋 |
+| `SLIME_STRICT_CORRIDOR` | strict | 預設阻擋走廊外 product-code edit；設為 `0` / `false` / `no` / `off` 時退回只回報。repo metadata 與 `.slime/` artifact 不擋 |
 
 ## Slash commands
 
@@ -142,7 +144,7 @@ slime-coding/
 
 `tests/test.sh`（需要 python3 + git）跑 hook 的行為測試：走廊閘門、bootstrap
 放行、template 拒絕、`SLIME_PRUNE_RECENT` 異常值、Stop 的依賴 / 紅燈 / typecheck
-閘門，以及 `SLIME_STRICT_CORRIDOR` 的走廊外 product-code block。
+閘門、預設走廊外 product-code block，以及 `SLIME_STRICT_CORRIDOR=0` 的只回報降級。
 
 ```bash
 ./tests/test.sh
