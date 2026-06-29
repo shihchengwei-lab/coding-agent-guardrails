@@ -52,16 +52,6 @@ cd /你的專案
 
 最後手動一步：把 `templates/CLAUDE.slime.md` 的內容貼進你專案的 `CLAUDE.md`，這樣 AI 才知道紀律寫在哪。
 
-### 搭配 coding-guidelines（選用）
-
-如果你也用 [coding-guidelines](https://github.com/shihchengwei-lab/coding-guidelines)（另一套 prompt 紀律），安裝時加 `--with-cg` 一次裝完兩個：
-
-```bash
-~/slime-coding/install.sh /你的專案 --with-cg ~/coding-guidelines
-```
-
-兩套各自獨立，分開用也行。
-
 ## 目前驗證到哪？
 
 還在實驗階段。
