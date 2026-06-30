@@ -24,6 +24,11 @@ cloning, so "versions" track the git history rather than published releases.
   in `benchmark/`. The mechanism tests continue to cover the hooks directly.
 
 ### Added
+- `bin/commit-evidence` plus Git `prepare-commit-msg` installation: commits can
+  automatically carry a short Slime evidence block with corridor id, scope,
+  semantic delta, allowed paths, staged touched files, out-of-corridor count,
+  new dependencies, and verification. It is audit evidence, not a blocking
+  gate, and install preserves any existing `prepare-commit-msg` hook.
 - `SLIME_STRICT_CORRIDOR=0`: escape hatch that downgrades out-of-corridor
   product-code edits to report-only. The default is now strict: Stop blocks
   product-code edits outside the current corridor `## Paths`; `.slime/`

@@ -38,6 +38,8 @@ Slime Coding 讓 AI 也從兩頭伸觸鬚：
 
 - **超出走廊的 product-code edit 會被擋**。如果真的有新 evidence，先更新走廊再做；如果只是順手多改，就縮回來。其他成本訊號（touched files、新檔、API 變動）會列出來給你看。
 
+- **commit message 會自動附上 Slime evidence**。每次 commit 時，它會把 corridor id、scope、semantic delta、allowed paths、touched files、走廊外檔案數、新依賴和驗證方式寫進 commit message，讓之後 review 時看得到「這個 diff 為什麼沒有亂長」。
+
 → 機制細節：[`docs/DESIGN.md`](docs/DESIGN.md)
 
 ## 怎麼用？
@@ -50,7 +52,7 @@ cd /你的專案
 ~/slime-coding/install.sh .
 ```
 
-它會把關卡接上、把指令連好。需要 `python3` 跟 `git`。安裝會備份你原本的設定、可以重跑、不會壞。
+它會把關卡接上、把指令連好，也會安裝一個 Git `prepare-commit-msg` hook，讓 commit message 自動帶 Slime evidence。需要 `python3` 跟 `git`。安裝會備份你原本的設定、可以重跑、不會壞。
 
 最後手動一步：把 `templates/CLAUDE.slime.md` 的內容貼進你專案的 `CLAUDE.md`，這樣 AI 才知道紀律寫在哪。
 

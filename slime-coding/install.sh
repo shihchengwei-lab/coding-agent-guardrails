@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # Slime Coding — clone-and-install.
 #
-# Wires the two hook scripts (prune-inject, patch-cost) into a project's
-# .claude/settings.json across four events (SessionStart, UserPromptSubmit,
-# PreToolUse, Stop), with an absolute, quoted path to this clone, and links the
-# skill + slash commands into the project's .claude/ so Claude Code discovers
-# them. No plugin, no marketplace — just clone this repo anywhere and run:
+# Wires the Claude hook scripts (prune-inject, patch-cost) into a project's
+# .claude/settings.json, installs the Git commit-message evidence hook, and
+# links the skill + slash commands into the project's .claude/ so Claude Code
+# discovers them. No plugin, no marketplace — just clone this repo anywhere and
+# run:
 #
 #   ./install.sh [/path/to/target/project]
 #
 # Re-running is safe (idempotent): existing Slime Coding hooks are replaced,
-# not duplicated. A timestamped backup of settings.json is kept.
+# not duplicated. A timestamped backup of settings.json is kept, and any
+# existing prepare-commit-msg hook is preserved.
 set -euo pipefail
 
 SLIME_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -85,7 +86,59 @@ with open(settings_path, "w", encoding="utf-8") as f:
 print("  wired hooks -> " + settings_path)
 PY
 
-# 2. Link the skill and the slash commands into the project's .claude/.
+# 2. Wire the Git prepare-commit-msg hook. It never blocks a commit; it appends
+#    Slime evidence when .slime/corridor.md exists.
+GIT_HOOK="$(git -C "$PROJECT" rev-parse --git-path hooks/prepare-commit-msg 2>/dev/null || true)"
+if [ -n "$GIT_HOOK" ]; then
+  case "$GIT_HOOK" in
+    /*) ;;
+    *) GIT_HOOK="$PROJECT/$GIT_HOOK" ;;
+  esac
+  mkdir -p "$(dirname "$GIT_HOOK")"
+  SLIME_HOME="$SLIME_HOME" GIT_HOOK="$GIT_HOOK" python3 - <<'PY'
+import os
+import re
+import stat
+
+home = os.environ["SLIME_HOME"]
+hook_path = os.environ["GIT_HOOK"]
+start = "# >>> Slime Coding commit evidence"
+end = "# <<< Slime Coding commit evidence"
+block = f"""{start}
+python3 "{home}"/bin/commit-evidence "$@"
+{end}
+"""
+
+try:
+    with open(hook_path, encoding="utf-8") as f:
+        content = f.read()
+except OSError:
+    content = ""
+
+content = re.sub(
+    re.escape(start) + r".*?" + re.escape(end) + r"\n?",
+    "",
+    content,
+    flags=re.S,
+).rstrip()
+
+if not content:
+    content = "#!/usr/bin/env bash"
+elif not content.startswith("#!"):
+    content = "#!/usr/bin/env bash\n" + content
+
+with open(hook_path, "w", encoding="utf-8") as f:
+    f.write(content.rstrip() + "\n\n" + block)
+
+mode = os.stat(hook_path).st_mode
+os.chmod(hook_path, mode | stat.S_IXUSR)
+print("  wired git hook -> " + hook_path)
+PY
+else
+  echo "  git hook skipped (target is not a git repo)"
+fi
+
+# 3. Link the skill and the slash commands into the project's .claude/.
 ln_force() {  # ln_force <src> <dst>
   rm -rf "$2"
   ln -s "$1" "$2"
@@ -96,7 +149,7 @@ for cmd in "$SLIME_HOME"/commands/*.md; do
   ln_force "$cmd" "$PROJECT/.claude/commands/$(basename "$cmd")"
 done
 
-# 3. Seed the .slime/ artifacts if the project has none yet.
+# 4. Seed the .slime/ artifacts if the project has none yet.
 if [ ! -e "$PROJECT/.slime/corridor.md" ]; then
   mkdir -p "$PROJECT/.slime"
   cp "$SLIME_HOME/templates/.slime/corridor.md" "$PROJECT/.slime/corridor.md"

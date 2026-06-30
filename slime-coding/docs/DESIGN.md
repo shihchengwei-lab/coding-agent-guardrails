@@ -78,18 +78,27 @@ Corridor、Semantic Delta、Non-goals、Pruned Paths、Stop Condition。把
 `systemMessage` 是給**使用者**看的（L3 的定位就是給人看的成本訊號）。其中
 走廊外 product-code edit 也會餵給 L2 Stop gate，預設 hard stop；其他成本訊號只回報。
 
+### Git commit evidence（審查證據）
+`bin/commit-evidence` 由 Git `prepare-commit-msg` hook 呼叫。它不 block commit，
+只把目前 `.slime/corridor.md` 與 staged diff 的事實摘要 append 到 commit message：
+Corridor id、Scope、Semantic Delta、Paths、staged touched files、走廊外檔案數、
+新增依賴與 Stop Condition。這不是新的正確性證明；它的用途是讓 git history 保留
+「這個 diff 對應哪條走廊」的審查線索。已經有 `Slime-Evidence:` 區塊時不重複附加。
+
 ## 安裝細節
 
 `install.sh`（可重跑、idempotent，會備份 `settings.json`）：
 
-1. 把兩個 hook script（`prune-inject`、`patch-cost`）接進專案
+1. 把兩個 Claude hook script（`prune-inject`、`patch-cost`）接進專案
    `.claude/settings.json`，共掛在四個 event（SessionStart、UserPromptSubmit、
    PreToolUse、Stop）；command 用**這個 clone 的絕對路徑**並以 `python3` 執行
    （有加引號，路徑含空白也不會壞、也不依賴 executable bit）——只取代既有的
    Slime Coding hook，不動你其他的 hook。
-2. 把 `slime-navigate` skill 與 `/slime-corridor`、`/slime-prune` 兩個 command
+2. 把 Git `prepare-commit-msg` hook 接到 `bin/commit-evidence`。若原本已有 hook，
+   會保留原內容，只替換 Slime 自己的區塊。
+3. 把 `slime-navigate` skill 與 `/slime-corridor`、`/slime-prune` 兩個 command
    **symlink** 進 `.claude/`（之後 `git pull` 這個 clone 就會更新）。
-3. 若專案還沒有 `.slime/`，把 `templates/.slime/` 種進去（先換成你自己的內容再
+4. 若專案還沒有 `.slime/`，把 `templates/.slime/` 種進去（先換成你自己的內容再
    寫 code，template corridor 會被 L2 擋）。
 
 手動一步（L0 紀律是請求、不強制）：把 `templates/CLAUDE.slime.md` 貼進專案
@@ -129,13 +138,15 @@ slime-coding/
 ├── hooks/hooks.template.json           # hook 接線範本（__SLIME_HOME__ 佔位）
 ├── bin/
 │   ├── patch-cost                      # L2 確定子集 + L3 模糊子集
-│   └── prune-inject                    # L1 注入 + 衰減
+│   ├── prune-inject                    # L1 注入 + 衰減
+│   └── commit-evidence                 # Git commit message evidence
 ├── skills/slime-navigate/SKILL.md      # L0
 ├── commands/{slime-prune,slime-corridor}.md
 ├── templates/
 │   ├── CLAUDE.slime.md                 # L0 貼進專案 CLAUDE.md
 │   └── .slime/{corridor.md,PRUNED.md}  # artifact 範例
-├── tests/test.sh                       # hook 行為測試
+├── tests/test.sh                       # Claude hook 行為測試
+├── tests/test-commit-evidence.sh       # Git commit evidence 測試
 ├── docs/                                # 概念、機制設計
 └── README.md
 ```
@@ -148,6 +159,7 @@ slime-coding/
 
 ```bash
 ./tests/test.sh
+./tests/test-commit-evidence.sh
 ```
 
 ## 前提與限制
