@@ -12,7 +12,7 @@
 - 模型：`claude-haiku-4-5-20251001`
 - 日期：2026-06-29
 - 題目：19 題
-- 組別：`baseline`、`ponytail`、`slime-coding`
+- 組別：`baseline`、`ponytail`、`slime-coding`（strict corridor default）
 - 次數：每題每組 4 次
 - 有效樣本：228 cells
 
@@ -25,42 +25,42 @@
 
 全部 19 題：
 
-| 組別 | 通過 | 總 LOC | vs baseline LOC | 平均 cost | 平均 tokens | 平均時間 |
-|---|---:|---:|---:|---:|---:|---:|
-| baseline | 69/76 = 90.8% | 5744 | baseline | $0.0897 | 331k | 49.8s |
-| ponytail | 72/76 = 94.7% | 5055 | -12.0% | $0.1047 | 299k | 55.6s |
-| slime-coding | 74/76 = 97.4% | 4544 | -20.9% | $0.1159 | 465k | 69.9s |
+| 組別 | 通過 | touched files | 總 LOC | vs baseline LOC | 平均 cost | 平均 tokens | 平均時間 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| baseline | 69/76 = 90.8% | 115 | 5744 | baseline | $0.0897 | 331k | 49.8s |
+| ponytail | 72/76 = 94.7% | 147 | 5055 | -12.0% | $0.1047 | 299k | 55.6s |
+| slime-coding | 76/76 = 100.0% | 107 | 4351 | -24.3% | $0.1223 | 478k | 76.6s |
 
 Feature 12 題：
 
-| 組別 | 通過 | 總 LOC | vs baseline LOC | 平均 cost | 平均 tokens | 平均時間 |
-|---|---:|---:|---:|---:|---:|---:|
-| baseline | 41/48 = 85.4% | 5364 | baseline | $0.1173 | 454k | 65.9s |
-| ponytail | 44/48 = 91.7% | 4426 | -17.5% | $0.1059 | 391k | 57.0s |
-| slime-coding | 47/48 = 97.9% | 4169 | -22.3% | $0.1397 | 574k | 84.8s |
+| 組別 | 通過 | touched files | 總 LOC | vs baseline LOC | 平均 cost | 平均 tokens | 平均時間 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| baseline | 41/48 = 85.4% | 87 | 5364 | baseline | $0.1173 | 454k | 65.9s |
+| ponytail | 44/48 = 91.7% | 81 | 4426 | -17.5% | $0.1059 | 391k | 57.0s |
+| slime-coding | 48/48 = 100.0% | 76 | 4010 | -25.2% | $0.1465 | 585k | 91.0s |
 
 Safety 7 題：
 
-| 組別 | 通過 | 總 LOC | vs baseline LOC | 平均 cost | 平均 tokens | 平均時間 |
-|---|---:|---:|---:|---:|---:|---:|
-| baseline | 28/28 = 100.0% | 380 | baseline | $0.0425 | 121k | 22.1s |
-| ponytail | 28/28 = 100.0% | 629 | +65.5% | $0.1027 | 141k | 53.2s |
-| slime-coding | 27/28 = 96.4% | 375 | -1.3% | $0.0751 | 278k | 44.3s |
+| 組別 | 通過 | touched files | 總 LOC | vs baseline LOC | 平均 cost | 平均 tokens | 平均時間 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| baseline | 28/28 = 100.0% | 28 | 380 | baseline | $0.0425 | 121k | 22.1s |
+| ponytail | 28/28 = 100.0% | 66 | 629 | +65.5% | $0.1027 | 141k | 53.2s |
+| slime-coding | 28/28 = 100.0% | 31 | 341 | -10.3% | $0.0809 | 295k | 51.8s |
 
 ## 怎麼讀
 
 Slime Coding 在這組任務裡：
 
-- 通過率比 baseline 高 6.6 percentage points。
-- 總 LOC 比 baseline 少 20.9%。
-- 平均 cost 比 baseline 高 29.2%。
-- 平均 tokens 比 baseline 高 40.2%。
-- 平均時間比 baseline 高 40.3%。
-- `cache` safety 題有 1 次失敗：它把 `lru_cache` 放在仍會增加 `_calls` 的位置，行為檢查沒有過。
+- 通過率比 baseline 高 9.2 percentage points。
+- touched files 比 baseline 少 7.0%，比 Ponytail 少 27.2%。
+- 總 LOC 比 baseline 少 24.3%，比 Ponytail 少 13.9%。
+- 平均 cost 比 baseline 高 36.3%，比 Ponytail 高 16.8%。
+- 平均 tokens 比 baseline 高 44.3%，比 Ponytail 高 59.8%。
+- 平均時間比 baseline 高 53.8%，比 Ponytail 高 37.7%。
 
 所以這不是「Slime 免費變好」。比較準確的讀法是：
 
-> Slime Coding 用更多推理成本，換到較高完成率與較小 diff，但它仍可能引入 safety regression。
+> Slime Coding 用更多推理成本，換到較高完成率、較少 touched files 與較小 diff；Ponytail 更省 token、更快、更便宜。
 
 ## 資料檔
 
@@ -74,7 +74,8 @@ Slime Coding 在這組任務裡：
 
 - Claude 429 / session limit cell 不算模型失敗，重跑。
 - Baseline timeout cell 不算模型效果，重跑。
-- Slime 的 `cache` safety 失敗保留，因為那是有效任務失敗。
+- 舊的 report-only Slime rows 已由 strict corridor default run 取代，因為 strict 現在是預設行為。
+- strict run 實際跑到較大的本地 Ponytail 題池；這裡只納入與 baseline / Ponytail 同口徑的 19 題。
 
 最後三組都是 76/76 個有效樣本，沒有 missing cost/token。
 

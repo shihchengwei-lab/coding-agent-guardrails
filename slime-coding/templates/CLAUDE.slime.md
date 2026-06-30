@@ -7,6 +7,11 @@
 
 ## Slime Coding
 
+Optimize for **minimal semantic displacement**, not merely the fewest lines of
+code: change the required behaviour while preserving existing APIs, data flow,
+module boundaries, naming, and architecture unless the corridor explicitly
+allows moving them.
+
 Do not generate code straight from the prompt. For any task that changes code:
 
 1. Grow the **Goal Frontier** (necessary behaviours, read backwards from the
@@ -14,7 +19,8 @@ Do not generate code straight from the prompt. For any task that changes code:
    this repo) separately. Use the `slime-navigate` skill.
 2. Edit only inside the **Meeting Corridor** — the minimal files where the two
    frontiers meet. Write it to `.slime/corridor.md` with `/slime-corridor`
-   before editing. Leaving the corridor requires new evidence and an update.
+   before editing, including Semantic Delta and Non-goals. Leaving the corridor
+   requires new evidence and an update.
 3. **Before editing, read `.slime/PRUNED.md`.** Do not revive a rejected design
    without new evidence. When you delegate editing to a sub-agent, copy the
    relevant pruned summary into its task prompt — sub-agents have their own

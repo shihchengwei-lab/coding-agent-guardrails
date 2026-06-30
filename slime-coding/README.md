@@ -4,11 +4,13 @@
 
 ![Slime Coding — grow both frontiers, commit only the minimal corridor](assets/slime-coding.png)
 
-> **更容易做對、diff 更小，但不是更便宜。** 228-cell Haiku benchmark snapshot：通過率 90.8% → 97.4%，總 LOC -20.9%；代價是 cost +29.2%、tokens +40.2%、time +40.3%。
+> **最小語義位移，不只是 diff 更小。** 228-cell Haiku benchmark snapshot：通過率 90.8% → 100.0%，總 LOC -24.3%，touched files -7.0%；代價是 cost +36.3%、tokens +44.3%、time +53.8%。
 
 黏菌走迷宮，會從兩頭同時伸觸鬚出去找食物。碰到食物的觸鬚變粗、沒碰到的萎縮。最後留下的，就是兩點之間活下來的那條路——沒人「設計」它。
 
 **Slime Coding** 把這條路長出來的方式，搬到 AI 寫程式上。
+
+它追求的不是最少行數，而是**最小語義位移**：只改變這次需求必須改變的行為，不順手搬動既有架構、命名、資料流、API 和責任邊界。
 
 想像你叫 AI「加一個登入功能」。常見的版本：它順手蓋了一個你沒要求的設定系統、為「之後可能會用到」鋪了一層抽象、改了五個檔——但你只想要登入。
 
@@ -34,7 +36,7 @@ Slime Coding 讓 AI 也從兩頭伸觸鬚：
 
 - **被否決的方向留到下次**。下個 session 一開始 AI 就看到上次否決過哪些方向。
 
-- **多寫了多少、超出範圍的檔，會列出來**（只列、不擋）。不誤擋合理的擴大，但讓你看到。
+- **超出走廊的 product-code edit 會被擋**。如果真的有新 evidence，先更新走廊再做；如果只是順手多改，就縮回來。其他成本訊號（touched files、新檔、API 變動）會列出來給你看。
 
 → 機制細節：[`docs/DESIGN.md`](docs/DESIGN.md)
 
@@ -58,17 +60,17 @@ cd /你的專案
 
 **機制層**：hook 在它宣稱要觸發的 git 事實上會觸發（沒走廊就擋編輯、新增依賴就擋收工、type checker 紅燈就擋收工），安裝可重跑、不壞既有設定。自動測試與 CI 用來守住這一層。
 
-**效果層（裝了 Slime，AI 真的會少寫 garbage 嗎？）**：現在有一組可公開、但只算方向性的 benchmark。
+**效果層（裝了 Slime，AI 真的會降低語義位移嗎？）**：現在有一組可公開、但只算方向性的 benchmark。LOC 只是可見代理指標；真正目標是更少 touched surface、更少新概念、更少依賴/API 位移、更少走廊外改動。
 
-2026-06-29，用 Ponytail-derived task pool 跑 Claude Haiku：19 題，`baseline` / `ponytail` / `slime-coding` 三組，每題每組 4 次，共 228 個有效樣本。這是一個 dated snapshot：模型、Claude Code harness、Ponytail、Slime Coding 和題庫都可能隨時間漂移，數字不應被讀成穩定常數。429 額度失敗與 timeout 樣本已重跑；Slime 的 `cache` safety 失敗保留，因為那是真失敗，不是基礎設施問題。
+2026-06-29，用 Ponytail-derived task pool 跑 Claude Haiku：19 題，`baseline` / `ponytail` / `slime-coding` 三組，每題每組 4 次，共 228 個有效樣本。這是一個 dated snapshot：模型、Claude Code harness、Ponytail、Slime Coding 和題庫都可能隨時間漂移，數字不應被讀成穩定常數。429 額度失敗與 timeout 樣本已重跑；`slime-coding` 欄位使用目前預設的 strict corridor 版本。
 
-| 組別 | 通過率 | 總 LOC | vs baseline LOC | 平均 cost | 平均 tokens | 平均時間 |
-|---|---:|---:|---:|---:|---:|---:|
-| baseline | 69/76 = 90.8% | 5744 | baseline | $0.0897 | 331k | 49.8s |
-| ponytail | 72/76 = 94.7% | 5055 | -12.0% | $0.1047 | 299k | 55.6s |
-| slime-coding | 74/76 = 97.4% | 4544 | -20.9% | $0.1159 | 465k | 69.9s |
+| 組別 | 通過率 | touched files | 總 LOC | vs baseline LOC | 平均 cost | 平均 tokens | 平均時間 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| baseline | 69/76 = 90.8% | 115 | 5744 | baseline | $0.0897 | 331k | 49.8s |
+| ponytail | 72/76 = 94.7% | 147 | 5055 | -12.0% | $0.1047 | 299k | 55.6s |
+| slime-coding | 76/76 = 100.0% | 107 | 4351 | -24.3% | $0.1223 | 478k | 76.6s |
 
-讀法很簡單：Slime 在這組任務提高通過率、縮小總 diff；代價是更多 token、更多錢、更久時間，並且有 1 次 safety regression。完整資料在 [`benchmark/`](benchmark/)。
+讀法很簡單：Slime 在這組任務提高通過率、減少 touched files、縮小總 diff，這是「語義位移變小」的外顯代理；代價是更多 token、更多錢、更久時間。Ponytail 更省 token、更快、更便宜；Slime 更保守，改動面更小。完整資料在 [`benchmark/`](benchmark/)。
 
 ## License
 

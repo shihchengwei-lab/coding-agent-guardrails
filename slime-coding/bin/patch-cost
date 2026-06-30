@@ -27,18 +27,24 @@ One binary, registered on two events; it dispatches on hook_event_name.
                                 the check pass). It is NOT a check that you
                                 "pruned" anything — abandoning a design is not a
                                 git fact.
-                              L3 metrics (touched/new files, public-API adds,
-                              out-of-corridor files) are reported, never block.
+                              L3 metrics (touched/new files, public-API adds)
+                              are reported. Out-of-corridor product-code edits
+                              block by default because they are direct evidence
+                              of semantic displacement.
 
 L2 gates fire only on unambiguous git facts (zero inference), so a false block
 that would train users to disable the hook cannot happen here. L3 carries the
-fuzzy signals and only reports.
+fuzzy signals and reports by default; the corridor boundary is the exception
+because the file path either matches the committed corridor or it doesn't.
 
 Tunables (env):
   SLIME_TEST_CMD       shell command run as the check for the prune gate.
                        If unset, the prune-logging gate degrades (skipped).
   SLIME_TEST_TIMEOUT   seconds before the check is abandoned (default 600).
   SLIME_PUBSPEC        path to the dependency manifest (default pubspec.yaml).
+  SLIME_STRICT_CORRIDOR
+                       Default: strict. Set 0/false/no/off to make
+                       out-of-corridor product-code edits report-only.
 """
 import fnmatch
 import json
@@ -50,6 +56,14 @@ import subprocess
 import sys
 
 PUBSPEC = os.environ.get("SLIME_PUBSPEC", "pubspec.yaml")
+
+
+def env_falsey(name):
+    return os.environ.get(name, "").strip().lower() in {"0", "false", "no", "off"}
+
+
+def strict_corridor_enabled():
+    return not env_falsey("SLIME_STRICT_CORRIDOR")
 
 
 def read_input():
@@ -273,7 +287,7 @@ def run_typecheck(cwd):
 
 
 # --------------------------------------------------------------------------
-# L3 — Stop: cost report (never blocks)
+# L3 — Stop: cost report
 # --------------------------------------------------------------------------
 def corridor_globs(cwd):
     path = os.path.join(cwd, ".slime", "corridor.md")
@@ -297,13 +311,38 @@ def corridor_globs(cwd):
     return globs
 
 
-def l3_report(cwd):
+def changed_paths(cwd):
     touched = [n for n in git(cwd, "diff", "HEAD", "--name-only").splitlines() if n]
     new_files = [
         u
         for u in git(cwd, "ls-files", "--others", "--exclude-standard").splitlines()
         if u
     ]
+    return touched, new_files
+
+
+def out_of_corridor_files(cwd):
+    globs = corridor_globs(cwd)
+    if not globs:
+        return []
+    touched, new_files = changed_paths(cwd)
+    out_corr = []
+    for n in touched + new_files:
+        # .slime/ artifacts aren't scope creep: corridor edits are tracked
+        # separately (corridor changed), and PRUNED.md updates are required.
+        if n.startswith(".slime/"):
+            continue
+        # Repo metadata is not product code, so the default strict corridor gate
+        # should not turn harmless config hygiene into a hard stop.
+        if os.path.basename(n) in META_BASENAMES:
+            continue
+        if not any(fnmatch.fnmatch(n, g) for g in globs):
+            out_corr.append(n)
+    return out_corr
+
+
+def l3_report(cwd):
+    touched, new_files = changed_paths(cwd)
     diff = git(cwd, "diff", "HEAD")
     api = 0
     for line in diff.splitlines():
@@ -313,15 +352,7 @@ def l3_report(cwd):
                 api += 1
 
     globs = corridor_globs(cwd)
-    out_corr = []
-    if globs:
-        for n in touched + new_files:
-            # .slime/ artifacts aren't scope creep: corridor edits are tracked
-            # separately (corridor changed), and PRUNED.md updates are required.
-            if n.startswith(".slime/"):
-                continue
-            if not any(fnmatch.fnmatch(n, g) for g in globs):
-                out_corr.append(n)
+    out_corr = out_of_corridor_files(cwd)
 
     lines = [
         "Slime Coding — cost report:",
@@ -390,6 +421,16 @@ def stop(data):
                 ".slime/PRUNED.md (/slime-prune) so the next round doesn't retry "
                 "it. (Detected via git status on .slime/PRUNED.md, not a session "
                 "boundary.)"
+            )
+        out_corr = out_of_corridor_files(cwd) if strict_corridor_enabled() else []
+        if out_corr:
+            blocks.append(
+                "Out-of-corridor product-code edits detected: "
+                + ", ".join(out_corr[:10])
+                + ". This increases semantic displacement beyond the current "
+                "Meeting Corridor. Either move the change back inside the "
+                "corridor, or update .slime/corridor.md with the new evidence "
+                "before finishing."
             )
 
     report = l3_report(cwd)

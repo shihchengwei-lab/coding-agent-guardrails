@@ -129,8 +129,8 @@ case "$out" in
 esac
 
 # A3: valid corridor + edit a file OUTSIDE the corridor ->
-#     PreToolUse allows (gate only checks corridor validity), and the Stop
-#     cost report lists it as out-of-corridor.
+#     PreToolUse allows (gate only checks corridor validity), and Stop blocks
+#     by default because out-of-corridor product code is semantic displacement.
 G="$(mkrepo)"
 mkdir -p "$G/.slime"
 printf '# Corridor: real\n## Paths\n- lib/**\n' > "$G/.slime/corridor.md"
@@ -140,8 +140,16 @@ out=$(pre "$G" "$G/other/y.py" | python3 "$PATCH")
 mkdir -p "$G/other"; printf 'x\n' > "$G/other/y.py"
 out=$(stop "$G" | python3 "$PATCH")
 case "$out" in
-  *"out-of-corridor files: 1"*) ok "13 out-of-corridor file shown in Stop report" ;;
-  *) bad "13 out-of-corridor file shown in Stop report" "$out" ;;
+  *'"block"'*"out-of-corridor"*) ok "13 out-of-corridor product code blocks by default" ;;
+  *) bad "13 out-of-corridor product code blocks by default" "$out" ;;
+esac
+
+# A3b: report-only escape hatch keeps the cost report visible without blocking.
+out=$(stop "$G" | SLIME_STRICT_CORRIDOR=0 python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "13b SLIME_STRICT_CORRIDOR=0 -> report only" "$out" ;;
+  *"out-of-corridor files: 1"*) ok "13b SLIME_STRICT_CORRIDOR=0 -> report only" ;;
+  *) bad "13b SLIME_STRICT_CORRIDOR=0 -> report only" "$out" ;;
 esac
 
 # A4: missing pubspec.yaml -> dependency gate degrades (no block)
@@ -288,6 +296,17 @@ out=$(pre "$N" "$N/README.md" | python3 "$PATCH")
 case "$out" in
   *'"deny"'*) ok "28 no corridor + edit README.md -> deny (not exempt)" ;;
   *) bad "28 no corridor + edit README.md -> deny (not exempt)" "$out" ;;
+esac
+
+# 29: default strict corridor still ignores repo metadata; it is not product code.
+mkdir -p "$N/.slime"
+printf '# Corridor: meta\n## Paths\n- lib/**\n' > "$N/.slime/corridor.md"
+printf 'tmp/\n' > "$N/.gitignore"
+out=$(stop "$N" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "29 default strict + metadata edit -> no block" "$out" ;;
+  *systemMessage*) ok "29 default strict + metadata edit -> no block" ;;
+  *) bad "29 default strict + metadata edit -> no block" "$out" ;;
 esac
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
