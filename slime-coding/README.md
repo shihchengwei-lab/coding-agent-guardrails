@@ -2,49 +2,53 @@
 
 [![CI](https://github.com/shihchengwei-lab/slime-coding/actions/workflows/ci.yml/badge.svg)](https://github.com/shihchengwei-lab/slime-coding/actions/workflows/ci.yml)
 
-![Slime Coding — grow both frontiers, commit only the minimal corridor](assets/slime-coding.png)
+**Slime Coding — 讓最聰明的 AI，跟最沒腦的黏菌學會克制。**
 
-> **最小語義位移，不只是 diff 更小。** 228-cell Haiku benchmark snapshot：通過率 90.8% → 100.0%，總 LOC -24.3%，touched files -7.0%；代價是 cost +36.3%、tokens +44.3%、time +53.8%。
+![Slime Coding — Think more. Drift less.](assets/slime-coding.png)
 
-黏菌走迷宮，會從兩頭同時伸觸鬚出去找食物。碰到食物的觸鬚變粗、沒碰到的萎縮。最後留下的，就是兩點之間活下來的那條路——沒人「設計」它。
+每天用 AI 寫 code 的人都知道：現在的問題通常不是 AI 做不出來，而是它太容易把任務往外延伸。
 
-**Slime Coding** 把這條路長出來的方式，搬到 AI 寫程式上。
+它會加一層你沒要求的抽象、碰幾個本來不用碰的檔案、引入新套件、改掉既有資料流，甚至引用一個 repo 裡根本不存在的函數。功能最後也許能跑，但 diff 會多出一堆你沒有打算維護的東西。
 
-它追求的不是最少行數，而是**最小語義位移**：只改變這次需求必須改變的行為，不順手搬動既有架構、命名、資料流、API 和責任邊界。
+Slime Coding 管的是這件事：**最小語義位移**。
 
-想像你叫 AI「加一個登入功能」。常見的版本：它順手蓋了一個你沒要求的設定系統、為「之後可能會用到」鋪了一層抽象、改了五個檔——但你只想要登入。
+不是最小 diff，也不是最少行數。它在意的是：只改這次需求必須改的行為，不順手移動既有架構、命名、API、資料流和責任邊界。
 
-Slime Coding 讓 AI 也從兩頭伸觸鬚：
+## 它做什麼？
 
-- 一頭往**這次的需求**長——只從「加登入功能」這句話往下挖，需要什麼。
-- 另一頭往**現有的 code** 長——從專案已經有的東西往上找，哪裡可以接上。
+Slime Coding 不是再寫一段「請不要過度實作」給 AI 看。那種文字只是提醒，AI 忙起來會忘。
 
-兩頭碰上才動手；碰不上的方向被剪掉、記到一個檔案。下次 AI 一開始就看到上次否決過哪些方向。
+它把幾個容易失控的點接成自動關卡：
 
-→ 完整比喻：[`docs/CONCEPT.md`](docs/CONCEPT.md)
+- **動手前先框範圍**：AI 要先寫出這次要碰哪些檔案、要完成什麼、哪些事不做。沒框好就不能改專案程式碼。
+- **範圍外的修改會被擋**：如果 AI 順手改了不在範圍內的程式碼，收工時會被擋下來。
+- **新增套件會被擋**：AI 不能默默多加套件。要嘛說清楚為什麼留，要嘛拿掉。
+- **引用不存在的接點會被擋**：可選。你可以接型別檢查或語法檢查，讓 AI 不能靠想像中的 helper / class / API 收工。
+- **紅燈不能假裝完成**：如果你設定了測試指令，測試紅燈時 AI 不能直接收工。它要修綠，或把放棄的路記下來，避免下輪重走。
+- **commit message 會留下證據**：commit 時自動補上這次範圍、碰了哪些檔案、有沒有走廊外修改、有沒有新套件、怎麼驗證。
 
-## 怎麼做到？
+簡單說就是：
 
-寫在 `CLAUDE.md` 的「不要過度實作」是**請求**——AI 可以略過。Slime Coding 把它變成**自動關卡**：AI 每次想動 code 都會跑、跳不過。關卡只看明確的事實，不靠感覺判斷：
+> 多想一點，少偏離一點。
 
-- **AI 動手前，自己得先寫清楚「這次要碰哪幾個檔、目標是什麼」**。它寫好一個小檔（30 秒），你確認方向對，它才開始改。沒寫就連改一行都被自己的關卡擋住。
-  - 例外：`.gitignore`、`LICENSE` 這類跟程式邏輯無關的設定檔不用寫範圍就能改。
+## 什麼時候有用？
 
-- **AI 加進新套件會被擋**。要嘛它說明「為什麼要留」、要嘛拿掉，才能收工。
+適合：
 
-- **AI 引用一個不存在的函數或變數會被擋**（選用）。它有時候會用一個聽起來合理、但 repo 裡根本沒有的名字——關卡會跑一輪語法檢查、把這種「憑空捏的接點」拒收。
+- 你已經每天用 Claude Code / Codex / 其他 AI coding 工具改 repo。
+- 你的 repo 已經有架構、命名、helper、測試和約定。
+- 你在意 AI 不要把一個小需求擴成一串旁支。
+- 你常遇到「功能有做完，但 diff 看起來很不對」。
 
-- **被否決的方向留到下次**。下個 session 一開始 AI 就看到上次否決過哪些方向。
+不太適合：
 
-- **超出走廊的 product-code edit 會被擋**。如果真的有新 evidence，先更新走廊再做；如果只是順手多改，就縮回來。其他成本訊號（touched files、新檔、API 變動）會列出來給你看。
-
-- **commit message 會自動附上 Slime evidence**。每次 commit 時，它會把 corridor id、scope、semantic delta、allowed paths、touched files、走廊外檔案數、新依賴和驗證方式寫進 commit message，讓之後 review 時看得到「這個 diff 為什麼沒有亂長」。
-
-→ 機制細節：[`docs/DESIGN.md`](docs/DESIGN.md)
+- 一次性試作品。
+- 你就是想讓 AI 大幅重構。
+- 專案沒有測試、沒有型別檢查，也不在意檔案邊界。
 
 ## 怎麼用？
 
-每個你想用它的專案，各跑一次安裝：
+每個要套 Slime Coding 的專案，各跑一次：
 
 ```bash
 git clone <這個 repo> ~/slime-coding
@@ -52,19 +56,29 @@ cd /你的專案
 ~/slime-coding/install.sh .
 ```
 
-它會把關卡接上、把指令連好，也會安裝一個 Git `prepare-commit-msg` hook，讓 commit message 自動帶 Slime evidence。需要 `python3` 跟 `git`。安裝會備份你原本的設定、可以重跑、不會壞。
+安裝會做幾件事：
 
-最後手動一步：把 `templates/CLAUDE.slime.md` 的內容貼進你專案的 `CLAUDE.md`，這樣 AI 才知道紀律寫在哪。
+- 把 Claude 的自動關卡接進 `.claude/settings.json`。
+- 裝 `/slime-corridor` 和 `/slime-prune` 指令。
+- 建立 `.slime/corridor.md` 和 `.slime/PRUNED.md` 範本。
+- 接上 Git commit hook，讓 commit message 自動帶證據。
 
-## 目前驗證到哪？
+需要 `python3` 和 `git`。安裝可以重跑，會備份既有設定。
 
-還在實驗階段。
+最後手動一步：把 [`templates/CLAUDE.slime.md`](templates/CLAUDE.slime.md) 的內容貼進你專案的 `CLAUDE.md`，讓 AI 知道這套規則怎麼用。
 
-**機制層**：hook 在它宣稱要觸發的 git 事實上會觸發（沒走廊就擋編輯、新增依賴就擋收工、type checker 紅燈就擋收工），安裝可重跑、不壞既有設定。自動測試與 CI 用來守住這一層。
+## Benchmark 怎麼看？
 
-**效果層（裝了 Slime，AI 真的會降低語義位移嗎？）**：現在有一組可公開、但只算方向性的 benchmark。LOC 只是可見代理指標；真正目標是更少 touched surface、更少新概念、更少依賴/API 位移、更少走廊外改動。
+這不是「AI coding 已被解決」的證明，只是一個時間點快照：在同一批任務上，裝 Slime Coding 之後，AI 有沒有更少漂移。
 
-2026-06-29，用 Ponytail-derived task pool 跑 Claude Haiku：19 題，`baseline` / `ponytail` / `slime-coding` 三組，每題每組 4 次，共 228 個有效樣本。這是一個 dated snapshot：模型、Claude Code harness、Ponytail、Slime Coding 和題庫都可能隨時間漂移，數字不應被讀成穩定常數。429 額度失敗與 timeout 樣本已重跑；`slime-coding` 欄位使用目前預設的 strict corridor 版本。
+2026-06-29，用 Ponytail-derived task pool 跑 Claude Haiku：
+
+- 19 題
+- `baseline` / `ponytail` / `slime-coding` 三組
+- 每題每組 4 次
+- 共 228 個有效樣本
+- 429 額度失敗與跑太久中斷的樣本已重跑
+- `slime-coding` 使用目前預設的嚴格版本：範圍外程式碼修改會被擋
 
 | 組別 | 通過率 | touched files | 總 LOC | vs baseline LOC | 平均 cost | 平均 tokens | 平均時間 |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -72,8 +86,35 @@ cd /你的專案
 | ponytail | 72/76 = 94.7% | 147 | 5055 | -12.0% | $0.1047 | 299k | 55.6s |
 | slime-coding | 76/76 = 100.0% | 107 | 4351 | -24.3% | $0.1223 | 478k | 76.6s |
 
-讀法很簡單：Slime 在這組任務提高通過率、減少 touched files、縮小總 diff，這是「語義位移變小」的外顯代理；代價是更多 token、更多錢、更久時間。Ponytail 更省 token、更快、更便宜；Slime 更保守，改動面更小。完整資料在 [`benchmark/`](benchmark/)。
+直覺讀法：
+
+- Slime Coding 在這批任務通過率最高。
+- 它碰的檔案最少。
+- 它產生的總 LOC 最少。
+- 代價是 token、時間、cost 都比較高。
+
+所以它不是省錢工具，也不是加速工具。它比較像一個保守的防護欄：多花一點思考成本，換比較小的改動面。
+
+完整資料在 [`benchmark/`](benchmark/)。
+
+## 限制
+
+- 它不是安全沙盒。真正的安全邊界還是權限、sandbox、CI、測試和人工 review。
+- 它不能判斷所有設計好壞，只能擋幾個明確事實：範圍外檔案、新套件、紅燈收工、型別檢查失敗。
+- 沒有測試或型別檢查的 repo，效果會打折。
+- 它會增加流程成本。benchmark 也顯示它更耗 token、時間和錢。
+
+如果你要的是「便宜、快、能跑就好」，這不是它的方向。
+
+如果你要的是「AI 可以寫，但不要把每個小需求都擴成一輪大改動」，這就是它想解的問題。
+
+## 更多細節
+
+- 概念說明：[`docs/CONCEPT.md`](docs/CONCEPT.md)
+- 機制設計：[`docs/DESIGN.md`](docs/DESIGN.md)
+- benchmark 原始資料：[`benchmark/`](benchmark/)
+- 變更紀錄：[`CHANGELOG.md`](CHANGELOG.md)
 
 ## License
 
-MIT — 見 [`LICENSE`](LICENSE)。變更紀錄在 [`CHANGELOG.md`](CHANGELOG.md)。
+MIT — 見 [`LICENSE`](LICENSE)。
