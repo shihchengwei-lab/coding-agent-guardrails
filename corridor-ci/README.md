@@ -38,9 +38,8 @@ the PR body.
 
 It checks that:
 
-- The packet has `## What Changed`, `## Why`, `## Paths`, `## Non-goals`,
-  `## Verification`, and `## Risk`.
-- The actual changed files stay inside the declared `## Paths`.
+- The packet includes What Changed, Why, Paths, Non-goals, Verification, and Risk.
+- The actual changed files stay inside the declared Paths section.
 - Dependency manifest changes are blocked unless explicitly allowed.
 - PRs over `max_changed_files` are blocked or warned.
 
