@@ -75,6 +75,50 @@ class CorridorCiTest(unittest.TestCase):
         self.assertFalse(report.ok)
         self.assertIn("review packet is required", report.issues[0])
 
+        markdown = corridor_ci.render_markdown(report)
+        self.assertIn("## Copyable Review Packet", markdown)
+        self.assertIn("# Review Packet:", markdown)
+        self.assertIn("## Paths: auto", markdown)
+
+    def test_paths_auto_heading_uses_changed_files(self):
+        packet = VALID_PACKET.replace(
+            "## Paths\n- frontend/src/components/ui/**\n- frontend/tests/**",
+            "## Paths: auto",
+        )
+
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+            corridor_text=packet,
+            corridor_required=True,
+        )
+
+        self.assertTrue(report.ok)
+        self.assertEqual(
+            report.allowed_paths,
+            [
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+        )
+
+    def test_paths_auto_body_uses_changed_files(self):
+        packet = VALID_PACKET.replace(
+            "## Paths\n- frontend/src/components/ui/**\n- frontend/tests/**",
+            "## Paths\nauto",
+        )
+
+        report = corridor_ci.evaluate(
+            changed_files=["frontend/src/components/ui/rating.tsx"],
+            corridor_text=packet,
+            corridor_required=True,
+        )
+
+        self.assertTrue(report.ok)
+        self.assertEqual(report.allowed_paths, ["frontend/src/components/ui/rating.tsx"])
+
     def test_small_change_without_packet_can_pass(self):
         report = corridor_ci.evaluate(
             changed_files=["README.md"],

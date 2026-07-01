@@ -50,6 +50,26 @@ REVIEW_PACKET_SECTIONS = {
     "Risk": ("risk", "risks"),
 }
 
+COPYABLE_REVIEW_PACKET = """# Review Packet: <short title>
+
+## What Changed
+- 
+
+## Why
+- 
+
+## Non-goals
+- 
+
+## Paths: auto
+
+## Verification
+- 
+
+## Risk
+- 
+"""
+
 
 @dataclass
 class Report:
@@ -94,8 +114,15 @@ def parse_sections(markdown: str | None) -> dict[str, str]:
     for line in markdown.splitlines():
         stripped = line.strip()
         if stripped.startswith("## "):
-            current = normalize_heading(stripped)
+            heading = stripped[3:].strip()
+            inline_value = ""
+            if ":" in heading:
+                heading, inline_value = heading.split(":", 1)
+                inline_value = inline_value.strip()
+            current = normalize_heading(heading)
             sections.setdefault(current, [])
+            if inline_value:
+                sections[current].append(inline_value)
             continue
         if current:
             sections[current].append(line.rstrip())
@@ -160,6 +187,22 @@ def extract_paths(corridor_text: str | None) -> list[str]:
         if raw:
             paths.append(normalize_path(raw))
     return paths
+
+
+def is_paths_auto(value: str) -> bool:
+    cleaned = value.strip().strip("`").lower()
+    if cleaned == "auto":
+        return True
+    lines = [line.strip().strip("`").lower() for line in value.splitlines() if line.strip()]
+    return len(lines) == 1 and lines[0] in {"auto", "- auto", "* auto"}
+
+
+def auto_paths_from_changed_files(changed_files: list[str], always_allowed: list[str]) -> list[str]:
+    return [
+        path
+        for path in changed_files
+        if path and not any(path_matches(path, pattern) for pattern in always_allowed)
+    ]
 
 
 def extract_changed_files(repo: Path, changed_files_arg: str | None, base_ref: str | None) -> list[str]:
@@ -232,6 +275,9 @@ def evaluate(
     warnings: list[str] = []
     always = list(always_allowed or DEFAULT_ALWAYS_ALLOWED)
     deps = [p for p in changed if is_dependency_file(p)]
+    if is_paths_auto(review_packet.get("Paths", "")):
+        allowed_paths = auto_paths_from_changed_files(changed, always)
+
     small_change_fast_path = (
         corridor_required
         and not corridor_text
@@ -279,6 +325,14 @@ def compact_markdown(value: str) -> list[str]:
     return [line.rstrip() for line in value.splitlines() if line.strip()]
 
 
+def should_show_packet_template(report: Report) -> bool:
+    return any(
+        issue.startswith("review packet is required")
+        or issue.startswith("review packet is missing")
+        for issue in report.issues
+    )
+
+
 def render_markdown(report: Report) -> str:
     status = "PASS" if report.ok else "FAIL"
     lines = [
@@ -323,6 +377,13 @@ def render_markdown(report: Report) -> str:
         lines.append("")
         lines.append("## Issues")
         lines.extend(f"- {issue}" for issue in report.issues)
+    if should_show_packet_template(report):
+        lines.append("")
+        lines.append("## Copyable Review Packet")
+        lines.append("")
+        lines.append("```md")
+        lines.extend(COPYABLE_REVIEW_PACKET.splitlines())
+        lines.append("```")
     if report.warnings:
         lines.append("")
         lines.append("## Warnings")

@@ -44,6 +44,9 @@ It checks that:
 - Dependency manifest changes are blocked unless explicitly allowed.
 - PRs over `max_changed_files` are blocked or warned.
 
+If the packet is missing or incomplete, the failure summary includes a copyable
+blank packet.
+
 For tiny fixes, you can set `small_change_max_files` so one-file typo-level PRs
 can pass without a review packet. Dependency manifest changes are still blocked.
 
@@ -84,7 +87,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: shihchengwei-lab/corridor-ci@v4
+      - uses: shihchengwei-lab/corridor-ci@v5
         with:
           mode: warn
           max_changed_files: 12
@@ -93,7 +96,7 @@ jobs:
 After the team is ready:
 
 ```yaml
-      - uses: shihchengwei-lab/corridor-ci@v4
+      - uses: shihchengwei-lab/corridor-ci@v5
         with:
           mode: fail
           small_change_max_files: 1
@@ -102,7 +105,8 @@ After the team is ready:
 
 `v1` remains available for the older scope-only gate. `v2` requires a review
 packet for every PR. `v3` adds the tiny-fix fast path. `v4` uses the neutral
-`.corridor/review-packet.md` file path by default.
+`.corridor/review-packet.md` file path by default. `v5` adds `## Paths: auto`
+and copyable failure templates.
 
 If you do not want typo-level fixes to get stuck, set
 `small_change_max_files`. A PR without a review packet can pass only when the
@@ -128,9 +132,7 @@ Put this in the PR body. If you prefer a committed file, use
 - Do not refactor forms.
 - Do not add dependencies.
 
-## Paths
-- frontend/src/components/ui/**
-- frontend/tests/**
+## Paths: auto
 
 ## Verification
 - Existing frontend tests still pass.
@@ -139,9 +141,18 @@ Put this in the PR body. If you prefer a committed file, use
 - Low: isolated UI component.
 ```
 
-`## Paths` is the hard boundary. The other sections are required because they
-make the PR reviewable without forcing maintainers to reconstruct intent from
-the diff.
+`## Paths: auto` tells Corridor CI to use the actual changed files as the
+declared boundary. If you prefer a hand-written boundary, use `## Paths` with
+glob patterns:
+
+```md
+## Paths
+- frontend/src/components/ui/**
+- frontend/tests/**
+```
+
+The other sections are required because they make the PR reviewable without
+forcing maintainers to reconstruct intent from the diff.
 
 The CI summary then gives maintainers a compact packet:
 
