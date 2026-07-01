@@ -196,12 +196,24 @@ class CorridorCiTest(unittest.TestCase):
         self.assertEqual(corridor_ci.exit_code(report, mode="fail"), 1)
 
     def test_cli_defaults_to_warn_mode(self):
-        old_input_mode = os.environ.pop("INPUT_MODE", None)
-        try:
-            code = corridor_ci.main(["--repo", "."])
-        finally:
-            if old_input_mode is not None:
-                os.environ["INPUT_MODE"] = old_input_mode
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init", "-b", "main"], cwd=root, check=True, capture_output=True, text=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
+            (root / "README.md").write_text("initial\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-m", "initial"], cwd=root, check=True, capture_output=True, text=True)
+
+            old_input_mode = os.environ.pop("INPUT_MODE", None)
+            old_base_ref = os.environ.pop("GITHUB_BASE_REF", None)
+            try:
+                code = corridor_ci.main(["--repo", str(root)])
+            finally:
+                if old_input_mode is not None:
+                    os.environ["INPUT_MODE"] = old_input_mode
+                if old_base_ref is not None:
+                    os.environ["GITHUB_BASE_REF"] = old_base_ref
 
         self.assertEqual(code, 0)
 
