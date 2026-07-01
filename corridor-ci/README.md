@@ -72,7 +72,8 @@ tiny no-packet fixes through `small_change_max_files`.
 If you do not want typo-level fixes to get stuck, set
 `small_change_max_files`. A PR without a review packet can pass only when the
 changed-file count is at or below that value and it does not touch dependency
-manifests. Larger changes still need the review packet.
+manifests. Larger changes still need the review packet, so this is only for
+low-friction fixes.
 
 ## Review Packet Format
 
