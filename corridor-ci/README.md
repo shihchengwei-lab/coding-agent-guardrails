@@ -4,75 +4,24 @@
 
 Maintainers are getting buried by low-context PRs.
 
-AI-assisted PRs are not automatically bad. The problem is a PR that takes less
-effort to submit than it takes to understand: too many files, unclear scope,
-surprise dependencies, and no obvious stop condition. Review time gets spent
-reconstructing what the PR was supposed to do.
+Corridor CI is a small GitHub Action that asks a PR to declare its review
+boundary before maintainer review:
 
-Corridor CI moves that work back to the PR author.
+```md
+Decision: #123 or small fix
+Scope: auto
+Review first: path/to/file
+Verified: make test
+Risk: none
+```
 
-It is not an AI detector, a spam score, or an AI reviewer. It asks two narrower
-questions:
+Then it checks the actual diff against that boundary.
 
-> Did the PR give maintainers a review boundary?
-> Did the actual diff stay inside that declared boundary?
+It is not an AI detector, a spam score, or an AI reviewer. It does not care who
+wrote the code. It only asks:
 
-The point is intentional friction. For non-trivial PRs, the scope work should
-happen before maintainer review, not inside maintainer review.
-
-## What It Looks Like
-
-Big PRs must explain themselves. Tiny fixes still pass.
-
-**Larger change: review packet summary**
-
-<img src="docs/assets/review-packet-summary.jpeg" alt="Corridor CI review packet summary showing what changed, why, verification, risk, declared paths, and touched files." width="720">
-
-**Tiny fix: no packet needed**
-
-<img src="docs/assets/small-change-fast-path.png" alt="Corridor CI passing a one-file README change through the small-change fast path without a packet or handoff." width="720">
-
-## What It Checks
-
-For normal PRs, Corridor CI expects either a review packet or a compact review
-handoff in `.corridor/review-packet.md` or the PR body.
-
-It checks that:
-
-- The default packet includes What Changed, Why, Paths, Non-goals,
-  Verification, and Risk.
-- The compact handoff includes Decision, Scope, Review first, Verified, and Risk.
-- The actual changed files stay inside the declared boundary.
-- Dependency manifest changes are blocked unless explicitly allowed.
-- PRs over `max_changed_files` are blocked or warned.
-
-If the packet or handoff is missing or incomplete, the failure summary includes a
-copyable blank template.
-
-For tiny fixes, you can set `small_change_max_files` so one-file typo-level PRs
-can pass without a packet or handoff. Dependency manifest changes are still
-blocked.
-
-Every run writes a compact GitHub step summary for maintainers.
-
-It does not auto-close PRs. Start in `warn` mode, then switch to `fail` when the
-policy is accepted by the project.
-
-## Where It Fits
-
-Corridor CI is a review-boundary gate.
-
-It is intentionally smaller than most AI-era PR tools:
-
-| tool type | what it does | how Corridor CI differs |
-|---|---|---|
-| AI reviewers | Review or summarize code with another model. | No model, no token cost, no generated review comments. |
-| Anti-spam gates | Score suspicious contributors or AI-looking PRs. | Does not judge the author or decide whether AI was used. |
-| PR templates | Ask contributors to fill in context. | Fails or warns when the required context is missing. |
-| Policy engines | Let teams write custom approval rules. | Ships one narrow rule: explain the review boundary, then stay inside it. |
-
-Use Corridor CI when you want a low-friction first gate before maintainer review,
-not a full anti-spam system.
+> Did the PR say what should be reviewed?
+> Did the diff stay inside that scope?
 
 ## Quick Start
 
@@ -93,67 +42,14 @@ jobs:
       - uses: shihchengwei-lab/corridor-ci@v7
         with:
           mode: warn
-          max_changed_files: 12
-```
-
-After the team is ready:
-
-```yaml
-      - uses: shihchengwei-lab/corridor-ci@v7
-        with:
-          mode: fail
           small_change_max_files: 1
           max_changed_files: 12
 ```
 
-`v1` remains available for the older scope-only gate. `v2` requires a review
-packet for every PR. `v3` adds the tiny-fix fast path. `v4` uses the neutral
-`.corridor/review-packet.md` file path by default. `v5` adds `Paths: auto`
-and copyable failure templates. `v6` defaults to `warn` mode. `v7` adds the
-compact handoff profile.
+Start with `mode: warn`. Switch to `mode: fail` after the project accepts the
+rule.
 
-If you do not want typo-level fixes to get stuck, set
-`small_change_max_files`. A PR without a packet or handoff can pass only when the
-changed-file count is at or below that value and it does not touch dependency
-manifests. Larger changes still need a declared review boundary, so this is only for
-low-friction fixes.
-
-## Profiles
-
-Corridor CI has two profiles.
-
-Use the default `packet` profile when the PR needs enough context to review
-without opening a separate issue:
-
-```md
-# Review Packet: rating-widget
-
-## What Changed
-- Add a controlled rating input.
-
-## Why
-- The app needs a reusable rating control.
-
-## Non-goals
-- Do not refactor forms.
-
-## Paths: auto
-
-## Verification
-- Existing frontend tests still pass.
-
-## Risk
-- Low: isolated UI component.
-```
-
-Use `compact` for issue-first projects that want less PR text and more review
-routing:
-
-```yaml
-      - uses: shihchengwei-lab/corridor-ci@v7
-        with:
-          profile: compact
-```
+Add this to the PR body:
 
 ```md
 Decision: #123
@@ -163,95 +59,41 @@ Verified: make test
 Risk: none
 ```
 
-In compact mode, `Decision` can point to an issue, discussion, RFC, spec, bug
-reproduction, maintainer request, or small self-contained fix. `Scope: auto`
-uses the actual changed files as the boundary, and `Review first` must be one of
-the changed files.
+`Decision` can be an issue, discussion, RFC, spec, bug reproduction, maintainer
+request, or small self-contained fix.
 
-## Review Packet Format
+`Scope: auto` uses the actual changed files as the declared boundary.
 
-Put this in the PR body. If you prefer a committed file, use
-`.corridor/review-packet.md`:
+`Review first` must be one of the changed files.
 
-```md
-# Review Packet: rating-widget
+## What It Checks
 
-## What Changed
-- Add a controlled rating input.
+- Required handoff fields exist.
+- Changed files stay inside `Scope`.
+- `Review first` points to a changed file.
+- Dependency manifest changes are blocked unless explicitly allowed.
+- PRs over `max_changed_files` are blocked or warned.
+- Tiny PRs can skip the handoff when `small_change_max_files` allows it.
 
-## Why
-- The app needs a reusable rating control.
+If the handoff is missing or incomplete, the CI summary includes a copyable blank
+handoff.
 
-## Non-goals
-- Do not refactor forms.
-- Do not add dependencies.
-
-## Paths: auto
-
-## Verification
-- Existing frontend tests still pass.
-
-## Risk
-- Low: isolated UI component.
-```
-
-`Paths: auto` tells Corridor CI to use the actual changed files as the declared
-boundary. If you prefer a hand-written boundary, use a `Paths` section with glob
-patterns:
-
-```md
-## Paths
-- frontend/src/components/ui/**
-- frontend/tests/**
-```
-
-The other sections are required because they make the PR reviewable without
-forcing maintainers to reconstruct intent from the diff.
-
-The CI summary then gives maintainers a compact packet:
-
-```md
-## Review Packet
-
-### What Changed
-- Add a controlled rating input.
-
-### Why
-- The app needs a reusable rating control.
-
-### Verification
-- Existing frontend tests still pass.
-
-### Risk
-- Low: isolated UI component.
-
-## Touched Files
-- frontend/src/components/ui/rating.tsx
-- frontend/tests/rating.spec.ts
-```
+Every run writes a GitHub step summary for maintainers.
 
 ## Inputs
 
 | input | default | meaning |
 |---|---:|---|
 | `mode` | `warn` | `fail` exits non-zero on issues; `warn` only reports. |
-| `profile` | `packet` | `packet` requires a review packet; `compact` requires a short review handoff. |
-| `source` | `auto` | `auto`, `file`, or `body`. Auto checks file first, then PR body. |
-| `corridor_file` | `.corridor/review-packet.md` | File to read when using file source. |
-| `corridor_required` | `true` | Require a corridor. |
-| `allow_dependencies` | `false` | Allow dependency manifest changes. |
+| `small_change_max_files` | `0` | Allow no-handoff small changes up to this file count. `0` disables it. |
 | `max_changed_files` | `0` | Optional changed-file limit. `0` disables it. |
-| `small_change_max_files` | `0` | Allow no-packet small changes up to this file count. `0` disables it. |
-| `base_ref` | empty | Git diff base ref. Defaults to the pull request base branch. |
-| `changed_files` | empty | Optional comma/newline changed-file list. Use `@path` to read a list file. |
 
 ## Philosophy
 
-This is the receiving-side half of agent discipline.
+Corridor CI is a receiving-side gate.
 
-Author-side rules help contributors keep their change scoped while they write
-code. Corridor CI is the receiving-side gate: it helps maintainers reject
-unclear scope before review.
+It does not decide whether a PR is good. It makes the author state the review
+boundary before asking a maintainer to spend attention.
 
 The rule is simple:
 

@@ -9,22 +9,6 @@ inputs:
     description: "fail blocks the check; warn only writes the report."
     required: false
     default: warn
-  profile:
-    description: "Validation profile: packet or compact."
-    required: false
-    default: packet
-  source:
-    description: "Where to read the corridor from: auto, file, or body."
-    required: false
-    default: auto
-  corridor_file:
-    description: "Corridor file path when source is auto or file."
-    required: false
-    default: .corridor/review-packet.md
-  corridor_required:
-    description: "Whether a review boundary is required."
-    required: false
-    default: "true"
   allow_dependencies:
     description: "Whether dependency manifest changes are allowed."
     required: false
@@ -34,17 +18,9 @@ inputs:
     required: false
     default: "0"
   small_change_max_files:
-    description: "Allow PRs without a packet or handoff when changed-file count is at or below this value. Set 0 to disable."
+    description: "Allow PRs without a handoff when changed-file count is at or below this value. Set 0 to disable."
     required: false
     default: "0"
-  base_ref:
-    description: "Base ref for git diff. Defaults to the pull request base branch."
-    required: false
-    default: ""
-  changed_files:
-    description: "Optional newline/comma-delimited changed-file list. Use @path to read a list file."
-    required: false
-    default: ""
 
 runs:
   using: composite
@@ -53,13 +29,7 @@ runs:
       shell: bash
       env:
         INPUT_MODE: ${{ inputs.mode }}
-        INPUT_PROFILE: ${{ inputs.profile }}
-        INPUT_SOURCE: ${{ inputs.source }}
-        INPUT_CORRIDOR_FILE: ${{ inputs.corridor_file }}
-        INPUT_CORRIDOR_REQUIRED: ${{ inputs.corridor_required }}
         INPUT_ALLOW_DEPENDENCIES: ${{ inputs.allow_dependencies }}
         INPUT_MAX_CHANGED_FILES: ${{ inputs.max_changed_files }}
         INPUT_SMALL_CHANGE_MAX_FILES: ${{ inputs.small_change_max_files }}
-        INPUT_BASE_REF: ${{ inputs.base_ref }}
-        INPUT_CHANGED_FILES: ${{ inputs.changed_files }}
       run: python "$GITHUB_ACTION_PATH/bin/corridor_ci.py"
