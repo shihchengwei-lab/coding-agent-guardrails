@@ -9,10 +9,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bin"))
 import corridor_ci
 
 
-VALID_CORRIDOR = """# Corridor: rating-widget
+VALID_PACKET = """# Review Packet: rating-widget
 
-## Semantic Delta
+## What Changed
 - Add a controlled rating input.
+
+## Why
+- The app needs a reusable rating control.
 
 ## Non-goals
 - Do not refactor forms or add dependencies.
@@ -21,8 +24,11 @@ VALID_CORRIDOR = """# Corridor: rating-widget
 - frontend/src/components/ui/**
 - frontend/tests/**
 
-## Stop Condition
+## Verification
 - Existing frontend tests still pass.
+
+## Risk
+- Low: isolated UI component.
 """
 
 
@@ -35,7 +41,7 @@ class CorridorCiTest(unittest.TestCase):
         )
 
         self.assertFalse(report.ok)
-        self.assertIn("corridor is required", report.issues[0])
+        self.assertIn("review packet is required", report.issues[0])
 
     def test_changed_files_must_stay_inside_declared_paths(self):
         report = corridor_ci.evaluate(
@@ -44,7 +50,7 @@ class CorridorCiTest(unittest.TestCase):
                 "frontend/src/components/ui/rating.tsx",
                 "frontend/src/routes/admin.tsx",
             ],
-            corridor_text=VALID_CORRIDOR,
+            corridor_text=VALID_PACKET,
             corridor_required=True,
         )
 
@@ -58,7 +64,10 @@ class CorridorCiTest(unittest.TestCase):
                 "frontend/src/components/ui/rating.tsx",
                 "frontend/package.json",
             ],
-            corridor_text=VALID_CORRIDOR + "\n- frontend/package.json\n",
+            corridor_text=VALID_PACKET.replace(
+                "- frontend/tests/**",
+                "- frontend/tests/**\n- frontend/package.json",
+            ),
             corridor_required=True,
             allow_dependencies=False,
         )
@@ -66,10 +75,45 @@ class CorridorCiTest(unittest.TestCase):
         self.assertFalse(report.ok)
         self.assertIn("dependency manifest changed", "\n".join(report.issues))
 
+    def test_missing_review_packet_field_fails(self):
+        incomplete = VALID_PACKET.replace(
+            "## Why\n- The app needs a reusable rating control.\n\n",
+            "",
+        )
+
+        report = corridor_ci.evaluate(
+            changed_files=["frontend/src/components/ui/rating.tsx"],
+            corridor_text=incomplete,
+            corridor_required=True,
+        )
+
+        self.assertFalse(report.ok)
+        self.assertIn("review packet is missing `## Why`", "\n".join(report.issues))
+
+    def test_summary_includes_review_packet_and_changed_files(self):
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+            corridor_text=VALID_PACKET,
+            corridor_required=True,
+        )
+
+        markdown = corridor_ci.render_markdown(report)
+
+        self.assertTrue(report.ok)
+        self.assertIn("## Review Packet", markdown)
+        self.assertIn("### What Changed", markdown)
+        self.assertIn("Add a controlled rating input", markdown)
+        self.assertIn("frontend/src/components/ui/rating.tsx", markdown)
+        self.assertIn("### Verification", markdown)
+        self.assertIn("### Risk", markdown)
+
     def test_warn_mode_does_not_fail_process(self):
         report = corridor_ci.evaluate(
             changed_files=["frontend/src/routes/admin.tsx"],
-            corridor_text=VALID_CORRIDOR,
+            corridor_text=VALID_PACKET,
             corridor_required=True,
         )
 
@@ -81,7 +125,7 @@ class CorridorCiTest(unittest.TestCase):
             root = Path(tmp)
             corridor = root / ".slime" / "corridor.md"
             corridor.parent.mkdir()
-            corridor.write_text(VALID_CORRIDOR, encoding="utf-8")
+            corridor.write_text(VALID_PACKET, encoding="utf-8")
             changed = root / "changed.txt"
             changed.write_text("frontend/src/components/ui/rating.tsx\n", encoding="utf-8")
 

@@ -38,12 +38,24 @@ DEFAULT_ALWAYS_ALLOWED = (
     ".slime/PRUNED.md",
 )
 
+REVIEW_PACKET_SECTIONS = {
+    "What Changed": ("what changed", "semantic delta"),
+    "Why": ("why",),
+    "Paths": ("paths", "allowed paths"),
+    "Non-goals": ("non-goals", "non goals", "non-goals / out of scope"),
+    "Verification": ("verification", "stop condition"),
+    "Risk": ("risk", "risks"),
+}
+
 
 @dataclass
 class Report:
     ok: bool
     changed_files: list[str]
     allowed_paths: list[str]
+    review_packet: dict[str, str]
+    outside_files: list[str]
+    dependency_files: list[str]
     issues: list[str]
     warnings: list[str]
 
@@ -62,6 +74,42 @@ def read_text(path: Path) -> str | None:
     if not path.exists():
         return None
     return path.read_text(encoding="utf-8", errors="ignore")
+
+def normalize_heading(text: str) -> str:
+    return " ".join(text.strip().strip("#").strip().lower().replace("_", " ").split())
+
+
+def parse_sections(markdown: str | None) -> dict[str, str]:
+    if not markdown:
+        return {}
+
+    sections: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            current = normalize_heading(stripped)
+            sections.setdefault(current, [])
+            continue
+        if current:
+            sections[current].append(line.rstrip())
+    return {heading: "\n".join(lines).strip() for heading, lines in sections.items()}
+
+
+def section_value(sections: dict[str, str], aliases: tuple[str, ...]) -> str:
+    for alias in aliases:
+        value = sections.get(normalize_heading(alias), "")
+        if value.strip():
+            return value.strip()
+    return ""
+
+
+def extract_review_packet(corridor_text: str | None) -> dict[str, str]:
+    sections = parse_sections(corridor_text)
+    return {
+        label: section_value(sections, aliases)
+        for label, aliases in REVIEW_PACKET_SECTIONS.items()
+    }
 
 
 def find_pr_body() -> str | None:
@@ -87,20 +135,14 @@ def load_corridor(repo: Path, corridor_file: str, source: str) -> str | None:
 
 
 def extract_paths(corridor_text: str | None) -> list[str]:
-    if not corridor_text:
+    sections = parse_sections(corridor_text)
+    paths_text = section_value(sections, REVIEW_PACKET_SECTIONS["Paths"])
+    if not paths_text:
         return []
 
-    lines = corridor_text.splitlines()
-    in_paths = False
     paths: list[str] = []
-    for line in lines:
+    for line in paths_text.splitlines():
         stripped = line.strip()
-        if stripped.startswith("## "):
-            heading = stripped.lstrip("#").strip().lower()
-            in_paths = heading == "paths"
-            continue
-        if not in_paths:
-            continue
         if not stripped or not stripped.startswith(("-", "*")):
             continue
         raw = stripped[1:].strip().strip("`")
@@ -173,18 +215,22 @@ def evaluate(
 ) -> Report:
     changed = [normalize_path(p) for p in changed_files if normalize_path(p)]
     allowed_paths = extract_paths(corridor_text)
+    review_packet = extract_review_packet(corridor_text)
     issues: list[str] = []
     warnings: list[str] = []
     always = list(always_allowed or DEFAULT_ALWAYS_ALLOWED)
 
     if corridor_required and not corridor_text:
-        issues.append("corridor is required, but no corridor text was found")
-    elif corridor_text and not allowed_paths:
-        issues.append("corridor is present, but it has no `## Paths` entries")
+        issues.append("review packet is required, but no corridor text was found")
+    elif corridor_text:
+        for label, value in review_packet.items():
+            if not value:
+                issues.append(f"review packet is missing `## {label}`")
 
     if max_changed_files > 0 and len(changed) > max_changed_files:
         issues.append(f"changed file count is {len(changed)}, above max_changed_files={max_changed_files}")
 
+    outside: list[str] = []
     if allowed_paths:
         outside = [p for p in changed if not is_allowed(p, allowed_paths, always)]
         if outside:
@@ -194,11 +240,20 @@ def evaluate(
     if deps and not allow_dependencies:
         issues.append("dependency manifest changed without allow_dependencies=true: " + ", ".join(deps))
 
-    for section in ("## Semantic Delta", "## Non-goals", "## Stop Condition"):
-        if corridor_text and section.lower() not in corridor_text.lower():
-            warnings.append(f"corridor is missing `{section}`")
+    return Report(
+        ok=not issues,
+        changed_files=changed,
+        allowed_paths=allowed_paths,
+        review_packet=review_packet,
+        outside_files=outside,
+        dependency_files=deps,
+        issues=issues,
+        warnings=warnings,
+    )
 
-    return Report(ok=not issues, changed_files=changed, allowed_paths=allowed_paths, issues=issues, warnings=warnings)
+
+def compact_markdown(value: str) -> list[str]:
+    return [line.rstrip() for line in value.splitlines() if line.strip()]
 
 
 def render_markdown(report: Report) -> str:
@@ -209,10 +264,38 @@ def render_markdown(report: Report) -> str:
         f"- changed files: {len(report.changed_files)}",
         f"- corridor paths: {len(report.allowed_paths)}",
     ]
+
+    if any(report.review_packet.values()):
+        lines.append("")
+        lines.append("## Review Packet")
+        for label in ("What Changed", "Why", "Verification", "Risk"):
+            value = report.review_packet.get(label, "")
+            if not value:
+                continue
+            lines.append("")
+            lines.append(f"### {label}")
+            lines.extend(compact_markdown(value))
+
     if report.allowed_paths:
         lines.append("")
         lines.append("## Declared Paths")
         lines.extend(f"- `{p}`" for p in report.allowed_paths)
+
+    if report.changed_files:
+        lines.append("")
+        lines.append("## Touched Files")
+        lines.extend(f"- `{p}`" for p in report.changed_files)
+
+    if report.outside_files:
+        lines.append("")
+        lines.append("## Out Of Corridor")
+        lines.extend(f"- `{p}`" for p in report.outside_files)
+
+    if report.dependency_files:
+        lines.append("")
+        lines.append("## Dependency Changes")
+        lines.extend(f"- `{p}`" for p in report.dependency_files)
+
     if report.issues:
         lines.append("")
         lines.append("## Issues")

@@ -1,7 +1,10 @@
-# Corridor: rating-widget
+# Review Packet: rating-widget
 
-## Semantic Delta
+## What Changed
 - Add a controlled rating input.
+
+## Why
+- The app needs a reusable rating control.
 
 ## Non-goals
 - Do not refactor form state management.
@@ -11,5 +14,8 @@
 - frontend/src/components/ui/**
 - frontend/tests/**
 
-## Stop Condition
+## Verification
 - Existing frontend tests still pass.
+
+## Risk
+- Low: isolated UI component.

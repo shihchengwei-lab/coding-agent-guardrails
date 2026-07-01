@@ -10,22 +10,24 @@ Review time gets spent reconstructing what the PR was supposed to do.
 
 Corridor CI moves that work back to the PR author.
 
-It does not try to detect whether a PR was written by an AI. It asks a more
-useful question:
+It does not try to detect whether a PR was written by an AI. It asks two more
+useful questions:
 
-> Did the PR declare what it is allowed to change, and did it stay inside that
-> boundary?
+> Did the PR give maintainers a review packet?
+> Did the actual diff stay inside that declared boundary?
 
 The point is intentional friction. If someone sends a PR with an agent, the
 scope work should happen before maintainer review, not inside maintainer review.
 
 ## What It Checks
 
-- A corridor exists, either in `.slime/corridor.md` or the PR body.
-- The corridor has a `## Paths` section.
+- A review packet exists, either in `.slime/corridor.md` or the PR body.
+- The packet has `## What Changed`, `## Why`, `## Paths`, `## Non-goals`,
+  `## Verification`, and `## Risk`.
 - Changed files stay inside those declared paths.
 - Dependency manifest changes are blocked by default.
 - Optional: PRs that touch too many files are blocked or warned.
+- The GitHub step summary gives maintainers a compact review summary.
 
 It does not auto-close PRs. Start in `warn` mode, then switch to `fail` when the
 policy is accepted by the project.
@@ -46,7 +48,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: shihchengwei-lab/corridor-ci@v1
+      - uses: shihchengwei-lab/corridor-ci@v2
         with:
           mode: warn
           max_changed_files: 12
@@ -55,21 +57,28 @@ jobs:
 After the team is ready:
 
 ```yaml
-      - uses: shihchengwei-lab/corridor-ci@v1
+      - uses: shihchengwei-lab/corridor-ci@v2
         with:
           mode: fail
           max_changed_files: 12
 ```
 
-## Corridor Format
+`v1` remains available for the older scope-only gate. `v2` requires a review
+packet because the goal is to reduce maintainer review cost, not just warn about
+missing scope.
+
+## Review Packet Format
 
 Put this in `.slime/corridor.md`, or paste the same sections into the PR body:
 
 ```md
-# Corridor: rating-widget
+# Review Packet: rating-widget
 
-## Semantic Delta
+## What Changed
 - Add a controlled rating input.
+
+## Why
+- The app needs a reusable rating control.
 
 ## Non-goals
 - Do not refactor forms.
@@ -79,12 +88,38 @@ Put this in `.slime/corridor.md`, or paste the same sections into the PR body:
 - frontend/src/components/ui/**
 - frontend/tests/**
 
-## Stop Condition
+## Verification
 - Existing frontend tests still pass.
+
+## Risk
+- Low: isolated UI component.
 ```
 
-`## Paths` is the hard part. The other sections are reported as warnings when
-missing because they make the PR easier to review.
+`## Paths` is the hard boundary. The other sections are required because they
+make the PR reviewable without forcing maintainers to reconstruct intent from
+the diff.
+
+The CI summary then gives maintainers a compact packet:
+
+```md
+## Review Packet
+
+### What Changed
+- Add a controlled rating input.
+
+### Why
+- The app needs a reusable rating control.
+
+### Verification
+- Existing frontend tests still pass.
+
+### Risk
+- Low: isolated UI component.
+
+## Touched Files
+- frontend/src/components/ui/rating.tsx
+- frontend/tests/rating.spec.ts
+```
 
 ## Inputs
 

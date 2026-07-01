@@ -11,7 +11,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: shihchengwei-lab/corridor-ci@v1
+      - uses: shihchengwei-lab/corridor-ci@v2
         with:
           mode: warn
           max_changed_files: 12

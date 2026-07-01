@@ -1,5 +1,5 @@
 name: Corridor CI
-description: Require AI-generated PRs to declare scope before maintainer review.
+description: Require AI-generated PRs to provide a review packet before maintainer review.
 branding:
   icon: git-pull-request
   color: green
@@ -18,7 +18,7 @@ inputs:
     required: false
     default: .slime/corridor.md
   corridor_required:
-    description: "Whether a corridor is required."
+    description: "Whether a review packet/corridor is required."
     required: false
     default: "true"
   allow_dependencies:
