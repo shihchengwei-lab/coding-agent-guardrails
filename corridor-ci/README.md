@@ -19,6 +19,18 @@ useful questions:
 The point is intentional friction. If someone sends a PR with an agent, the
 scope work should happen before maintainer review, not inside maintainer review.
 
+## What It Looks Like
+
+Big PRs must explain themselves. Tiny fixes still pass.
+
+**Larger change: review packet summary**
+
+<img src="docs/assets/review-packet-summary.jpeg" alt="Corridor CI review packet summary showing what changed, why, verification, risk, declared paths, and touched files." width="720">
+
+**Tiny fix: no packet needed**
+
+<img src="docs/assets/small-change-fast-path.png" alt="Corridor CI passing a one-file README change through the small-change fast path without a review packet." width="720">
+
 ## What It Checks
 
 - A review packet exists, either in `.slime/corridor.md` or the PR body.
