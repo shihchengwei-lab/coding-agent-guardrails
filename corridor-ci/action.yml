@@ -8,7 +8,7 @@ inputs:
   mode:
     description: "fail blocks the check; warn only writes the report."
     required: false
-    default: fail
+    default: warn
   source:
     description: "Where to read the corridor from: auto, file, or body."
     required: false

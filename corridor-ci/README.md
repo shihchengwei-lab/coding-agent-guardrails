@@ -87,7 +87,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: shihchengwei-lab/corridor-ci@v5
+      - uses: shihchengwei-lab/corridor-ci@v6
         with:
           mode: warn
           max_changed_files: 12
@@ -96,7 +96,7 @@ jobs:
 After the team is ready:
 
 ```yaml
-      - uses: shihchengwei-lab/corridor-ci@v5
+      - uses: shihchengwei-lab/corridor-ci@v6
         with:
           mode: fail
           small_change_max_files: 1
@@ -106,7 +106,7 @@ After the team is ready:
 `v1` remains available for the older scope-only gate. `v2` requires a review
 packet for every PR. `v3` adds the tiny-fix fast path. `v4` uses the neutral
 `.corridor/review-packet.md` file path by default. `v5` adds `Paths: auto`
-and copyable failure templates.
+and copyable failure templates. `v6` defaults to `warn` mode.
 
 If you do not want typo-level fixes to get stuck, set
 `small_change_max_files`. A PR without a review packet can pass only when the
@@ -180,7 +180,7 @@ The CI summary then gives maintainers a compact packet:
 
 | input | default | meaning |
 |---|---:|---|
-| `mode` | `fail` | `fail` exits non-zero on issues; `warn` only reports. |
+| `mode` | `warn` | `fail` exits non-zero on issues; `warn` only reports. |
 | `source` | `auto` | `auto`, `file`, or `body`. Auto checks file first, then PR body. |
 | `corridor_file` | `.corridor/review-packet.md` | File to read when using file source. |
 | `corridor_required` | `true` | Require a corridor. |

@@ -261,6 +261,25 @@ class CorridorCiTest(unittest.TestCase):
         self.assertEqual(corridor_ci.exit_code(report, mode="warn"), 0)
         self.assertEqual(corridor_ci.exit_code(report, mode="fail"), 1)
 
+    def test_cli_defaults_to_warn_mode(self):
+        old_input_mode = os.environ.pop("INPUT_MODE", None)
+        try:
+            code = corridor_ci.main(
+                [
+                    "--repo",
+                    ".",
+                    "--source",
+                    "body",
+                    "--changed-files",
+                    "frontend/src/routes/admin.tsx",
+                ]
+            )
+        finally:
+            if old_input_mode is not None:
+                os.environ["INPUT_MODE"] = old_input_mode
+
+        self.assertEqual(code, 0)
+
     def test_cli_reads_changed_files_from_argument_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -407,7 +407,7 @@ def write_step_summary(markdown: str) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Validate a PR against a declared corridor.")
     parser.add_argument("--repo", default=".", help="repository checkout path")
-    parser.add_argument("--mode", choices=("fail", "warn"), default=os.environ.get("INPUT_MODE", "fail"))
+    parser.add_argument("--mode", choices=("fail", "warn"), default=os.environ.get("INPUT_MODE", "warn"))
     parser.add_argument("--source", choices=("auto", "file", "body"), default=os.environ.get("INPUT_SOURCE", "auto"))
     parser.add_argument("--corridor-file", default=os.environ.get("INPUT_CORRIDOR_FILE", DEFAULT_CORRIDOR_FILE))
     parser.add_argument("--corridor-required", default=os.environ.get("INPUT_CORRIDOR_REQUIRED", "true"))
