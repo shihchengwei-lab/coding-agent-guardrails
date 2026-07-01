@@ -2,26 +2,33 @@
 
 **No scope, no review.**
 
-Maintainers are getting buried by low-context PRs.
+Maintainers do not need every PR description to be longer. A PR can be vague or
+verbose and still leave the same problem: where should review start, and did
+the diff stay in bounds?
 
-Corridor CI is a small GitHub Action that asks a PR to declare its review
-boundary before maintainer review:
+Corridor CI is a small GitHub Action that asks a non-trivial PR to leave five
+short review lines before maintainer attention:
 
 ```md
-Decision: #123 or small fix
+Decision: #123
 Scope: auto
 Review first: path/to/file
 Verified: make test
 Risk: none
 ```
 
-Then it checks the actual diff against that boundary.
+`Decision` points to where the why already lives: an issue, discussion, RFC,
+spec, bug reproduction, maintainer request, or a clearly small fix. `Scope`
+says where the diff is allowed to move. Corridor CI then checks the actual diff
+against that boundary.
 
 It is not an AI detector, a spam score, or an AI reviewer. It does not care who
 wrote the code. It only asks:
 
-> Did the PR say what should be reviewed?
-> Did the diff stay inside that scope?
+> Did the PR give maintainers a review entry point?
+> Did the actual diff stay inside the declared scope?
+
+![Before and after Corridor CI review handoff](docs/assets/corridor-ci-before-after.svg)
 
 ## Quick Start
 
@@ -39,7 +46,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: shihchengwei-lab/corridor-ci@v7
+      - uses: shihchengwei-lab/corridor-ci@v8
         with:
           mode: warn
           small_change_max_files: 1
@@ -87,6 +94,7 @@ Every run writes a GitHub step summary for maintainers.
 | `mode` | `warn` | `fail` exits non-zero on issues; `warn` only reports. |
 | `small_change_max_files` | `0` | Allow no-handoff small changes up to this file count. `0` disables it. |
 | `max_changed_files` | `0` | Optional changed-file limit. `0` disables it. |
+| `allow_dependencies` | `false` | Allow dependency manifest changes. |
 
 ## Philosophy
 

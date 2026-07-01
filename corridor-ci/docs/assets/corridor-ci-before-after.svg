@@ -1,0 +1,39 @@
+<svg width="1200" height="640" viewBox="0 0 1200 640" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Before and after Corridor CI review handoff</title>
+  <desc id="desc">A before and after comparison showing that vague or verbose pull requests still need a compact review entry point checked by CI.</desc>
+  <rect width="1200" height="640" rx="24" fill="#0B1020"/>
+  <rect x="36" y="36" width="1128" height="568" rx="20" fill="#111827" stroke="#263246"/>
+
+  <text x="72" y="92" fill="#F8FAFC" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="34" font-weight="700">Review the scope before reviewing the code.</text>
+  <text x="72" y="130" fill="#AAB6C8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18">Vague or verbose, the question is the same: where should review start?</text>
+
+  <rect x="72" y="170" width="500" height="354" rx="16" fill="#1B2432" stroke="#374151"/>
+  <rect x="628" y="170" width="500" height="354" rx="16" fill="#16251F" stroke="#2D5A45"/>
+
+  <circle cx="106" cy="206" r="12" fill="#F97316"/>
+  <text x="132" y="214" fill="#FED7AA" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">Before</text>
+  <text x="96" y="260" fill="#F8FAFC" font-family="Consolas, SFMono-Regular, Menlo, monospace" font-size="20">PR body: vague or verbose</text>
+  <text x="96" y="298" fill="#F8FAFC" font-family="Consolas, SFMono-Regular, Menlo, monospace" font-size="20">Changed files: 14</text>
+
+  <text x="96" y="354" fill="#AAB6C8" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">Maintainer still has to find:</text>
+  <text x="116" y="392" fill="#CBD5E1" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18">where the decision lives</text>
+  <text x="116" y="426" fill="#CBD5E1" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18">where review should start</text>
+  <text x="116" y="460" fill="#CBD5E1" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18">what was actually checked</text>
+  <text x="116" y="494" fill="#CBD5E1" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18">whether the diff stayed in bounds</text>
+
+  <circle cx="662" cy="206" r="12" fill="#22C55E"/>
+  <text x="688" y="214" fill="#BBF7D0" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">After Corridor CI</text>
+
+  <rect x="652" y="238" width="452" height="190" rx="10" fill="#0F172A" stroke="#334155"/>
+  <text x="680" y="276" fill="#E2E8F0" font-family="Consolas, SFMono-Regular, Menlo, monospace" font-size="19">Decision: #123</text>
+  <text x="680" y="310" fill="#E2E8F0" font-family="Consolas, SFMono-Regular, Menlo, monospace" font-size="19">Scope: src/parser/*</text>
+  <text x="680" y="344" fill="#E2E8F0" font-family="Consolas, SFMono-Regular, Menlo, monospace" font-size="19">Review first: src/parser/links.rs</text>
+  <text x="680" y="378" fill="#E2E8F0" font-family="Consolas, SFMono-Regular, Menlo, monospace" font-size="19">Verified: cargo test parser</text>
+  <text x="680" y="412" fill="#E2E8F0" font-family="Consolas, SFMono-Regular, Menlo, monospace" font-size="19">Risk: low</text>
+
+  <text x="652" y="468" fill="#A7F3D0" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18" font-weight="700">CI checks before maintainer attention:</text>
+  <text x="672" y="502" fill="#D1FAE5" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="18">The actual diff stayed inside declared scope.</text>
+
+  <rect x="72" y="548" width="1056" height="34" rx="17" fill="#0F172A" stroke="#263246"/>
+  <text x="600" y="571" fill="#CBD5E1" text-anchor="middle" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16">Not a claim that the code is correct. Just a checked entry point for review.</text>
+</svg>
