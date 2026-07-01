@@ -34,7 +34,7 @@ inputs:
     required: false
     default: ""
   changed_files:
-    description: "Optional newline/comma-delimited changed-file list or path to such a file."
+    description: "Optional newline/comma-delimited changed-file list. Use @path to read a list file."
     required: false
     default: ""
 

@@ -132,7 +132,7 @@ The CI summary then gives maintainers a compact packet:
 | `allow_dependencies` | `false` | Allow dependency manifest changes. |
 | `max_changed_files` | `0` | Optional changed-file limit. `0` disables it. |
 | `base_ref` | empty | Git diff base ref. Defaults to `origin/${{ github.base_ref }}`. |
-| `changed_files` | empty | Optional changed-file list or path to a list file. |
+| `changed_files` | empty | Optional comma/newline changed-file list. Use `@path` to read a list file. |
 
 ## Philosophy
 
