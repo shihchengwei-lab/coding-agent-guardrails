@@ -1,0 +1,189 @@
+{
+  "benchmark": "Ponytail-derived Codex/GPT cross-vendor comparison for slime-coding",
+  "date": "2026-07-01",
+  "snapshot_note": "Dated snapshot, not a stable product claim. Different model vendor and different CLI harness from the Haiku/Ponytail comparison, so use it as a cross-vendor sanity check rather than a direct cost or speed comparison.",
+  "model": "gpt-5.4-mini",
+  "harness": "Codex CLI headless benchmark harness",
+  "task_pool": {
+    "total_tasks": 19,
+    "safety_tasks": [
+      "auth-token",
+      "cache",
+      "critic-email",
+      "csv-sum",
+      "rate-limit",
+      "safe-path",
+      "sql-user"
+    ],
+    "feature_tasks": [
+      "tmpl-be-archive",
+      "tmpl-be-bulkdelete",
+      "tmpl-be-count",
+      "tmpl-be-csv",
+      "tmpl-be-duplicate",
+      "tmpl-be-search",
+      "tmpl-fe-colorpicker",
+      "tmpl-fe-command",
+      "tmpl-fe-datepicker",
+      "tmpl-fe-dropzone",
+      "tmpl-fe-rating",
+      "tmpl-fe-wizard"
+    ],
+    "runs_per_task_arm": 4,
+    "arms": [
+      "baseline",
+      "slime-coding"
+    ],
+    "effective_cells": 152
+  },
+  "source": {
+    "ponytail_repo": "https://github.com/DietrichGebert/ponytail",
+    "ponytail_commit": "c4d1925",
+    "slime_coding_mode": "strict corridor default via Codex AGENTS.md plus hooks",
+    "source_run": "20260701-085450",
+    "replacement_runs": [
+      "20260701-115825",
+      "20260701-120415"
+    ]
+  },
+  "cleanup_policy": [
+    "Codex capacity failures were treated as infrastructure failures and rerun after resetting the cell workspace.",
+    "One baseline cell with missing usage/return metadata was rerun and replaced with a clean sample.",
+    "The clean set has 152/152 valid cells, no timeout cells, and no web-search trace matches.",
+    "Cost is not reported here because this run used Codex CLI/subscription-backed execution rather than per-call API billing."
+  ],
+  "aggregates": {
+    "safety": {
+      "baseline": {
+        "samples": 28,
+        "pass": 28,
+        "pass_rate": 1.0,
+        "safe": 28,
+        "safe_rate": 1.0,
+        "files": 28,
+        "mean_files": 1,
+        "total_loc": 437,
+        "median_loc": 16.5,
+        "mean_loc": 15.607142857142858,
+        "mean_tokens": 32563.10714285714,
+        "mean_duration_s": 25.808142857142858,
+        "delta_vs_baseline": {
+          "pass_rate_pp": 0.0,
+          "total_loc_pct": 0.0,
+          "files_pct": 0.0,
+          "mean_tokens_pct": 0.0,
+          "mean_duration_pct": 0.0
+        }
+      },
+      "slime-coding": {
+        "samples": 28,
+        "pass": 28,
+        "pass_rate": 1.0,
+        "safe": 28,
+        "safe_rate": 1.0,
+        "files": 28,
+        "mean_files": 1,
+        "total_loc": 387,
+        "median_loc": 13.5,
+        "mean_loc": 13.821428571428571,
+        "mean_tokens": 73399.57142857143,
+        "mean_duration_s": 64.231,
+        "delta_vs_baseline": {
+          "pass_rate_pp": 0.0,
+          "total_loc_pct": -11.441647597254006,
+          "files_pct": 0.0,
+          "mean_tokens_pct": 125.40714897556067,
+          "mean_duration_pct": 148.87881454911792
+        }
+      }
+    },
+    "feature": {
+      "baseline": {
+        "samples": 48,
+        "pass": 48,
+        "pass_rate": 1.0,
+        "safe": 48,
+        "safe_rate": 1.0,
+        "files": 94,
+        "mean_files": 1.9583333333333333,
+        "total_loc": 6759,
+        "median_loc": 126.5,
+        "mean_loc": 140.8125,
+        "mean_tokens": 348204.4166666667,
+        "mean_duration_s": 192.24216666666666,
+        "delta_vs_baseline": {
+          "pass_rate_pp": 0.0,
+          "total_loc_pct": 0.0,
+          "files_pct": 0.0,
+          "mean_tokens_pct": 0.0,
+          "mean_duration_pct": 0.0
+        }
+      },
+      "slime-coding": {
+        "samples": 48,
+        "pass": 48,
+        "pass_rate": 1.0,
+        "safe": 48,
+        "safe_rate": 1.0,
+        "files": 76,
+        "mean_files": 1.5833333333333333,
+        "total_loc": 5156,
+        "median_loc": 63.0,
+        "mean_loc": 107.41666666666667,
+        "mean_tokens": 372621.6458333333,
+        "mean_duration_s": 212.65054166666667,
+        "delta_vs_baseline": {
+          "pass_rate_pp": 0.0,
+          "total_loc_pct": -23.716526113330374,
+          "files_pct": -19.148936170212767,
+          "mean_tokens_pct": 7.012326092934383,
+          "mean_duration_pct": 10.6159722155996
+        }
+      }
+    },
+    "all": {
+      "baseline": {
+        "samples": 76,
+        "pass": 76,
+        "pass_rate": 1.0,
+        "safe": 76,
+        "safe_rate": 1.0,
+        "files": 122,
+        "mean_files": 1.605263157894737,
+        "total_loc": 7196,
+        "median_loc": 34.5,
+        "mean_loc": 94.6842105263158,
+        "mean_tokens": 231915.51315789475,
+        "mean_duration_s": 130.92436842105263,
+        "delta_vs_baseline": {
+          "pass_rate_pp": 0.0,
+          "total_loc_pct": 0.0,
+          "files_pct": 0.0,
+          "mean_tokens_pct": 0.0,
+          "mean_duration_pct": 0.0
+        }
+      },
+      "slime-coding": {
+        "samples": 76,
+        "pass": 76,
+        "pass_rate": 1.0,
+        "safe": 76,
+        "safe_rate": 1.0,
+        "files": 104,
+        "mean_files": 1.368421052631579,
+        "total_loc": 5543,
+        "median_loc": 31.0,
+        "mean_loc": 72.9342105263158,
+        "mean_tokens": 262381.9342105263,
+        "mean_duration_s": 157.96965789473686,
+        "delta_vs_baseline": {
+          "pass_rate_pp": 0.0,
+          "total_loc_pct": -22.971095052807115,
+          "files_pct": -14.754098360655737,
+          "mean_tokens_pct": 13.1368620571273,
+          "mean_duration_pct": 20.657185365757577
+        }
+      }
+    }
+  }
+}

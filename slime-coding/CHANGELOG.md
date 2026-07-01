@@ -24,6 +24,11 @@ cloning, so "versions" track the git history rather than published releases.
   in `benchmark/`. The mechanism tests continue to cover the hooks directly.
 
 ### Added
+- Codex install path: `install-codex.ps1`, `hooks/codex.hooks.template.json`,
+  and `templates/AGENTS.slime.md`. The Codex path reuses the same core hook
+  executables, wires them into `.codex/hooks.json`, installs the
+  `slime-navigate` skill under `.agents/skills`, inserts a managed Slime block
+  into `AGENTS.md`, seeds `.slime/`, and preserves the Git commit-evidence hook.
 - `bin/commit-evidence` plus Git `prepare-commit-msg` installation: commits can
   automatically carry a short Slime evidence block with corridor id, scope,
   semantic delta, allowed paths, staged touched files, out-of-corridor count,

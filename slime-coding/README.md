@@ -48,7 +48,7 @@ Slime Coding 不是再寫一段「請不要過度實作」給 AI 看。那種文
 
 ## 怎麼用？
 
-每個要套 Slime Coding 的專案，各跑一次：
+每個要套 Slime Coding 的專案，各跑一次。Claude Code 用：
 
 ```bash
 git clone <這個 repo> ~/slime-coding
@@ -56,16 +56,33 @@ cd /你的專案
 ~/slime-coding/install.sh .
 ```
 
-安裝會做幾件事：
+Codex on Windows 用：
+
+```powershell
+git clone <這個 repo> $HOME\slime-coding
+cd \你的專案
+powershell -ExecutionPolicy Bypass -File $HOME\slime-coding\install-codex.ps1 -Project .
+```
+
+Claude 安裝會做幾件事：
 
 - 把 Claude 的自動關卡接進 `.claude/settings.json`。
 - 裝 `/slime-corridor` 和 `/slime-prune` 指令。
 - 建立 `.slime/corridor.md` 和 `.slime/PRUNED.md` 範本。
 - 接上 Git commit hook，讓 commit message 自動帶證據。
 
+Codex 安裝會做幾件事：
+
+- 把自動關卡接進 `.codex/hooks.json`。
+- 把 `slime-navigate` skill 複製到 `.agents/skills/slime-navigate`。
+- 把 Slime Coding 指引插入 `AGENTS.md` 的 managed block。
+- 建立 `.slime/corridor.md` 和 `.slime/PRUNED.md` 範本。
+- 接上 Git commit hook，讓 commit message 自動帶證據。
+
 需要 `python3` 和 `git`。安裝可以重跑，會備份既有設定。
 
-最後手動一步：把 [`templates/CLAUDE.slime.md`](templates/CLAUDE.slime.md) 的內容貼進你專案的 `CLAUDE.md`，讓 AI 知道這套規則怎麼用。
+Claude Code 最後還有手動一步：把 [`templates/CLAUDE.slime.md`](templates/CLAUDE.slime.md) 的內容貼進你專案的 `CLAUDE.md`，讓 AI 知道這套規則怎麼用。
+Codex 版會自動更新 `AGENTS.md`；下次啟動 Codex 或開新 run 後生效。若 Codex 提示 project hooks 尚未 trust，進 `/hooks` 檢查後信任。
 
 ## Benchmark 怎麼看？
 
@@ -86,12 +103,24 @@ cd /你的專案
 | ponytail | 72/76 = 94.7% | 147 | 5055 | -12.0% | $0.1047 | 299k | 55.6s |
 | slime-coding | 76/76 = 100.0% | 107 | 4351 | -24.3% | $0.1223 | 478k | 76.6s |
 
+同一批 19 題再用 Codex CLI / `gpt-5.4-mini` 跑 baseline 與 Slime Coding，當成跨廠商 sanity check：
+
+- 2026-07-01
+- `baseline` / `slime-coding` 兩組
+- 每題每組 4 次
+- 共 152 個 clean cells
+- Codex CLI 不回報 per-run cost，所以這張表不列 cost
+
+| 組別 | 通過率 | touched files | 總 LOC | vs baseline LOC | 平均 tokens | 平均時間 |
+|---|---:|---:|---:|---:|---:|---:|
+| baseline | 76/76 = 100.0% | 122 | 7196 | baseline | 232k | 130.9s |
+| slime-coding | 76/76 = 100.0% | 104 | 5543 | -23.0% | 262k | 158.0s |
+
 直覺讀法：
 
-- Slime Coding 在這批任務通過率最高。
-- 它碰的檔案最少。
-- 它產生的總 LOC 最少。
-- 代價是 token、時間、cost 都比較高。
+- Claude Haiku 那輪，Slime Coding 通過率最高，也碰最少檔案、產生最少 LOC。
+- Codex / `gpt-5.4-mini` 那輪，baseline 已經 100% 通過；Slime Coding 沒提高通過率，但仍少碰 14.8% 檔案、少寫 23.0% LOC。
+- 代價是 token、時間、cost 或 CLI runtime 通常更高。
 
 所以它不是省錢工具，也不是加速工具。它比較像一個保守的防護欄：多花一點思考成本，換比較小的改動面。
 

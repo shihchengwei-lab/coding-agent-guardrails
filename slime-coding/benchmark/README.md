@@ -2,7 +2,7 @@
 
 這個資料夾放的是 Slime Coding 的公開跑分資料，不是新的 runner。
 
-定位要講準：這是一組乾淨、誠實、可公開的 directional benchmark，也是一個 2026-06-29 的 dated snapshot。模型、Claude Code harness、Ponytail、Slime Coding 和題庫都可能隨時間漂移；這裡的數字可以說明這組任務裡的 trade-off，但不能被讀成穩定常數，也不能證明所有 repo、所有模型、所有任務都會得到同樣結果。
+定位要講準：這是一組乾淨、誠實、可公開的 directional benchmark。主表是 2026-06-29 的 Claude Haiku snapshot，另有一組 2026-07-01 的 Codex / `gpt-5.4-mini` cross-vendor sanity check。模型、CLI harness、Ponytail、Slime Coding 和題庫都可能隨時間漂移；這裡的數字可以說明這組任務裡的 trade-off，但不能被讀成穩定常數，也不能證明所有 repo、所有模型、所有任務都會得到同樣結果。
 
 ## 測什麼
 
@@ -62,11 +62,61 @@ Slime Coding 在這組任務裡：
 
 > Slime Coding 用更多推理成本，換到較高完成率、較少 touched files 與較小 diff；Ponytail 更省 token、更快、更便宜。
 
+## 跨廠商 sanity check：Codex / GPT
+
+為了避免只看 Claude Haiku，我們用同一批 19 題再跑一輪 Codex CLI / `gpt-5.4-mini`。這輪不是拿來和 Haiku 做速度或成本硬比較，因為模型、供應商和 CLI harness 都不同；它只回答一個比較保守的問題：
+
+> 換成另一家模型與另一套 coding harness 後，Slime Coding 是否仍然傾向減少改動面？
+
+設定：
+
+- 模型：`gpt-5.4-mini`
+- harness：Codex CLI headless benchmark harness
+- 日期：2026-07-01
+- 題目：同一批 Ponytail-derived 19 題
+- 組別：`baseline`、`slime-coding`
+- 次數：每題每組 4 次
+- 有效樣本：152 clean cells
+- cost：Codex CLI 走 subscription-backed execution，沒有 per-run API cost，所以不列 cost
+
+全部 19 題：
+
+| 組別 | 通過 | touched files | 總 LOC | vs baseline LOC | 平均 tokens | 平均時間 |
+|---|---:|---:|---:|---:|---:|---:|
+| baseline | 76/76 = 100.0% | 122 | 7196 | baseline | 232k | 130.9s |
+| slime-coding | 76/76 = 100.0% | 104 | 5543 | -23.0% | 262k | 158.0s |
+
+Feature 12 題：
+
+| 組別 | 通過 | touched files | 總 LOC | vs baseline LOC | 平均 tokens | 平均時間 |
+|---|---:|---:|---:|---:|---:|---:|
+| baseline | 48/48 = 100.0% | 94 | 6759 | baseline | 348k | 192.2s |
+| slime-coding | 48/48 = 100.0% | 76 | 5156 | -23.7% | 373k | 212.7s |
+
+Safety 7 題：
+
+| 組別 | 通過 | touched files | 總 LOC | vs baseline LOC | 平均 tokens | 平均時間 |
+|---|---:|---:|---:|---:|---:|---:|
+| baseline | 28/28 = 100.0% | 28 | 437 | baseline | 33k | 25.8s |
+| slime-coding | 28/28 = 100.0% | 28 | 387 | -11.4% | 73k | 64.2s |
+
+這輪 correctness 已經飽和，所以它測不到「通過率變高」。能看的只有：在不降低 correctness 的前提下，改動面是否變小。結果是：
+
+- touched files 比 baseline 少 14.8%。
+- 總 LOC 比 baseline 少 23.0%。
+- 平均 tokens 比 baseline 高 13.1%。
+- 平均時間比 baseline 高 20.7%。
+
+所以跨廠商後，方向仍然相似：Slime Coding 不是讓模型更快或更省，而是傾向用更多上下文與推理成本，換更小的改動面。
+
 ## 資料檔
 
 - [`summary.json`](summary.json)：總表、分組總表、delta、資料清理規則。
 - [`by-task.csv`](by-task.csv)：每題每組的 4 次聚合。
 - [`cells.csv`](cells.csv)：228 個有效 cell 的逐筆資料。
+- [`codex-gpt54mini-n4/summary.json`](codex-gpt54mini-n4/summary.json)：Codex / `gpt-5.4-mini` cross-vendor 總表。
+- [`codex-gpt54mini-n4/by-task.csv`](codex-gpt54mini-n4/by-task.csv)：Codex / `gpt-5.4-mini` 每題聚合。
+- [`codex-gpt54mini-n4/cells.csv`](codex-gpt54mini-n4/cells.csv)：Codex / `gpt-5.4-mini` 152 個 clean cells。
 
 ## 清理規則
 
@@ -81,6 +131,6 @@ Slime Coding 在這組任務裡：
 
 ## 限制
 
-- 這是 Haiku 單一模型，不代表 Sonnet、Opus 或其他供應商。
+- 目前公開資料只有 Claude Haiku 與 Codex / `gpt-5.4-mini` 兩個 snapshot，不代表所有模型或所有供應商。
 - 這是 Ponytail-derived task pool，不代表所有真實產品 repo。
-- 這裡放結果資料，不放完整 runner 與 fixture；可重現性依賴 Ponytail 原 repo 與本地 Claude Code 環境。
+- 這裡放結果資料，不放完整 runner 與 fixture；可重現性依賴 Ponytail 原 repo 與本地 Claude Code / Codex CLI 環境。
