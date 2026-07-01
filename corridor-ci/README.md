@@ -3,8 +3,8 @@
 **No scope, no review.**
 
 Maintainers do not need every PR description to be longer. A PR can be vague or
-verbose and still leave the same problem: where should review start, and did
-the diff stay in bounds?
+verbose and still leave the same problem: where should review start, what was
+checked, and what files are actually in scope?
 
 Corridor CI is a small GitHub Action that asks a non-trivial PR to leave five
 short review lines before maintainer attention:
@@ -18,15 +18,17 @@ Risk: none
 ```
 
 `Decision` points to where the why already lives: an issue, discussion, RFC,
-spec, bug reproduction, maintainer request, or a clearly small fix. `Scope`
-says where the diff is allowed to move. Corridor CI then checks the actual diff
-against that boundary.
+spec, bug reproduction, maintainer request, or a clearly small fix.
+
+`Scope: auto` turns the actual changed files into the review boundary shown in
+the CI summary. Use explicit paths or globs when you want a stricter drift
+check.
 
 It is not an AI detector, a spam score, or an AI reviewer. It does not care who
 wrote the code. It only asks:
 
 > Did the PR give maintainers a review entry point?
-> Did the actual diff stay inside the declared scope?
+> Did the handoff match the actual diff well enough to start review?
 
 ![Before and after Corridor CI review handoff](docs/assets/corridor-ci-before-after.svg)
 
@@ -69,14 +71,21 @@ Risk: none
 `Decision` can be an issue, discussion, RFC, spec, bug reproduction, maintainer
 request, or small self-contained fix.
 
-`Scope: auto` uses the actual changed files as the declared boundary.
+`Scope: auto` uses the actual changed files as the review boundary.
+
+For stricter projects, replace `auto` with explicit paths or globs:
+
+```md
+Scope: pkg/parser/*, tests/parser/*
+```
 
 `Review first` must be one of the changed files.
 
 ## What It Checks
 
 - Required handoff fields exist.
-- Changed files stay inside `Scope`.
+- `Scope: auto` resolves to the actual changed files.
+- Explicit `Scope` paths or globs cover the changed files.
 - `Review first` points to a changed file.
 - Dependency manifest changes are blocked unless explicitly allowed.
 - PRs over `max_changed_files` are blocked or warned.
@@ -105,8 +114,9 @@ boundary before asking a maintainer to spend attention.
 
 The rule is simple:
 
-> If a PR cannot say where it is allowed to move, maintainers should not spend
-> time discovering that boundary by review.
+> If a PR cannot give a maintainer a decision link, review starting point,
+> verification claim, and visible change boundary, maintainers should not spend
+> time discovering those by review.
 
 ## License
 
