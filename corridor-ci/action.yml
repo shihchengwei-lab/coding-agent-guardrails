@@ -29,6 +29,10 @@ inputs:
     description: "Optional changed-file limit. Set 0 to disable."
     required: false
     default: "0"
+  small_change_max_files:
+    description: "Allow PRs without a review packet when changed-file count is at or below this value. Set 0 to disable."
+    required: false
+    default: "0"
   base_ref:
     description: "Base ref for git diff. Defaults to the pull request base branch."
     required: false
@@ -50,6 +54,7 @@ runs:
         INPUT_CORRIDOR_REQUIRED: ${{ inputs.corridor_required }}
         INPUT_ALLOW_DEPENDENCIES: ${{ inputs.allow_dependencies }}
         INPUT_MAX_CHANGED_FILES: ${{ inputs.max_changed_files }}
+        INPUT_SMALL_CHANGE_MAX_FILES: ${{ inputs.small_change_max_files }}
         INPUT_BASE_REF: ${{ inputs.base_ref }}
         INPUT_CHANGED_FILES: ${{ inputs.changed_files }}
       run: python "$GITHUB_ACTION_PATH/bin/corridor_ci.py"

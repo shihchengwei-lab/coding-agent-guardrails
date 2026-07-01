@@ -214,6 +214,7 @@ def evaluate(
     corridor_required: bool = True,
     allow_dependencies: bool = False,
     max_changed_files: int = 0,
+    small_change_max_files: int = 0,
     always_allowed: list[str] | None = None,
 ) -> Report:
     changed = [normalize_path(p) for p in changed_files if normalize_path(p)]
@@ -222,8 +223,20 @@ def evaluate(
     issues: list[str] = []
     warnings: list[str] = []
     always = list(always_allowed or DEFAULT_ALWAYS_ALLOWED)
+    deps = [p for p in changed if is_dependency_file(p)]
+    small_change_fast_path = (
+        corridor_required
+        and not corridor_text
+        and small_change_max_files > 0
+        and 0 < len(changed) <= small_change_max_files
+        and not deps
+    )
 
-    if corridor_required and not corridor_text:
+    if small_change_fast_path:
+        warnings.append(
+            f"small change fast path: review packet skipped for {len(changed)} changed file(s)"
+        )
+    elif corridor_required and not corridor_text:
         issues.append("review packet is required, but no corridor text was found")
     elif corridor_text:
         for label, value in review_packet.items():
@@ -239,7 +252,6 @@ def evaluate(
         if outside:
             issues.append("changed files outside corridor paths: " + ", ".join(outside))
 
-    deps = [p for p in changed if is_dependency_file(p)]
     if deps and not allow_dependencies:
         issues.append("dependency manifest changed without allow_dependencies=true: " + ", ".join(deps))
 
@@ -333,6 +345,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--allow-dependencies", default=os.environ.get("INPUT_ALLOW_DEPENDENCIES", "false"))
     parser.add_argument("--max-changed-files", type=int, default=int(os.environ.get("INPUT_MAX_CHANGED_FILES", "0") or "0"))
     parser.add_argument(
+        "--small-change-max-files",
+        type=int,
+        default=int(os.environ.get("INPUT_SMALL_CHANGE_MAX_FILES", "0") or "0"),
+        help="allow PRs without a review packet when changed-file count is at or below this value",
+    )
+    parser.add_argument(
         "--changed-files",
         default=os.environ.get("INPUT_CHANGED_FILES"),
         help="inline comma/newline file list, or @path to a newline-delimited changed-file list",
@@ -352,6 +370,7 @@ def main(argv: list[str] | None = None) -> int:
         corridor_required=truthy(args.corridor_required),
         allow_dependencies=truthy(args.allow_dependencies),
         max_changed_files=args.max_changed_files,
+        small_change_max_files=args.small_change_max_files,
     )
     markdown = render_markdown(report)
     print(markdown)

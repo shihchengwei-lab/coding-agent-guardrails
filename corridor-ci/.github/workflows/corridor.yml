@@ -17,6 +17,7 @@ jobs:
 
       - uses: ./
         with:
-          mode: warn
+          mode: fail
           source: body
+          small_change_max_files: 1
           max_changed_files: 12

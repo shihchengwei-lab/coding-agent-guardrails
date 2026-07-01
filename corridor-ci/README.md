@@ -26,6 +26,7 @@ scope work should happen before maintainer review, not inside maintainer review.
   `## Verification`, and `## Risk`.
 - Changed files stay inside those declared paths.
 - Dependency manifest changes are blocked by default.
+- Optional: tiny PRs can pass without a review packet.
 - Optional: PRs that touch too many files are blocked or warned.
 - The GitHub step summary gives maintainers a compact review summary.
 
@@ -48,7 +49,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: shihchengwei-lab/corridor-ci@v2
+      - uses: shihchengwei-lab/corridor-ci@v3
         with:
           mode: warn
           max_changed_files: 12
@@ -57,15 +58,21 @@ jobs:
 After the team is ready:
 
 ```yaml
-      - uses: shihchengwei-lab/corridor-ci@v2
+      - uses: shihchengwei-lab/corridor-ci@v3
         with:
           mode: fail
+          small_change_max_files: 1
           max_changed_files: 12
 ```
 
 `v1` remains available for the older scope-only gate. `v2` requires a review
-packet because the goal is to reduce maintainer review cost, not just warn about
-missing scope.
+packet for every PR. `v3` keeps the review packet requirement, but can allow
+tiny no-packet fixes through `small_change_max_files`.
+
+If you do not want typo-level fixes to get stuck, set
+`small_change_max_files`. A PR without a review packet can pass only when the
+changed-file count is at or below that value and it does not touch dependency
+manifests. Larger changes still need the review packet.
 
 ## Review Packet Format
 
@@ -131,6 +138,7 @@ The CI summary then gives maintainers a compact packet:
 | `corridor_required` | `true` | Require a corridor. |
 | `allow_dependencies` | `false` | Allow dependency manifest changes. |
 | `max_changed_files` | `0` | Optional changed-file limit. `0` disables it. |
+| `small_change_max_files` | `0` | Allow no-packet small changes up to this file count. `0` disables it. |
 | `base_ref` | empty | Git diff base ref. Defaults to `origin/${{ github.base_ref }}`. |
 | `changed_files` | empty | Optional comma/newline changed-file list. Use `@path` to read a list file. |
 
