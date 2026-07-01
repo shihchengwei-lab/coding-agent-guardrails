@@ -2,9 +2,16 @@
 
 **No scope, no review.**
 
-Corridor CI is a GitHub Action for maintainers dealing with AI-generated PR
-floods. It does not try to detect whether a PR was written by an AI. It asks a
-more useful question:
+Maintainers are getting buried by AI-generated PRs.
+
+Many of those PRs are not malicious. They are just under-specified: too many
+files, unclear scope, surprise dependencies, and no obvious stop condition.
+Review time gets spent reconstructing what the PR was supposed to do.
+
+Corridor CI moves that work back to the PR author.
+
+It does not try to detect whether a PR was written by an AI. It asks a more
+useful question:
 
 > Did the PR declare what it is allowed to change, and did it stay inside that
 > boundary?
