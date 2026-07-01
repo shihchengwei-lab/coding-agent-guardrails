@@ -75,6 +75,39 @@ class CorridorCiTest(unittest.TestCase):
         self.assertFalse(report.ok)
         self.assertIn("review packet is required", report.issues[0])
 
+    def test_small_change_without_packet_can_pass(self):
+        report = corridor_ci.evaluate(
+            changed_files=["README.md"],
+            corridor_text=None,
+            corridor_required=True,
+            small_change_max_files=1,
+        )
+
+        self.assertTrue(report.ok)
+        self.assertIn("small change fast path", "\n".join(report.warnings))
+
+    def test_small_change_fast_path_does_not_allow_dependencies(self):
+        report = corridor_ci.evaluate(
+            changed_files=["package.json"],
+            corridor_text=None,
+            corridor_required=True,
+            small_change_max_files=1,
+        )
+
+        self.assertFalse(report.ok)
+        self.assertIn("dependency manifest changed", "\n".join(report.issues))
+
+    def test_missing_packet_fails_above_small_change_limit(self):
+        report = corridor_ci.evaluate(
+            changed_files=["README.md", "docs/setup.md"],
+            corridor_text=None,
+            corridor_required=True,
+            small_change_max_files=1,
+        )
+
+        self.assertFalse(report.ok)
+        self.assertIn("review packet is required", "\n".join(report.issues))
+
     def test_changed_files_must_stay_inside_declared_paths(self):
         report = corridor_ci.evaluate(
             changed_files=[
