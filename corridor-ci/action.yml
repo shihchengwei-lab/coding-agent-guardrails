@@ -16,7 +16,7 @@ inputs:
   corridor_file:
     description: "Corridor file path when source is auto or file."
     required: false
-    default: .slime/corridor.md
+    default: .corridor/review-packet.md
   corridor_required:
     description: "Whether a review packet/corridor is required."
     required: false

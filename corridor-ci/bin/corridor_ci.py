@@ -34,9 +34,12 @@ DEPENDENCY_GLOBS = (
 )
 
 DEFAULT_ALWAYS_ALLOWED = (
+    ".corridor/review-packet.md",
     ".slime/corridor.md",
-    ".slime/PRUNED.md",
 )
+
+DEFAULT_CORRIDOR_FILE = ".corridor/review-packet.md"
+LEGACY_CORRIDOR_FILES = (".slime/corridor.md",)
 
 REVIEW_PACKET_SECTIONS = {
     "What Changed": ("what changed", "semantic delta"),
@@ -132,6 +135,11 @@ def load_corridor(repo: Path, corridor_file: str, source: str) -> str | None:
         text = read_text(repo / corridor_file)
         if text:
             return text
+        if corridor_file == DEFAULT_CORRIDOR_FILE:
+            for legacy_file in LEGACY_CORRIDOR_FILES:
+                text = read_text(repo / legacy_file)
+                if text:
+                    return text
     if source in {"auto", "body"}:
         return find_pr_body()
     return None
@@ -340,7 +348,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo", default=".", help="repository checkout path")
     parser.add_argument("--mode", choices=("fail", "warn"), default=os.environ.get("INPUT_MODE", "fail"))
     parser.add_argument("--source", choices=("auto", "file", "body"), default=os.environ.get("INPUT_SOURCE", "auto"))
-    parser.add_argument("--corridor-file", default=os.environ.get("INPUT_CORRIDOR_FILE", ".slime/corridor.md"))
+    parser.add_argument("--corridor-file", default=os.environ.get("INPUT_CORRIDOR_FILE", DEFAULT_CORRIDOR_FILE))
     parser.add_argument("--corridor-required", default=os.environ.get("INPUT_CORRIDOR_REQUIRED", "true"))
     parser.add_argument("--allow-dependencies", default=os.environ.get("INPUT_ALLOW_DEPENDENCIES", "false"))
     parser.add_argument("--max-changed-files", type=int, default=int(os.environ.get("INPUT_MAX_CHANGED_FILES", "0") or "0"))

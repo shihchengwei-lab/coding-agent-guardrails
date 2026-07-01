@@ -33,7 +33,7 @@ Big PRs must explain themselves. Tiny fixes still pass.
 
 ## What It Checks
 
-For normal PRs, Corridor CI expects a review packet in `.slime/corridor.md` or
+For normal PRs, Corridor CI expects a review packet in `.corridor/review-packet.md` or
 the PR body.
 
 It checks that:
@@ -68,7 +68,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: shihchengwei-lab/corridor-ci@v3
+      - uses: shihchengwei-lab/corridor-ci@v4
         with:
           mode: warn
           max_changed_files: 12
@@ -77,7 +77,7 @@ jobs:
 After the team is ready:
 
 ```yaml
-      - uses: shihchengwei-lab/corridor-ci@v3
+      - uses: shihchengwei-lab/corridor-ci@v4
         with:
           mode: fail
           small_change_max_files: 1
@@ -85,8 +85,8 @@ After the team is ready:
 ```
 
 `v1` remains available for the older scope-only gate. `v2` requires a review
-packet for every PR. `v3` keeps the review packet requirement, but can allow
-tiny no-packet fixes through `small_change_max_files`.
+packet for every PR. `v3` adds the tiny-fix fast path. `v4` uses the neutral
+`.corridor/review-packet.md` file path by default.
 
 If you do not want typo-level fixes to get stuck, set
 `small_change_max_files`. A PR without a review packet can pass only when the
@@ -96,7 +96,8 @@ low-friction fixes.
 
 ## Review Packet Format
 
-Put this in `.slime/corridor.md`, or paste the same sections into the PR body:
+Put this in the PR body. If you prefer a committed file, use
+`.corridor/review-packet.md`:
 
 ```md
 # Review Packet: rating-widget
@@ -154,7 +155,7 @@ The CI summary then gives maintainers a compact packet:
 |---|---:|---|
 | `mode` | `fail` | `fail` exits non-zero on issues; `warn` only reports. |
 | `source` | `auto` | `auto`, `file`, or `body`. Auto checks file first, then PR body. |
-| `corridor_file` | `.slime/corridor.md` | File to read when using file source. |
+| `corridor_file` | `.corridor/review-packet.md` | File to read when using file source. |
 | `corridor_required` | `true` | Require a corridor. |
 | `allow_dependencies` | `false` | Allow dependency manifest changes. |
 | `max_changed_files` | `0` | Optional changed-file limit. `0` disables it. |
@@ -166,9 +167,9 @@ The CI summary then gives maintainers a compact packet:
 
 This is the receiving-side half of agent discipline.
 
-Author-side tools such as Slime Coding help your own agent avoid drifting while
-it writes code. Corridor CI helps maintainers reject drift before review when
-the PR comes from someone else's agent.
+Author-side rules help your own agent avoid drifting while it writes code.
+Corridor CI is the receiving-side gate: it helps maintainers reject drift
+before review when the PR comes from someone else's agent.
 
 The rule is simple:
 

@@ -111,7 +111,7 @@ class CorridorCiTest(unittest.TestCase):
     def test_changed_files_must_stay_inside_declared_paths(self):
         report = corridor_ci.evaluate(
             changed_files=[
-                ".slime/corridor.md",
+                ".corridor/review-packet.md",
                 "frontend/src/components/ui/rating.tsx",
                 "frontend/src/routes/admin.tsx",
             ],
@@ -121,7 +121,39 @@ class CorridorCiTest(unittest.TestCase):
 
         self.assertFalse(report.ok)
         self.assertIn("frontend/src/routes/admin.tsx", "\n".join(report.issues))
-        self.assertNotIn(".slime/corridor.md", "\n".join(report.issues))
+        self.assertNotIn(".corridor/review-packet.md", "\n".join(report.issues))
+
+    def test_default_review_packet_file_is_neutral_corridor_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            corridor = root / ".corridor" / "review-packet.md"
+            corridor.parent.mkdir()
+            corridor.write_text(VALID_PACKET, encoding="utf-8")
+
+            self.assertEqual(
+                corridor_ci.load_corridor(
+                    root,
+                    corridor_ci.DEFAULT_CORRIDOR_FILE,
+                    "file",
+                ),
+                VALID_PACKET,
+            )
+
+    def test_legacy_slime_corridor_file_is_fallback_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy = root / ".slime" / "corridor.md"
+            legacy.parent.mkdir()
+            legacy.write_text(VALID_PACKET, encoding="utf-8")
+
+            self.assertEqual(
+                corridor_ci.load_corridor(
+                    root,
+                    corridor_ci.DEFAULT_CORRIDOR_FILE,
+                    "file",
+                ),
+                VALID_PACKET,
+            )
 
     def test_dependency_manifests_are_flagged_by_default(self):
         report = corridor_ci.evaluate(
@@ -188,7 +220,7 @@ class CorridorCiTest(unittest.TestCase):
     def test_cli_reads_changed_files_from_argument_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            corridor = root / ".slime" / "corridor.md"
+            corridor = root / ".corridor" / "review-packet.md"
             corridor.parent.mkdir()
             corridor.write_text(VALID_PACKET, encoding="utf-8")
             changed = root / "changed.txt"
