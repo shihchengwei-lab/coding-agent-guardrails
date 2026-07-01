@@ -1,0 +1,17 @@
+name: Corridor CI
+
+on:
+  pull_request:
+
+jobs:
+  corridor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: shihchengwei-lab/corridor-ci@v1
+        with:
+          mode: warn
+          max_changed_files: 12

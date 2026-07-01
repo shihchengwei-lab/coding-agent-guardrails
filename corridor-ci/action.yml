@@ -1,0 +1,55 @@
+name: Corridor CI
+description: Require AI-generated PRs to declare scope before maintainer review.
+branding:
+  icon: git-pull-request
+  color: green
+
+inputs:
+  mode:
+    description: "fail blocks the check; warn only writes the report."
+    required: false
+    default: fail
+  source:
+    description: "Where to read the corridor from: auto, file, or body."
+    required: false
+    default: auto
+  corridor_file:
+    description: "Corridor file path when source is auto or file."
+    required: false
+    default: .slime/corridor.md
+  corridor_required:
+    description: "Whether a corridor is required."
+    required: false
+    default: "true"
+  allow_dependencies:
+    description: "Whether dependency manifest changes are allowed."
+    required: false
+    default: "false"
+  max_changed_files:
+    description: "Optional changed-file limit. Set 0 to disable."
+    required: false
+    default: "0"
+  base_ref:
+    description: "Base ref for git diff. Defaults to origin/${{ github.base_ref }}."
+    required: false
+    default: ""
+  changed_files:
+    description: "Optional newline/comma-delimited changed-file list or path to such a file."
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Check PR corridor
+      shell: bash
+      env:
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_SOURCE: ${{ inputs.source }}
+        INPUT_CORRIDOR_FILE: ${{ inputs.corridor_file }}
+        INPUT_CORRIDOR_REQUIRED: ${{ inputs.corridor_required }}
+        INPUT_ALLOW_DEPENDENCIES: ${{ inputs.allow_dependencies }}
+        INPUT_MAX_CHANGED_FILES: ${{ inputs.max_changed_files }}
+        INPUT_BASE_REF: ${{ inputs.base_ref }}
+        INPUT_CHANGED_FILES: ${{ inputs.changed_files }}
+      run: python "$GITHUB_ACTION_PATH/bin/corridor_ci.py"
