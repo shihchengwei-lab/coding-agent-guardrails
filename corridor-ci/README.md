@@ -14,7 +14,7 @@ Corridor CI moves that work back to the PR author.
 It is not an AI detector, a spam score, or an AI reviewer. It asks two narrower
 questions:
 
-> Did the PR give maintainers a review packet?
+> Did the PR give maintainers a review boundary?
 > Did the actual diff stay inside that declared boundary?
 
 The point is intentional friction. For non-trivial PRs, the scope work should
@@ -30,25 +30,28 @@ Big PRs must explain themselves. Tiny fixes still pass.
 
 **Tiny fix: no packet needed**
 
-<img src="docs/assets/small-change-fast-path.png" alt="Corridor CI passing a one-file README change through the small-change fast path without a review packet." width="720">
+<img src="docs/assets/small-change-fast-path.png" alt="Corridor CI passing a one-file README change through the small-change fast path without a packet or handoff." width="720">
 
 ## What It Checks
 
-For normal PRs, Corridor CI expects a review packet in `.corridor/review-packet.md` or
-the PR body.
+For normal PRs, Corridor CI expects either a review packet or a compact review
+handoff in `.corridor/review-packet.md` or the PR body.
 
 It checks that:
 
-- The packet includes What Changed, Why, Paths, Non-goals, Verification, and Risk.
-- The actual changed files stay inside the declared Paths section.
+- The default packet includes What Changed, Why, Paths, Non-goals,
+  Verification, and Risk.
+- The compact handoff includes Decision, Scope, Review first, Verified, and Risk.
+- The actual changed files stay inside the declared boundary.
 - Dependency manifest changes are blocked unless explicitly allowed.
 - PRs over `max_changed_files` are blocked or warned.
 
-If the packet is missing or incomplete, the failure summary includes a copyable
-blank packet.
+If the packet or handoff is missing or incomplete, the failure summary includes a
+copyable blank template.
 
 For tiny fixes, you can set `small_change_max_files` so one-file typo-level PRs
-can pass without a review packet. Dependency manifest changes are still blocked.
+can pass without a packet or handoff. Dependency manifest changes are still
+blocked.
 
 Every run writes a compact GitHub step summary for maintainers.
 
@@ -87,7 +90,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: shihchengwei-lab/corridor-ci@v6
+      - uses: shihchengwei-lab/corridor-ci@v7
         with:
           mode: warn
           max_changed_files: 12
@@ -96,7 +99,7 @@ jobs:
 After the team is ready:
 
 ```yaml
-      - uses: shihchengwei-lab/corridor-ci@v6
+      - uses: shihchengwei-lab/corridor-ci@v7
         with:
           mode: fail
           small_change_max_files: 1
@@ -106,13 +109,64 @@ After the team is ready:
 `v1` remains available for the older scope-only gate. `v2` requires a review
 packet for every PR. `v3` adds the tiny-fix fast path. `v4` uses the neutral
 `.corridor/review-packet.md` file path by default. `v5` adds `Paths: auto`
-and copyable failure templates. `v6` defaults to `warn` mode.
+and copyable failure templates. `v6` defaults to `warn` mode. `v7` adds the
+compact handoff profile.
 
 If you do not want typo-level fixes to get stuck, set
-`small_change_max_files`. A PR without a review packet can pass only when the
+`small_change_max_files`. A PR without a packet or handoff can pass only when the
 changed-file count is at or below that value and it does not touch dependency
-manifests. Larger changes still need the review packet, so this is only for
+manifests. Larger changes still need a declared review boundary, so this is only for
 low-friction fixes.
+
+## Profiles
+
+Corridor CI has two profiles.
+
+Use the default `packet` profile when the PR needs enough context to review
+without opening a separate issue:
+
+```md
+# Review Packet: rating-widget
+
+## What Changed
+- Add a controlled rating input.
+
+## Why
+- The app needs a reusable rating control.
+
+## Non-goals
+- Do not refactor forms.
+
+## Paths: auto
+
+## Verification
+- Existing frontend tests still pass.
+
+## Risk
+- Low: isolated UI component.
+```
+
+Use `compact` for issue-first projects that want less PR text and more review
+routing:
+
+```yaml
+      - uses: shihchengwei-lab/corridor-ci@v7
+        with:
+          profile: compact
+```
+
+```md
+Decision: #123
+Scope: auto
+Review first: pkg/example.go
+Verified: make test
+Risk: none
+```
+
+In compact mode, `Decision` can point to an issue, discussion, RFC, spec, bug
+reproduction, maintainer request, or small self-contained fix. `Scope: auto`
+uses the actual changed files as the boundary, and `Review first` must be one of
+the changed files.
 
 ## Review Packet Format
 
@@ -181,6 +235,7 @@ The CI summary then gives maintainers a compact packet:
 | input | default | meaning |
 |---|---:|---|
 | `mode` | `warn` | `fail` exits non-zero on issues; `warn` only reports. |
+| `profile` | `packet` | `packet` requires a review packet; `compact` requires a short review handoff. |
 | `source` | `auto` | `auto`, `file`, or `body`. Auto checks file first, then PR body. |
 | `corridor_file` | `.corridor/review-packet.md` | File to read when using file source. |
 | `corridor_required` | `true` | Require a corridor. |

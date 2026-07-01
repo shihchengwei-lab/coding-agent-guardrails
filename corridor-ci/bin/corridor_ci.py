@@ -50,6 +50,14 @@ REVIEW_PACKET_SECTIONS = {
     "Risk": ("risk", "risks"),
 }
 
+COMPACT_HANDOFF_FIELDS = {
+    "Decision": ("decision", "issue", "context"),
+    "Scope": ("scope", "paths", "touched paths"),
+    "Review first": ("review first", "review-first", "review_first"),
+    "Verified": ("verified", "verification"),
+    "Risk": ("risk",),
+}
+
 COPYABLE_REVIEW_PACKET = """# Review Packet: <short title>
 
 ## What Changed
@@ -70,13 +78,22 @@ COPYABLE_REVIEW_PACKET = """# Review Packet: <short title>
 - 
 """
 
+COPYABLE_REVIEW_HANDOFF = """Decision: #123 or small fix
+Scope: auto
+Review first: path/to/file
+Verified: test command or manual check
+Risk: none
+"""
+
 
 @dataclass
 class Report:
     ok: bool
+    profile: str
     changed_files: list[str]
     allowed_paths: list[str]
     review_packet: dict[str, str]
+    handoff: dict[str, str]
     outside_files: list[str]
     dependency_files: list[str]
     issues: list[str]
@@ -99,7 +116,7 @@ def truthy(value: str | bool | None) -> bool:
 def read_text(path: Path) -> str | None:
     if not path.exists():
         return None
-    return path.read_text(encoding="utf-8", errors="ignore")
+    return path.read_text(encoding="utf-8-sig", errors="ignore")
 
 def normalize_heading(text: str) -> str:
     return " ".join(text.strip().strip("#").strip().lower().replace("_", " ").split())
@@ -143,6 +160,27 @@ def extract_review_packet(corridor_text: str | None) -> dict[str, str]:
         label: section_value(sections, aliases)
         for label, aliases in REVIEW_PACKET_SECTIONS.items()
     }
+
+
+def extract_compact_handoff(corridor_text: str | None) -> dict[str, str]:
+    handoff = {label: "" for label in COMPACT_HANDOFF_FIELDS}
+    if not corridor_text:
+        return handoff
+
+    aliases = {
+        normalize_heading(alias): label
+        for label, field_aliases in COMPACT_HANDOFF_FIELDS.items()
+        for alias in field_aliases
+    }
+    for line in corridor_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or ":" not in stripped:
+            continue
+        key, value = stripped.split(":", 1)
+        label = aliases.get(normalize_heading(key))
+        if label and value.strip() and not handoff[label]:
+            handoff[label] = value.strip()
+    return handoff
 
 
 def find_pr_body() -> str | None:
@@ -210,7 +248,7 @@ def extract_changed_files(repo: Path, changed_files_arg: str | None, base_ref: s
     if changed_files_arg:
         if changed_files_arg.startswith("@"):
             path = Path(changed_files_arg[1:])
-            raw = path.read_text(encoding="utf-8", errors="ignore")
+            raw = path.read_text(encoding="utf-8-sig", errors="ignore")
         else:
             raw = changed_files_arg
         return [normalize_path(p) for p in split_file_list(raw)]
@@ -239,6 +277,18 @@ def split_file_list(raw: str) -> list[str]:
     return [p.strip() for p in raw.split(",") if p.strip()]
 
 
+def split_path_list(raw: str) -> list[str]:
+    paths: list[str] = []
+    chunks = raw.splitlines() if "\n" in raw else raw.split(",")
+    for chunk in chunks:
+        cleaned = chunk.strip().strip("`")
+        if cleaned.startswith(("-", "*")):
+            cleaned = cleaned[1:].strip().strip("`")
+        if cleaned:
+            paths.append(normalize_path(cleaned))
+    return paths
+
+
 def path_matches(path: str, pattern: str) -> bool:
     path = normalize_path(path)
     pattern = normalize_path(pattern)
@@ -262,20 +312,30 @@ def evaluate(
     *,
     changed_files: list[str],
     corridor_text: str | None,
+    profile: str = "packet",
     corridor_required: bool = True,
     allow_dependencies: bool = False,
     max_changed_files: int = 0,
     small_change_max_files: int = 0,
     always_allowed: list[str] | None = None,
 ) -> Report:
+    requested_profile = (profile or "packet").strip().lower()
+    profile = requested_profile if requested_profile in {"packet", "compact"} else "packet"
     changed = [normalize_path(p) for p in changed_files if normalize_path(p)]
     allowed_paths = extract_paths(corridor_text)
     review_packet = extract_review_packet(corridor_text)
+    handoff = extract_compact_handoff(corridor_text) if profile == "compact" else {}
     issues: list[str] = []
     warnings: list[str] = []
     always = list(always_allowed or DEFAULT_ALWAYS_ALLOWED)
     deps = [p for p in changed if is_dependency_file(p)]
-    if is_paths_auto(review_packet.get("Paths", "")):
+    if profile == "compact":
+        scope = handoff.get("Scope", "")
+        if is_paths_auto(scope):
+            allowed_paths = auto_paths_from_changed_files(changed, always)
+        elif scope:
+            allowed_paths = split_path_list(scope)
+    elif is_paths_auto(review_packet.get("Paths", "")):
         allowed_paths = auto_paths_from_changed_files(changed, always)
 
     small_change_fast_path = (
@@ -286,13 +346,25 @@ def evaluate(
         and not deps
     )
 
+    if requested_profile != profile:
+        issues.append(f"unknown profile `{requested_profile}`; expected `packet` or `compact`")
+
     if small_change_fast_path:
         warnings.append(
             f"small change fast path: review packet skipped for {len(changed)} changed file(s)"
         )
-    elif corridor_required and not corridor_text:
+    elif profile == "compact" and corridor_required and not corridor_text:
+        issues.append("compact handoff is required, but no corridor text was found")
+    elif profile == "packet" and corridor_required and not corridor_text:
         issues.append("review packet is required, but no corridor text was found")
-    elif corridor_text:
+    elif profile == "compact" and corridor_text:
+        for label, value in handoff.items():
+            if not value:
+                issues.append(f"compact handoff is missing `{label}`")
+        review_first = normalize_path(handoff.get("Review first", ""))
+        if review_first and review_first not in changed:
+            issues.append(f"review first is not a changed file: {review_first}")
+    elif profile == "packet" and corridor_text:
         for label, value in review_packet.items():
             if not value:
                 issues.append(f"review packet is missing `## {label}`")
@@ -311,9 +383,11 @@ def evaluate(
 
     return Report(
         ok=not issues,
+        profile=profile,
         changed_files=changed,
         allowed_paths=allowed_paths,
         review_packet=review_packet,
+        handoff=handoff,
         outside_files=outside,
         dependency_files=deps,
         issues=issues,
@@ -326,9 +400,17 @@ def compact_markdown(value: str) -> list[str]:
 
 
 def should_show_packet_template(report: Report) -> bool:
-    return any(
+    return report.profile == "packet" and any(
         issue.startswith("review packet is required")
         or issue.startswith("review packet is missing")
+        for issue in report.issues
+    )
+
+
+def should_show_handoff_template(report: Report) -> bool:
+    return report.profile == "compact" and any(
+        issue.startswith("compact handoff is required")
+        or issue.startswith("compact handoff is missing")
         for issue in report.issues
     )
 
@@ -342,7 +424,18 @@ def render_markdown(report: Report) -> str:
         f"- corridor paths: {len(report.allowed_paths)}",
     ]
 
-    if any(report.review_packet.values()):
+    if report.profile == "compact" and any(report.handoff.values()):
+        lines.append("")
+        lines.append("## Review Handoff")
+        for label in ("Decision", "Scope", "Review first", "Verified", "Risk"):
+            value = report.handoff.get(label, "")
+            if not value:
+                continue
+            lines.append("")
+            lines.append(f"### {label}")
+            lines.extend(compact_markdown(value))
+
+    if report.profile == "packet" and any(report.review_packet.values()):
         lines.append("")
         lines.append("## Review Packet")
         for label in ("What Changed", "Why", "Verification", "Risk"):
@@ -384,6 +477,13 @@ def render_markdown(report: Report) -> str:
         lines.append("```md")
         lines.extend(COPYABLE_REVIEW_PACKET.splitlines())
         lines.append("```")
+    if should_show_handoff_template(report):
+        lines.append("")
+        lines.append("## Copyable Review Handoff")
+        lines.append("")
+        lines.append("```md")
+        lines.extend(COPYABLE_REVIEW_HANDOFF.splitlines())
+        lines.append("```")
     if report.warnings:
         lines.append("")
         lines.append("## Warnings")
@@ -408,6 +508,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Validate a PR against a declared corridor.")
     parser.add_argument("--repo", default=".", help="repository checkout path")
     parser.add_argument("--mode", choices=("fail", "warn"), default=os.environ.get("INPUT_MODE", "warn"))
+    parser.add_argument("--profile", choices=("packet", "compact"), default=os.environ.get("INPUT_PROFILE", "packet"))
     parser.add_argument("--source", choices=("auto", "file", "body"), default=os.environ.get("INPUT_SOURCE", "auto"))
     parser.add_argument("--corridor-file", default=os.environ.get("INPUT_CORRIDOR_FILE", DEFAULT_CORRIDOR_FILE))
     parser.add_argument("--corridor-required", default=os.environ.get("INPUT_CORRIDOR_REQUIRED", "true"))
@@ -436,6 +537,7 @@ def main(argv: list[str] | None = None) -> int:
     report = evaluate(
         changed_files=changed,
         corridor_text=corridor,
+        profile=args.profile,
         corridor_required=truthy(args.corridor_required),
         allow_dependencies=truthy(args.allow_dependencies),
         max_changed_files=args.max_changed_files,

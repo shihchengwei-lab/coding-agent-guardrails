@@ -33,6 +33,13 @@ VALID_PACKET = """# Review Packet: rating-widget
 - Low: isolated UI component.
 """
 
+VALID_HANDOFF = """Decision: #123
+Scope: frontend/src/components/ui/rating.tsx, frontend/tests/rating.spec.ts
+Review first: frontend/src/components/ui/rating.tsx
+Verified: python -m unittest
+Risk: none
+"""
+
 
 class CorridorCiTest(unittest.TestCase):
     def test_normalize_preserves_dot_directory(self):
@@ -64,6 +71,26 @@ class CorridorCiTest(unittest.TestCase):
                     os.environ["GITHUB_EVENT_PATH"] = old_event_path
 
         self.assertEqual(body, VALID_PACKET)
+
+    def test_corridor_file_reads_utf8_sig(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            corridor = root / ".corridor" / "review-packet.md"
+            corridor.parent.mkdir()
+            corridor.write_text(VALID_HANDOFF, encoding="utf-8-sig")
+
+            text = corridor_ci.load_corridor(root, ".corridor/review-packet.md", "file")
+            report = corridor_ci.evaluate(
+                changed_files=[
+                    "frontend/src/components/ui/rating.tsx",
+                    "frontend/tests/rating.spec.ts",
+                ],
+                corridor_text=text,
+                corridor_required=True,
+                profile="compact",
+            )
+
+        self.assertTrue(report.ok)
 
     def test_missing_required_corridor_fails(self):
         report = corridor_ci.evaluate(
@@ -250,6 +277,116 @@ class CorridorCiTest(unittest.TestCase):
         self.assertIn("frontend/src/components/ui/rating.tsx", markdown)
         self.assertIn("### Verification", markdown)
         self.assertIn("### Risk", markdown)
+
+    def test_compact_handoff_passes_and_renders(self):
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+            corridor_text=VALID_HANDOFF,
+            corridor_required=True,
+            profile="compact",
+        )
+
+        markdown = corridor_ci.render_markdown(report)
+
+        self.assertTrue(report.ok)
+        self.assertIn("## Review Handoff", markdown)
+        self.assertIn("### Decision", markdown)
+        self.assertIn("#123", markdown)
+        self.assertIn("frontend/src/components/ui/rating.tsx", markdown)
+
+    def test_compact_missing_handoff_shows_template(self):
+        report = corridor_ci.evaluate(
+            changed_files=["frontend/src/components/ui/rating.tsx"],
+            corridor_text=None,
+            corridor_required=True,
+            profile="compact",
+        )
+
+        markdown = corridor_ci.render_markdown(report)
+
+        self.assertFalse(report.ok)
+        self.assertIn("compact handoff is required", "\n".join(report.issues))
+        self.assertIn("## Copyable Review Handoff", markdown)
+        self.assertIn("Decision:", markdown)
+
+    def test_compact_scope_must_cover_changed_files(self):
+        handoff = VALID_HANDOFF.replace(
+            "Scope: frontend/src/components/ui/rating.tsx, frontend/tests/rating.spec.ts",
+            "Scope: frontend/src/components/ui/rating.tsx",
+        )
+
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+            corridor_text=handoff,
+            corridor_required=True,
+            profile="compact",
+        )
+
+        self.assertFalse(report.ok)
+        self.assertIn("frontend/tests/rating.spec.ts", "\n".join(report.issues))
+
+    def test_compact_review_first_must_be_changed_file(self):
+        handoff = VALID_HANDOFF.replace(
+            "Review first: frontend/src/components/ui/rating.tsx",
+            "Review first: frontend/src/routes/admin.tsx",
+        )
+
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+            corridor_text=handoff,
+            corridor_required=True,
+            profile="compact",
+        )
+
+        self.assertFalse(report.ok)
+        self.assertIn("review first is not a changed file", "\n".join(report.issues))
+
+    def test_compact_scope_auto_uses_changed_files(self):
+        handoff = VALID_HANDOFF.replace(
+            "Scope: frontend/src/components/ui/rating.tsx, frontend/tests/rating.spec.ts",
+            "Scope: auto",
+        )
+
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+            corridor_text=handoff,
+            corridor_required=True,
+            profile="compact",
+        )
+
+        self.assertTrue(report.ok)
+        self.assertEqual(
+            report.allowed_paths,
+            [
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+        )
+
+    def test_unknown_profile_is_reported_and_uses_packet_rules(self):
+        report = corridor_ci.evaluate(
+            changed_files=["frontend/src/components/ui/rating.tsx"],
+            corridor_text=None,
+            corridor_required=True,
+            profile="comapct",
+        )
+
+        self.assertFalse(report.ok)
+        self.assertEqual(report.profile, "packet")
+        self.assertIn("unknown profile `comapct`", "\n".join(report.issues))
+        self.assertIn("review packet is required", "\n".join(report.issues))
 
     def test_warn_mode_does_not_fail_process(self):
         report = corridor_ci.evaluate(
