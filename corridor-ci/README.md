@@ -2,11 +2,12 @@
 
 **No scope, no review.**
 
-Maintainers are getting buried by AI-generated PRs.
+Maintainers are getting buried by low-context PRs.
 
-Many of those PRs are not malicious. They are just under-specified: too many
-files, unclear scope, surprise dependencies, and no obvious stop condition.
-Review time gets spent reconstructing what the PR was supposed to do.
+AI-assisted PRs are not automatically bad. The problem is a PR that takes less
+effort to submit than it takes to understand: too many files, unclear scope,
+surprise dependencies, and no obvious stop condition. Review time gets spent
+reconstructing what the PR was supposed to do.
 
 Corridor CI moves that work back to the PR author.
 
@@ -16,8 +17,8 @@ questions:
 > Did the PR give maintainers a review packet?
 > Did the actual diff stay inside that declared boundary?
 
-The point is intentional friction. If someone sends a PR with an agent, the
-scope work should happen before maintainer review, not inside maintainer review.
+The point is intentional friction. For non-trivial PRs, the scope work should
+happen before maintainer review, not inside maintainer review.
 
 ## What It Looks Like
 
@@ -104,7 +105,7 @@ After the team is ready:
 
 `v1` remains available for the older scope-only gate. `v2` requires a review
 packet for every PR. `v3` adds the tiny-fix fast path. `v4` uses the neutral
-`.corridor/review-packet.md` file path by default. `v5` adds `## Paths: auto`
+`.corridor/review-packet.md` file path by default. `v5` adds `Paths: auto`
 and copyable failure templates.
 
 If you do not want typo-level fixes to get stuck, set
@@ -140,9 +141,9 @@ Put this in the PR body. If you prefer a committed file, use
 - Low: isolated UI component.
 ```
 
-`## Paths: auto` tells Corridor CI to use the actual changed files as the
-declared boundary. If you prefer a hand-written boundary, use `## Paths` with
-glob patterns:
+`Paths: auto` tells Corridor CI to use the actual changed files as the declared
+boundary. If you prefer a hand-written boundary, use a `Paths` section with glob
+patterns:
 
 ```md
 ## Paths
@@ -186,16 +187,16 @@ The CI summary then gives maintainers a compact packet:
 | `allow_dependencies` | `false` | Allow dependency manifest changes. |
 | `max_changed_files` | `0` | Optional changed-file limit. `0` disables it. |
 | `small_change_max_files` | `0` | Allow no-packet small changes up to this file count. `0` disables it. |
-| `base_ref` | empty | Git diff base ref. Defaults to `origin/${{ github.base_ref }}`. |
+| `base_ref` | empty | Git diff base ref. Defaults to the pull request base branch. |
 | `changed_files` | empty | Optional comma/newline changed-file list. Use `@path` to read a list file. |
 
 ## Philosophy
 
 This is the receiving-side half of agent discipline.
 
-Author-side rules help your own agent avoid drifting while it writes code.
-Corridor CI is the receiving-side gate: it helps maintainers reject drift
-before review when the PR comes from someone else's agent.
+Author-side rules help contributors keep their change scoped while they write
+code. Corridor CI is the receiving-side gate: it helps maintainers reject
+unclear scope before review.
 
 The rule is simple:
 
