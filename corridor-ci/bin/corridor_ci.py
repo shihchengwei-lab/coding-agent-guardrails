@@ -61,7 +61,10 @@ class Report:
 
 
 def normalize_path(path: str) -> str:
-    return path.strip().replace("\\", "/").lstrip("./")
+    cleaned = path.strip().replace("\\", "/")
+    while cleaned.startswith("./"):
+        cleaned = cleaned[2:]
+    return cleaned
 
 
 def truthy(value: str | bool | None) -> bool:
@@ -117,7 +120,7 @@ def find_pr_body() -> str | None:
     if not event_path:
         return None
     try:
-        event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+        event = json.loads(Path(event_path).read_text(encoding="utf-8-sig"))
     except Exception:
         return None
     pull = event.get("pull_request") or {}
@@ -154,8 +157,8 @@ def extract_paths(corridor_text: str | None) -> list[str]:
 def extract_changed_files(repo: Path, changed_files_arg: str | None, base_ref: str | None) -> list[str]:
     env_files = os.environ.get("CORRIDOR_CHANGED_FILES")
     if changed_files_arg:
-        path = Path(changed_files_arg)
-        if path.exists():
+        if changed_files_arg.startswith("@"):
+            path = Path(changed_files_arg[1:])
             raw = path.read_text(encoding="utf-8", errors="ignore")
         else:
             raw = changed_files_arg
@@ -332,7 +335,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--changed-files",
         default=os.environ.get("INPUT_CHANGED_FILES"),
-        help="path to newline-delimited changed-file list, or inline comma/newline list",
+        help="inline comma/newline file list, or @path to a newline-delimited changed-file list",
     )
     parser.add_argument("--base-ref", default=os.environ.get("INPUT_BASE_REF"))
     return parser

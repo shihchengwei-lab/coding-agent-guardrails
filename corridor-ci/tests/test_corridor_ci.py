@@ -2,6 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import json
+import os
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bin"))
@@ -33,6 +35,36 @@ VALID_PACKET = """# Review Packet: rating-widget
 
 
 class CorridorCiTest(unittest.TestCase):
+    def test_normalize_preserves_dot_directory(self):
+        self.assertEqual(
+            corridor_ci.normalize_path(".github/workflows/corridor.yml"),
+            ".github/workflows/corridor.yml",
+        )
+        self.assertEqual(
+            corridor_ci.normalize_path("./.github/workflows/corridor.yml"),
+            ".github/workflows/corridor.yml",
+        )
+
+    def test_pr_body_reads_utf8_sig_event(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            event = Path(tmp) / "event.json"
+            event.write_text(
+                json.dumps({"pull_request": {"body": VALID_PACKET}}),
+                encoding="utf-8-sig",
+            )
+
+            old_event_path = os.environ.get("GITHUB_EVENT_PATH")
+            os.environ["GITHUB_EVENT_PATH"] = str(event)
+            try:
+                body = corridor_ci.find_pr_body()
+            finally:
+                if old_event_path is None:
+                    os.environ.pop("GITHUB_EVENT_PATH", None)
+                else:
+                    os.environ["GITHUB_EVENT_PATH"] = old_event_path
+
+        self.assertEqual(body, VALID_PACKET)
+
     def test_missing_required_corridor_fails(self):
         report = corridor_ci.evaluate(
             changed_files=["frontend/src/components/ui/rating.tsx"],
@@ -134,7 +166,7 @@ class CorridorCiTest(unittest.TestCase):
                     "--repo",
                     str(root),
                     "--changed-files",
-                    str(changed),
+                    f"@{changed}",
                     "--mode",
                     "fail",
                 ]
