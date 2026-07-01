@@ -33,14 +33,21 @@ Big PRs must explain themselves. Tiny fixes still pass.
 
 ## What It Checks
 
-- A review packet exists, either in `.slime/corridor.md` or the PR body.
+For normal PRs, Corridor CI expects a review packet in `.slime/corridor.md` or
+the PR body.
+
+It checks that:
+
 - The packet has `## What Changed`, `## Why`, `## Paths`, `## Non-goals`,
   `## Verification`, and `## Risk`.
-- Changed files stay inside those declared paths.
-- Dependency manifest changes are blocked by default.
-- Optional: tiny PRs can pass without a review packet.
-- Optional: PRs that touch too many files are blocked or warned.
-- The GitHub step summary gives maintainers a compact review summary.
+- The actual changed files stay inside the declared `## Paths`.
+- Dependency manifest changes are blocked unless explicitly allowed.
+- PRs over `max_changed_files` are blocked or warned.
+
+For tiny fixes, you can set `small_change_max_files` so one-file typo-level PRs
+can pass without a review packet. Dependency manifest changes are still blocked.
+
+Every run writes a compact GitHub step summary for maintainers.
 
 It does not auto-close PRs. Start in `warn` mode, then switch to `fail` when the
 policy is accepted by the project.
