@@ -3,32 +3,36 @@
 **No scope, no review.**
 
 Maintainers do not need every PR description to be longer. A PR can be vague or
-verbose and still leave the same problem: where should review start, what was
-checked, and what files are actually in scope?
+verbose and still leave the same problem: nobody knows where the change was
+supposed to stop.
 
-Corridor CI is a small GitHub Action that asks a non-trivial PR to leave five
-short review lines before maintainer attention:
+Corridor CI is a small GitHub Action that asks a non-trivial PR to draw a narrow
+review corridor before maintainer attention:
 
 ```md
 Decision: #123
-Scope: auto
-Review first: path/to/file
-Verified: make test
-Risk: none
+Scope: pkg/parser/*, tests/parser/*
+Review first: pkg/parser/links.py
+Verified: pytest tests/parser
+Risk: low
 ```
 
 `Decision` points to where the why already lives: an issue, discussion, RFC,
 spec, bug reproduction, maintainer request, or a clearly small fix.
 
-`Scope: auto` turns the actual changed files into the review boundary shown in
-the CI summary. Use explicit paths or globs when you want a stricter drift
-check.
+`Scope` is the restraint mechanism. With explicit paths or globs, Corridor CI
+compares the actual diff against the declared corridor and warns or fails when
+the PR touched more than it said it would.
+
+`Scope: auto` is still available when a project only wants review visibility. It
+turns the actual changed files into the review boundary, but it does not
+restrain the diff.
 
 It is not an AI detector, a spam score, or an AI reviewer. It does not care who
 wrote the code. It only asks:
 
-> Did the PR give maintainers a review entry point?
-> Did the handoff match the actual diff well enough to start review?
+> Did the PR declare a narrow review corridor?
+> Did the actual diff stay inside it?
 
 ![Before and after Corridor CI review handoff](docs/assets/corridor-ci-before-after.svg)
 
@@ -62,30 +66,32 @@ Add this to the PR body:
 
 ```md
 Decision: #123
-Scope: auto
-Review first: pkg/example.go
-Verified: make test
-Risk: none
+Scope: pkg/parser/*, tests/parser/*
+Review first: pkg/parser/links.py
+Verified: pytest tests/parser
+Risk: low
 ```
 
 `Decision` can be an issue, discussion, RFC, spec, bug reproduction, maintainer
 request, or small self-contained fix.
 
-`Scope: auto` uses the actual changed files as the review boundary.
-
-For stricter projects, replace `auto` with explicit paths or globs:
+Use explicit paths or globs when you want the PR to stay inside a declared
+corridor:
 
 ```md
 Scope: pkg/parser/*, tests/parser/*
 ```
+
+Use `Scope: auto` only when you want low-friction review visibility. It uses the
+actual changed files as the review boundary.
 
 `Review first` must be one of the changed files.
 
 ## What It Checks
 
 - Required handoff fields exist.
-- `Scope: auto` resolves to the actual changed files.
 - Explicit `Scope` paths or globs cover the changed files.
+- `Scope: auto` resolves to the actual changed files when chosen.
 - `Review first` points to a changed file.
 - Dependency manifest changes are blocked unless explicitly allowed.
 - PRs over `max_changed_files` are blocked or warned.
@@ -107,16 +113,18 @@ Every run writes a GitHub step summary for maintainers.
 
 ## Philosophy
 
-Corridor CI is a receiving-side gate.
+Corridor CI is a receiving-side gate with one shaping rule: draw the corridor
+before asking for review.
 
 It does not decide whether a PR is good. It makes the author state the review
-boundary before asking a maintainer to spend attention.
+boundary before asking a maintainer to spend attention. That is especially
+useful for agent-written PRs, where the failure mode is often touching more than
+the task needed.
 
 The rule is simple:
 
-> If a PR cannot give a maintainer a decision link, review starting point,
-> verification claim, and visible change boundary, maintainers should not spend
-> time discovering those by review.
+> If a PR cannot say where it intended to move, maintainers should not spend
+> time discovering that boundary by review.
 
 ## License
 

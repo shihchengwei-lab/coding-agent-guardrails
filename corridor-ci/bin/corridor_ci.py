@@ -44,7 +44,7 @@ COMPACT_HANDOFF_FIELDS = {
 }
 
 COPYABLE_REVIEW_HANDOFF = """Decision: #123 or small fix
-Scope: auto
+Scope: path/or/glob
 Review first: path/to/file
 Verified: test command or manual check
 Risk: none

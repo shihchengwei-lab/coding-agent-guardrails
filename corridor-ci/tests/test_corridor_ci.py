@@ -62,7 +62,7 @@ class CorridorCiTest(unittest.TestCase):
         markdown = corridor_ci.render_markdown(report)
         self.assertIn("## Copyable Review Handoff", markdown)
         self.assertIn("Decision:", markdown)
-        self.assertIn("Scope: auto", markdown)
+        self.assertIn("Scope: path/or/glob", markdown)
 
     def test_small_change_without_handoff_can_pass(self):
         report = corridor_ci.evaluate(
@@ -304,6 +304,20 @@ class CorridorCiTest(unittest.TestCase):
         self.assertNotIn("base_ref", readme)
         self.assertNotIn("| `changed_files` |", readme)
         self.assertIn("Add this to the PR body", readme)
+
+    def test_readme_keeps_explicit_scope_as_primary_story(self):
+        repo = Path(__file__).resolve().parents[1]
+        readme = (repo / "README.md").read_text(encoding="utf-8")
+        visual = (repo / "docs" / "assets" / "corridor-ci-before-after.svg").read_text(encoding="utf-8")
+
+        self.assertIn("Scope: pkg/parser/*, tests/parser/*", readme)
+        self.assertIn("Scope: auto", readme)
+        self.assertLess(
+            readme.index("Scope: pkg/parser/*, tests/parser/*"),
+            readme.index("Scope: auto"),
+        )
+        self.assertIn("Scope: src/parser/*", visual)
+        self.assertNotIn("Scope: auto</text>", visual)
 
     def test_examples_present_compact_handoff_as_only_path(self):
         repo = Path(__file__).resolve().parents[1]
