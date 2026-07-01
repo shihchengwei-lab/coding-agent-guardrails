@@ -30,7 +30,7 @@ inputs:
     required: false
     default: "0"
   base_ref:
-    description: "Base ref for git diff. Defaults to origin/${{ github.base_ref }}."
+    description: "Base ref for git diff. Defaults to the pull request base branch."
     required: false
     default: ""
   changed_files:
