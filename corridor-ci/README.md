@@ -10,8 +10,8 @@ Review time gets spent reconstructing what the PR was supposed to do.
 
 Corridor CI moves that work back to the PR author.
 
-It does not try to detect whether a PR was written by an AI. It asks two more
-useful questions:
+It is not an AI detector, a spam score, or an AI reviewer. It asks two narrower
+questions:
 
 > Did the PR give maintainers a review packet?
 > Did the actual diff stay inside that declared boundary?
@@ -51,6 +51,22 @@ Every run writes a compact GitHub step summary for maintainers.
 
 It does not auto-close PRs. Start in `warn` mode, then switch to `fail` when the
 policy is accepted by the project.
+
+## Where It Fits
+
+Corridor CI is a review-boundary gate.
+
+It is intentionally smaller than most AI-era PR tools:
+
+| tool type | what it does | how Corridor CI differs |
+|---|---|---|
+| AI reviewers | Review or summarize code with another model. | No model, no token cost, no generated review comments. |
+| Anti-spam gates | Score suspicious contributors or AI-looking PRs. | Does not judge the author or decide whether AI was used. |
+| PR templates | Ask contributors to fill in context. | Fails or warns when the required context is missing. |
+| Policy engines | Let teams write custom approval rules. | Ships one narrow rule: explain the review boundary, then stay inside it. |
+
+Use Corridor CI when you want a low-friction first gate before maintainer review,
+not a full anti-spam system.
 
 ## Quick Start
 
