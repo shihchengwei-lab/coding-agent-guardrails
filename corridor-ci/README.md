@@ -53,7 +53,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: shihchengwei-lab/corridor-ci@v8
+      - uses: shihchengwei-lab/corridor-ci@v9
         with:
           mode: warn
           small_change_max_files: 1
@@ -129,7 +129,7 @@ permissions:
   pull-requests: write
 
 steps:
-  - uses: shihchengwei-lab/corridor-ci@v8
+  - uses: shihchengwei-lab/corridor-ci@v9
     with:
       comment: true
 ```
