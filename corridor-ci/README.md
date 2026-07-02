@@ -6,6 +6,8 @@ Corridor CI is a small GitHub Action for maintainers who need a quick answer
 before spending review attention: is this PR ready for a close look, and where
 should that look start?
 
+Why this exists: [The Corridor Manifesto](docs/MANIFESTO.md).
+
 It asks non-trivial PRs for a compact handoff:
 
 ```md
