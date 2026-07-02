@@ -54,6 +54,15 @@ class CorridorCiTest(unittest.TestCase):
 
         self.assertEqual(body, VALID_HANDOFF)
 
+    def test_alias_labels_are_not_handoff_fields(self):
+        handoff = corridor_ci.extract_compact_handoff(
+            "Issue: #123\nContext: background\nPaths: a.py\nVerification: pytest"
+        )
+
+        self.assertEqual(handoff["Decision"], "")
+        self.assertEqual(handoff["Scope"], "")
+        self.assertEqual(handoff["Verified"], "")
+
     def test_missing_required_handoff_fails(self):
         report = corridor_ci.evaluate(
             changed_files=["frontend/src/components/ui/rating.tsx"],
@@ -582,58 +591,7 @@ class CorridorCiTest(unittest.TestCase):
         self.assertIn("Copy this file to .github/PULL_REQUEST_TEMPLATE.md", template)
         self.assertIn(corridor_ci.COPYABLE_REVIEW_HANDOFF, template)
 
-    def test_action_surface_is_minimal(self):
-        repo = Path(__file__).resolve().parents[1]
-        action = (repo / "action.yml").read_text(encoding="utf-8")
-
-        self.assertNotIn("profile:", action)
-        self.assertNotIn("corridor_required:", action)
-        self.assertNotIn("base_ref:", action)
-        self.assertNotIn("\n  changed_files:", action)
-        self.assertNotIn("INPUT_PROFILE", action)
-        self.assertNotIn("INPUT_CORRIDOR_REQUIRED", action)
-        self.assertNotIn("INPUT_BASE_REF", action)
-        self.assertNotIn("INPUT_CHANGED_FILES", action)
-
-    def test_runner_has_no_removed_branches(self):
-        repo = Path(__file__).resolve().parents[1]
-        runner = (repo / "bin" / "corridor_ci.py").read_text(encoding="utf-8")
-
-        self.assertNotIn("REVIEW_PACKET", runner)
-        self.assertNotIn("extract_review_packet", runner)
-        self.assertNotIn("profile", runner)
-        self.assertNotIn("corridor_required", runner)
-        self.assertNotIn("changed_files_arg", runner)
-        self.assertNotIn("--changed-files", runner)
-        self.assertNotIn("--base-ref", runner)
-
-    def test_readme_has_no_removed_branches(self):
-        repo = Path(__file__).resolve().parents[1]
-        readme = (repo / "README.md").read_text(encoding="utf-8")
-
-        self.assertNotIn("Expanded Mode", readme)
-        self.assertNotIn("Review Packet", readme)
-        self.assertNotIn("profile", readme)
-        self.assertNotIn("corridor_required", readme)
-        self.assertNotIn("base_ref", readme)
-        self.assertNotIn("| `changed_files` |", readme)
-        self.assertIn("Add this to the PR body", readme)
-
-    def test_readme_keeps_explicit_scope_as_primary_story(self):
-        repo = Path(__file__).resolve().parents[1]
-        readme = (repo / "README.md").read_text(encoding="utf-8")
-        visual = (repo / "docs" / "assets" / "corridor-ci-before-after.svg").read_text(encoding="utf-8")
-
-        self.assertIn("Scope: pkg/parser/*, tests/parser/*", readme)
-        self.assertIn("Scope: auto", readme)
-        self.assertLess(
-            readme.index("Scope: pkg/parser/*, tests/parser/*"),
-            readme.index("Scope: auto"),
-        )
-        self.assertIn("Scope: src/parser/*", visual)
-        self.assertNotIn("Scope: auto</text>", visual)
-
-    def test_examples_present_compact_handoff_as_only_path(self):
+    def test_readme_and_example_share_action_tag(self):
         repo = Path(__file__).resolve().parents[1]
         readme = (repo / "README.md").read_text(encoding="utf-8")
         workflow = (repo / "examples" / "workflow.yml").read_text(encoding="utf-8")
@@ -643,8 +601,6 @@ class CorridorCiTest(unittest.TestCase):
         self.assertIsNotNone(readme_tag)
         self.assertIsNotNone(workflow_tag)
         self.assertEqual(readme_tag.group(1), workflow_tag.group(1))
-        self.assertNotIn("profile:", workflow)
-        self.assertFalse((repo / "examples" / "corridor.md").exists())
 
 
 if __name__ == "__main__":

@@ -5,15 +5,14 @@ strict so other tools can generate the same shape reliably.
 
 ## Fields
 
-The handoff has five required fields. The first occurrence wins.
+The handoff has five required fields, each with exactly one label (matched
+case-insensitively). The first occurrence wins. There are no aliases.
 
-| canonical field | accepted labels |
-|---|---|
-| `Decision` | `decision`, `issue`, `context` |
-| `Scope` | `scope`, `paths`, `touched paths` |
-| `Review first` | `review first`, `review-first`, `review_first` |
-| `Verified` | `verified`, `verification` |
-| `Risk` | `risk` |
+- `Decision`
+- `Scope`
+- `Review first`
+- `Verified`
+- `Risk`
 
 Each field must be a single plain line:
 

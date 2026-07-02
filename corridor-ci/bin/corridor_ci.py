@@ -37,13 +37,7 @@ DEPENDENCY_GLOBS = (
     "Gemfile.lock",
 )
 
-COMPACT_HANDOFF_FIELDS = {
-    "Decision": ("decision", "issue", "context"),
-    "Scope": ("scope", "paths", "touched paths"),
-    "Review first": ("review first", "review-first", "review_first"),
-    "Verified": ("verified", "verification"),
-    "Risk": ("risk",),
-}
+COMPACT_HANDOFF_LABELS = ("Decision", "Scope", "Review first", "Verified", "Risk")
 
 COPYABLE_REVIEW_HANDOFF = """Decision: #123 or small fix
 Scope: path/or/glob
@@ -86,12 +80,8 @@ def normalize_heading(text: str) -> str:
     return " ".join(text.strip().strip("#").strip().lower().replace("_", " ").split())
 
 
-def handoff_field_aliases() -> dict[str, str]:
-    return {
-        normalize_heading(alias): label
-        for label, field_aliases in COMPACT_HANDOFF_FIELDS.items()
-        for alias in field_aliases
-    }
+def handoff_field_labels() -> dict[str, str]:
+    return {normalize_heading(label): label for label in COMPACT_HANDOFF_LABELS}
 
 
 def decorated_field_candidates(stripped: str) -> list[tuple[str, str]]:
@@ -129,14 +119,12 @@ def detect_near_miss_fields(corridor_text: str | None) -> dict[str, str]:
     if not corridor_text:
         return near_misses
 
-    aliases = handoff_field_aliases()
-    canonical = {normalize_heading(label): label for label in COMPACT_HANDOFF_FIELDS}
+    labels = handoff_field_labels()
     for line in corridor_text.splitlines():
         stripped = line.strip()
         if not stripped:
             continue
         for key, token in decorated_field_candidates(stripped):
-            labels = canonical if token.startswith("#") else aliases
             label = labels.get(normalize_heading(key))
             if label and label not in near_misses:
                 near_misses[label] = token
@@ -145,17 +133,17 @@ def detect_near_miss_fields(corridor_text: str | None) -> dict[str, str]:
 
 
 def extract_compact_handoff(corridor_text: str | None) -> dict[str, str]:
-    handoff = {label: "" for label in COMPACT_HANDOFF_FIELDS}
+    handoff = {label: "" for label in COMPACT_HANDOFF_LABELS}
     if not corridor_text:
         return handoff
 
-    aliases = handoff_field_aliases()
+    labels = handoff_field_labels()
     for line in corridor_text.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or ":" not in stripped:
             continue
         key, value = stripped.split(":", 1)
-        label = aliases.get(normalize_heading(key))
+        label = labels.get(normalize_heading(key))
         if label and value.strip() and not handoff[label]:
             handoff[label] = value.strip()
     return handoff
@@ -369,7 +357,7 @@ def render_markdown(report: Report) -> str:
     if any(report.handoff.values()):
         lines.append("")
         lines.append("## Review Handoff")
-        for label in ("Decision", "Scope", "Review first", "Verified", "Risk"):
+        for label in COMPACT_HANDOFF_LABELS:
             value = report.handoff.get(label, "")
             if not value:
                 continue
