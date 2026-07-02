@@ -10,4 +10,6 @@ Use semver tags for releases.
    (`gh release create vX.Y.Z --latest`); tags alone do not update the
    Releases page.
 
-The tag consistency is enforced by the test suite.
+Consistency is enforced twice: the test suite keeps `README.md` and
+`examples/workflow.yml` on the same tag, and a CI job on tag pushes verifies
+the tagged tree references its own major tag.

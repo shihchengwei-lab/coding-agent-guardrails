@@ -468,17 +468,22 @@ def upsert_pr_comment(
     api_url = os.environ.get("GITHUB_API_URL", GITHUB_API_URL).rstrip("/")
     transport = transport or github_api_request
     body = {"body": f"{COMMENT_MARKER}\n\n{markdown}"}
-    comments_url = f"{api_url}/repos/{repository}/issues/{pr_number}/comments?per_page=100"
+    comments_url = f"{api_url}/repos/{repository}/issues/{pr_number}/comments"
 
     try:
-        comments = transport("GET", comments_url, token, None) or []
-        for comment in comments:
-            if COMMENT_MARKER in str(comment.get("body", "")) and comment.get("id"):
-                update_url = f"{api_url}/repos/{repository}/issues/comments/{comment['id']}"
-                transport("PATCH", update_url, token, body)
-                return
-        create_url = f"{api_url}/repos/{repository}/issues/{pr_number}/comments"
-        transport("POST", create_url, token, body)
+        page = 1
+        while True:
+            page_url = f"{comments_url}?per_page=100&page={page}"
+            comments = transport("GET", page_url, token, None) or []
+            for comment in comments:
+                if COMMENT_MARKER in str(comment.get("body", "")) and comment.get("id"):
+                    update_url = f"{api_url}/repos/{repository}/issues/comments/{comment['id']}"
+                    transport("PATCH", update_url, token, body)
+                    return
+            if len(comments) < 100:
+                break
+            page += 1
+        transport("POST", comments_url, token, body)
     except urllib.error.HTTPError as exc:
         print(f"corridor-ci PR comment skipped: GitHub API returned {exc.code} {exc.reason}")
     except Exception as exc:

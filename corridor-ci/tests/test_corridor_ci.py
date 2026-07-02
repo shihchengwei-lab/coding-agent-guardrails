@@ -506,6 +506,51 @@ class CorridorCiTest(unittest.TestCase):
 
         self.assertIn("PR comment skipped", out.getvalue())
 
+    def test_upsert_pr_comment_finds_marker_beyond_first_page(self):
+        calls = []
+
+        def fake_transport(method, url, token, payload=None):
+            calls.append((method, url, token, payload))
+            if method == "GET":
+                if url.endswith("&page=1"):
+                    return [{"id": index, "body": f"noise {index}"} for index in range(100)]
+                return [{"id": 200, "body": "<!-- corridor-ci -->\nold report"}]
+            return {"id": 200}
+
+        corridor_ci.upsert_pr_comment(
+            "# Corridor CI: PASS\n",
+            token="token",
+            repository="owner/repo",
+            pr_number=7,
+            transport=fake_transport,
+        )
+
+        self.assertEqual([call[0] for call in calls], ["GET", "GET", "PATCH"])
+        self.assertIn("&page=1", calls[0][1])
+        self.assertIn("&page=2", calls[1][1])
+        self.assertIn("/repos/owner/repo/issues/comments/200", calls[2][1])
+
+    def test_upsert_pr_comment_creates_after_paging_all_comments(self):
+        calls = []
+
+        def fake_transport(method, url, token, payload=None):
+            calls.append((method, url, token, payload))
+            if method == "GET":
+                if url.endswith("&page=1"):
+                    return [{"id": index, "body": f"noise {index}"} for index in range(100)]
+                return [{"id": 100, "body": "noise 100"}]
+            return {"id": 101}
+
+        corridor_ci.upsert_pr_comment(
+            "# Corridor CI: PASS\n",
+            token="token",
+            repository="owner/repo",
+            pr_number=7,
+            transport=fake_transport,
+        )
+
+        self.assertEqual([call[0] for call in calls], ["GET", "GET", "POST"])
+
     def test_action_comment_input_is_wired(self):
         repo = Path(__file__).resolve().parents[1]
         action = (repo / "action.yml").read_text(encoding="utf-8")
