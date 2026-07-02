@@ -1,8 +1,12 @@
 import json
+import contextlib
+import io
 import os
+import re
 import subprocess
 import sys
 import tempfile
+import urllib.error
 import unittest
 from pathlib import Path
 
@@ -74,6 +78,40 @@ class CorridorCiTest(unittest.TestCase):
         self.assertTrue(report.ok)
         self.assertIn("small change fast path", "\n".join(report.warnings))
 
+    def test_small_change_with_plain_prose_body_can_pass(self):
+        report = corridor_ci.evaluate(
+            changed_files=["README.md"],
+            corridor_text="Fix typo in docs.",
+            small_change_max_files=1,
+        )
+
+        self.assertTrue(report.ok)
+        self.assertIn("small change fast path", "\n".join(report.warnings))
+
+    def test_small_change_with_context_heading_body_can_pass(self):
+        report = corridor_ci.evaluate(
+            changed_files=["README.md"],
+            corridor_text="## Context\nJust fixing a typo.",
+            small_change_max_files=1,
+        )
+
+        self.assertTrue(report.ok)
+        self.assertIn("small change fast path", "\n".join(report.warnings))
+
+    def test_partial_handoff_does_not_use_small_change_fast_path(self):
+        report = corridor_ci.evaluate(
+            changed_files=["README.md"],
+            corridor_text="Risk: low",
+            small_change_max_files=1,
+        )
+
+        self.assertFalse(report.ok)
+        self.assertNotIn("small change fast path", "\n".join(report.warnings))
+        self.assertIn("compact handoff is missing `Decision`", "\n".join(report.issues))
+        self.assertIn("compact handoff is missing `Scope`", "\n".join(report.issues))
+        self.assertIn("compact handoff is missing `Review first`", "\n".join(report.issues))
+        self.assertIn("compact handoff is missing `Verified`", "\n".join(report.issues))
+
     def test_small_change_fast_path_does_not_allow_dependencies(self):
         report = corridor_ci.evaluate(
             changed_files=["package.json"],
@@ -93,6 +131,70 @@ class CorridorCiTest(unittest.TestCase):
 
         self.assertFalse(report.ok)
         self.assertIn("compact handoff is required", "\n".join(report.issues))
+
+    def test_prose_without_fast_path_reports_no_handoff_fields(self):
+        report = corridor_ci.evaluate(
+            changed_files=["README.md", "docs/setup.md"],
+            corridor_text="Fix typo in docs.",
+            small_change_max_files=1,
+        )
+
+        self.assertFalse(report.ok)
+        self.assertIn(
+            "compact handoff is required, but no handoff fields were found",
+            "\n".join(report.issues),
+        )
+
+    def test_bold_handoff_field_gets_format_hint(self):
+        handoff = VALID_HANDOFF.replace("Decision: #123", "**Decision:** #123")
+
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+            corridor_text=handoff,
+        )
+
+        self.assertFalse(report.ok)
+        self.assertIn(
+            "compact handoff is missing `Decision` (found `**Decision:**` - fields must be plain `Decision: value` lines, no bold, bullets, or headings)",
+            "\n".join(report.issues),
+        )
+
+    def test_bullet_handoff_field_gets_format_hint(self):
+        handoff = VALID_HANDOFF.replace("Decision: #123", "- Decision: #123")
+
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+            corridor_text=handoff,
+        )
+
+        self.assertFalse(report.ok)
+        self.assertIn(
+            "compact handoff is missing `Decision` (found `- Decision:` - fields must be plain `Decision: value` lines, no bold, bullets, or headings)",
+            "\n".join(report.issues),
+        )
+
+    def test_heading_handoff_field_gets_format_hint(self):
+        handoff = VALID_HANDOFF.replace("Decision: #123", "### Decision")
+
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+            corridor_text=handoff,
+        )
+
+        self.assertFalse(report.ok)
+        self.assertIn(
+            "compact handoff is missing `Decision` (found `### Decision` - fields must be plain `Decision: value` lines, no bold, bullets, or headings)",
+            "\n".join(report.issues),
+        )
 
     def test_handoff_passes_and_renders(self):
         report = corridor_ci.evaluate(
@@ -186,6 +288,52 @@ class CorridorCiTest(unittest.TestCase):
         self.assertFalse(report.ok)
         self.assertIn("dependency manifest changed", "\n".join(report.issues))
 
+    def test_scope_matching_everything_warns_without_blocking(self):
+        handoff = VALID_HANDOFF.replace(
+            "Scope: frontend/src/components/ui/rating.tsx, frontend/tests/rating.spec.ts",
+            "Scope: **/*",
+        )
+
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+            corridor_text=handoff,
+        )
+
+        self.assertTrue(report.ok)
+        self.assertIn("carries no information", "\n".join(report.warnings))
+
+    def test_decision_without_reference_warns_without_blocking(self):
+        handoff = VALID_HANDOFF.replace("Decision: #123", "Decision: small fix")
+
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+            corridor_text=handoff,
+        )
+
+        self.assertTrue(report.ok)
+        self.assertIn("does not point to an issue/discussion/URL", "\n".join(report.warnings))
+
+    def test_verbose_body_warns_without_blocking(self):
+        handoff = VALID_HANDOFF + "\n".join(f"note {index}" for index in range(56))
+
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+            corridor_text=handoff,
+        )
+
+        self.assertTrue(report.ok)
+        self.assertIn("61 lines", "\n".join(report.warnings))
+        self.assertIn("compact handoff", "\n".join(report.warnings))
+
     def test_warn_mode_does_not_fail_process(self):
         report = corridor_ci.evaluate(
             changed_files=["frontend/src/routes/admin.tsx"],
@@ -216,6 +364,16 @@ class CorridorCiTest(unittest.TestCase):
                     os.environ["GITHUB_BASE_REF"] = old_base_ref
 
         self.assertEqual(code, 0)
+
+    def test_parser_default_max_changed_files_is_12_when_unset(self):
+        old_max_changed_files = os.environ.pop("INPUT_MAX_CHANGED_FILES", None)
+        try:
+            args = corridor_ci.build_parser().parse_args([])
+        finally:
+            if old_max_changed_files is not None:
+                os.environ["INPUT_MAX_CHANGED_FILES"] = old_max_changed_files
+
+        self.assertEqual(args.max_changed_files, 12)
 
     def test_cli_reads_pr_body_and_git_diff(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -267,6 +425,117 @@ class CorridorCiTest(unittest.TestCase):
                     os.environ["GITHUB_BASE_REF"] = old_base_ref
 
         self.assertEqual(code, 0)
+
+    def test_upsert_pr_comment_creates_when_marker_is_absent(self):
+        calls = []
+
+        def fake_transport(method, url, token, payload=None):
+            calls.append((method, url, token, payload))
+            if method == "GET":
+                return [{"id": 1, "body": "older comment"}]
+            return {"id": 2}
+
+        corridor_ci.upsert_pr_comment(
+            "# Corridor CI: PASS\n",
+            token="token",
+            repository="owner/repo",
+            pr_number=7,
+            transport=fake_transport,
+        )
+
+        self.assertEqual(calls[0][0], "GET")
+        self.assertIn("/repos/owner/repo/issues/7/comments?per_page=100", calls[0][1])
+        self.assertEqual(calls[1][0], "POST")
+        self.assertIn("/repos/owner/repo/issues/7/comments", calls[1][1])
+        self.assertEqual(calls[1][3]["body"].splitlines()[0], "<!-- corridor-ci -->")
+
+    def test_upsert_pr_comment_updates_when_marker_is_present(self):
+        calls = []
+
+        def fake_transport(method, url, token, payload=None):
+            calls.append((method, url, token, payload))
+            if method == "GET":
+                return [{"id": 42, "body": "old\n<!-- corridor-ci -->\nbody"}]
+            return {"id": 42}
+
+        corridor_ci.upsert_pr_comment(
+            "# Corridor CI: PASS\n",
+            token="token",
+            repository="owner/repo",
+            pr_number=7,
+            transport=fake_transport,
+        )
+
+        self.assertEqual([call[0] for call in calls], ["GET", "PATCH"])
+        self.assertIn("/repos/owner/repo/issues/comments/42", calls[1][1])
+        self.assertEqual(calls[1][3]["body"].splitlines()[0], "<!-- corridor-ci -->")
+
+    def test_upsert_pr_comment_skips_without_token(self):
+        calls = []
+
+        def fake_transport(method, url, token, payload=None):
+            calls.append((method, url, token, payload))
+            return []
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            corridor_ci.upsert_pr_comment(
+                "# Corridor CI: PASS\n",
+                token="",
+                repository="owner/repo",
+                pr_number=7,
+                transport=fake_transport,
+            )
+
+        self.assertEqual(calls, [])
+        self.assertIn("missing GITHUB_TOKEN", out.getvalue())
+
+    def test_upsert_pr_comment_swallows_http_errors(self):
+        def fake_transport(method, url, token, payload=None):
+            raise urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            corridor_ci.upsert_pr_comment(
+                "# Corridor CI: PASS\n",
+                token="token",
+                repository="owner/repo",
+                pr_number=7,
+                transport=fake_transport,
+            )
+
+        self.assertIn("PR comment skipped", out.getvalue())
+
+    def test_action_comment_input_is_wired(self):
+        repo = Path(__file__).resolve().parents[1]
+        action = (repo / "action.yml").read_text(encoding="utf-8")
+
+        self.assertIn("\n  comment:", action)
+        self.assertIn("INPUT_COMMENT: ${{ inputs.comment }}", action)
+        self.assertIn("GITHUB_TOKEN: ${{ github.token }}", action)
+
+    def test_pull_request_body_edits_rerun_corridor(self):
+        repo = Path(__file__).resolve().parents[1]
+        expected = "on:\n  pull_request:\n    types: [opened, edited, synchronize, reopened]"
+
+        self.assertIn(expected, (repo / ".github" / "workflows" / "corridor.yml").read_text(encoding="utf-8"))
+        self.assertIn(expected, (repo / "examples" / "workflow.yml").read_text(encoding="utf-8"))
+        self.assertIn(expected, (repo / "README.md").read_text(encoding="utf-8"))
+
+    def test_dogfood_workflow_writes_sticky_comment(self):
+        repo = Path(__file__).resolve().parents[1]
+        workflow = (repo / ".github" / "workflows" / "corridor.yml").read_text(encoding="utf-8")
+
+        self.assertIn("contents: read", workflow)
+        self.assertIn("pull-requests: write", workflow)
+        self.assertIn("comment: true", workflow)
+
+    def test_example_pr_template_contains_copyable_handoff(self):
+        repo = Path(__file__).resolve().parents[1]
+        template = (repo / "examples" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+
+        self.assertIn("Copy this file to .github/PULL_REQUEST_TEMPLATE.md", template)
+        self.assertIn(corridor_ci.COPYABLE_REVIEW_HANDOFF, template)
 
     def test_action_surface_is_minimal(self):
         repo = Path(__file__).resolve().parents[1]
@@ -321,9 +590,14 @@ class CorridorCiTest(unittest.TestCase):
 
     def test_examples_present_compact_handoff_as_only_path(self):
         repo = Path(__file__).resolve().parents[1]
+        readme = (repo / "README.md").read_text(encoding="utf-8")
         workflow = (repo / "examples" / "workflow.yml").read_text(encoding="utf-8")
+        readme_tag = re.search(r"shihchengwei-lab/corridor-ci@(v\d+)", readme)
+        workflow_tag = re.search(r"shihchengwei-lab/corridor-ci@(v\d+)", workflow)
 
-        self.assertIn("shihchengwei-lab/corridor-ci@v7", workflow)
+        self.assertIsNotNone(readme_tag)
+        self.assertIsNotNone(workflow_tag)
+        self.assertEqual(readme_tag.group(1), workflow_tag.group(1))
         self.assertNotIn("profile:", workflow)
         self.assertFalse((repo / "examples" / "corridor.md").exists())
 

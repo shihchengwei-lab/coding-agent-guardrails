@@ -7,10 +7,14 @@ import argparse
 import fnmatch
 import json
 import os
+import re
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Callable
 
 
 DEPENDENCY_GLOBS = (
@@ -33,8 +37,6 @@ DEPENDENCY_GLOBS = (
     "Gemfile.lock",
 )
 
-DEFAULT_ALWAYS_ALLOWED: tuple[str, ...] = ()
-
 COMPACT_HANDOFF_FIELDS = {
     "Decision": ("decision", "issue", "context"),
     "Scope": ("scope", "paths", "touched paths"),
@@ -49,6 +51,10 @@ Review first: path/to/file
 Verified: test command or manual check
 Risk: none
 """
+
+COMMENT_MARKER = "<!-- corridor-ci -->"
+GITHUB_API_URL = "https://api.github.com"
+HttpTransport = Callable[[str, str, str, dict[str, str] | None], Any]
 
 
 @dataclass
@@ -80,16 +86,70 @@ def normalize_heading(text: str) -> str:
     return " ".join(text.strip().strip("#").strip().lower().replace("_", " ").split())
 
 
+def handoff_field_aliases() -> dict[str, str]:
+    return {
+        normalize_heading(alias): label
+        for label, field_aliases in COMPACT_HANDOFF_FIELDS.items()
+        for alias in field_aliases
+    }
+
+
+def decorated_field_candidates(stripped: str) -> list[tuple[str, str]]:
+    candidates: list[tuple[str, str]] = []
+
+    bold_colon_inside = re.match(r"^\*\*(?P<key>[^:\n*][^:\n]*?):\*\*", stripped)
+    if bold_colon_inside:
+        candidates.append((bold_colon_inside.group("key").strip(), bold_colon_inside.group(0)))
+
+    bold_colon_outside = re.match(r"^\*\*(?P<key>[^*\n]+?)\*\*:", stripped)
+    if bold_colon_outside:
+        candidates.append((bold_colon_outside.group("key").strip(), bold_colon_outside.group(0)))
+
+    bullet = re.match(r"^(?P<bullet>[-*+])\s+(?P<key>[^:\n]+):", stripped)
+    if bullet:
+        token = f"{bullet.group('bullet')} {bullet.group('key').strip()}:"
+        candidates.append((bullet.group("key").strip(), token))
+
+    heading = re.match(r"^(?P<hashes>#{1,6})\s+(?P<rest>.+)$", stripped)
+    if heading:
+        rest = heading.group("rest").strip()
+        if ":" in rest:
+            key = rest.split(":", 1)[0].strip()
+            token = f"{heading.group('hashes')} {key}:"
+        else:
+            key = rest
+            token = f"{heading.group('hashes')} {key}"
+        candidates.append((key, token))
+
+    return candidates
+
+
+def detect_near_miss_fields(corridor_text: str | None) -> dict[str, str]:
+    near_misses: dict[str, str] = {}
+    if not corridor_text:
+        return near_misses
+
+    aliases = handoff_field_aliases()
+    canonical = {normalize_heading(label): label for label in COMPACT_HANDOFF_FIELDS}
+    for line in corridor_text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        for key, token in decorated_field_candidates(stripped):
+            labels = canonical if token.startswith("#") else aliases
+            label = labels.get(normalize_heading(key))
+            if label and label not in near_misses:
+                near_misses[label] = token
+                break
+    return near_misses
+
+
 def extract_compact_handoff(corridor_text: str | None) -> dict[str, str]:
     handoff = {label: "" for label in COMPACT_HANDOFF_FIELDS}
     if not corridor_text:
         return handoff
 
-    aliases = {
-        normalize_heading(alias): label
-        for label, field_aliases in COMPACT_HANDOFF_FIELDS.items()
-        for alias in field_aliases
-    }
+    aliases = handoff_field_aliases()
     for line in corridor_text.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or ":" not in stripped:
@@ -101,32 +161,36 @@ def extract_compact_handoff(corridor_text: str | None) -> dict[str, str]:
     return handoff
 
 
-def find_pr_body() -> str | None:
+def read_event_payload() -> dict[str, Any]:
     event_path = os.environ.get("GITHUB_EVENT_PATH")
     if not event_path:
-        return None
+        return {}
     try:
-        event = json.loads(Path(event_path).read_text(encoding="utf-8-sig"))
+        return json.loads(Path(event_path).read_text(encoding="utf-8-sig"))
     except Exception:
-        return None
+        return {}
+
+
+def find_pr_body() -> str | None:
+    event = read_event_payload()
     pull = event.get("pull_request") or {}
     return pull.get("body")
 
 
+def find_pr_number() -> str | None:
+    event = read_event_payload()
+    pull = event.get("pull_request") or {}
+    number = pull.get("number") or event.get("number")
+    return str(number) if number else None
+
+
 def is_paths_auto(value: str) -> bool:
     cleaned = value.strip().strip("`").lower()
-    if cleaned == "auto":
-        return True
-    lines = [line.strip().strip("`").lower() for line in value.splitlines() if line.strip()]
-    return len(lines) == 1 and lines[0] in {"auto", "- auto", "* auto"}
+    return cleaned == "auto"
 
 
-def auto_paths_from_changed_files(changed_files: list[str], always_allowed: list[str]) -> list[str]:
-    return [
-        path
-        for path in changed_files
-        if path and not any(path_matches(path, pattern) for pattern in always_allowed)
-    ]
+def auto_paths_from_changed_files(changed_files: list[str]) -> list[str]:
+    return [path for path in changed_files if path]
 
 
 def rev_exists(repo: Path, rev: str) -> bool:
@@ -167,11 +231,8 @@ def extract_changed_files(repo: Path) -> list[str]:
 
 def split_path_list(raw: str) -> list[str]:
     paths: list[str] = []
-    chunks = raw.splitlines() if "\n" in raw else raw.split(",")
-    for chunk in chunks:
+    for chunk in raw.split(","):
         cleaned = chunk.strip().strip("`")
-        if cleaned.startswith(("-", "*")):
-            cleaned = cleaned[1:].strip().strip("`")
         if cleaned:
             paths.append(normalize_path(cleaned))
     return paths
@@ -180,14 +241,16 @@ def split_path_list(raw: str) -> list[str]:
 def path_matches(path: str, pattern: str) -> bool:
     path = normalize_path(path)
     pattern = normalize_path(pattern)
+    if pattern in {"*", "**", "**/*"}:
+        return True
     if pattern.endswith("/**"):
         prefix = pattern[:-3].rstrip("/")
         return path == prefix or path.startswith(prefix + "/")
     return fnmatch.fnmatch(path, pattern)
 
 
-def is_allowed(path: str, allowed_paths: list[str], always_allowed: list[str]) -> bool:
-    return any(path_matches(path, pattern) for pattern in always_allowed + allowed_paths)
+def is_allowed(path: str, allowed_paths: list[str]) -> bool:
+    return any(path_matches(path, pattern) for pattern in allowed_paths)
 
 
 def is_dependency_file(path: str) -> bool:
@@ -203,24 +266,36 @@ def evaluate(
     allow_dependencies: bool = False,
     max_changed_files: int = 0,
     small_change_max_files: int = 0,
-    always_allowed: list[str] | None = None,
 ) -> Report:
     changed = [normalize_path(p) for p in changed_files if normalize_path(p)]
     allowed_paths: list[str] = []
     handoff = extract_compact_handoff(corridor_text)
+    near_misses = detect_near_miss_fields(corridor_text)
+    handoff_attempted = any(handoff.values()) or bool(near_misses)
     issues: list[str] = []
     warnings: list[str] = []
-    always = list(always_allowed or DEFAULT_ALWAYS_ALLOWED)
     deps = [p for p in changed if is_dependency_file(p)]
 
     scope = handoff.get("Scope", "")
     if is_paths_auto(scope):
-        allowed_paths = auto_paths_from_changed_files(changed, always)
+        allowed_paths = auto_paths_from_changed_files(changed)
     elif scope:
         allowed_paths = split_path_list(scope)
+        for pattern in allowed_paths:
+            if normalize_path(pattern) in {"*", "**", "**/*"}:
+                warnings.append(f"scope pattern `{pattern}` matches everything; the corridor carries no information")
+
+    decision = handoff.get("Decision", "")
+    if decision and not re.search(r"#\d+|https?://", decision):
+        warnings.append("Decision does not point to an issue/discussion/URL; free-text reasons are allowed")
+
+    if corridor_text:
+        line_count = len(corridor_text.splitlines())
+        if line_count > 60:
+            warnings.append(f"PR body is {line_count} lines; prefer a compact handoff")
 
     small_change_fast_path = (
-        not corridor_text
+        not handoff_attempted
         and small_change_max_files > 0
         and 0 < len(changed) <= small_change_max_files
         and not deps
@@ -230,12 +305,18 @@ def evaluate(
         warnings.append(
             f"small change fast path: review boundary skipped for {len(changed)} changed file(s)"
         )
-    elif not corridor_text:
-        issues.append("compact handoff is required, but no corridor text was found")
-    elif corridor_text:
+    elif not handoff_attempted:
+        issues.append("compact handoff is required, but no handoff fields were found")
+    else:
         for label, value in handoff.items():
             if not value:
-                issues.append(f"compact handoff is missing `{label}`")
+                near_miss = near_misses.get(label)
+                if near_miss:
+                    issues.append(
+                        f"compact handoff is missing `{label}` (found `{near_miss}` - fields must be plain `{label}: value` lines, no bold, bullets, or headings)"
+                    )
+                else:
+                    issues.append(f"compact handoff is missing `{label}`")
         review_first = normalize_path(handoff.get("Review first", ""))
         if review_first and review_first not in changed:
             issues.append(f"review first is not a changed file: {review_first}")
@@ -245,7 +326,7 @@ def evaluate(
 
     outside: list[str] = []
     if allowed_paths:
-        outside = [p for p in changed if not is_allowed(p, allowed_paths, always)]
+        outside = [p for p in changed if not is_allowed(p, allowed_paths)]
         if outside:
             issues.append("changed files outside corridor paths: " + ", ".join(outside))
 
@@ -347,12 +428,70 @@ def write_step_summary(markdown: str) -> None:
             handle.write(markdown)
 
 
+def github_api_request(method: str, url: str, token: str, payload: dict[str, str] | None = None) -> Any:
+    data = json.dumps(payload).encode("utf-8") if payload is not None else None
+    request = urllib.request.Request(url, data=data, method=method)
+    request.add_header("Authorization", f"Bearer {token}")
+    request.add_header("Accept", "application/vnd.github+json")
+    if payload is not None:
+        request.add_header("Content-Type", "application/json")
+
+    with urllib.request.urlopen(request, timeout=10) as response:
+        body = response.read()
+    if not body:
+        return None
+    return json.loads(body.decode("utf-8"))
+
+
+def upsert_pr_comment(
+    markdown: str,
+    *,
+    token: str | None = None,
+    repository: str | None = None,
+    pr_number: str | int | None = None,
+    transport: HttpTransport | None = None,
+) -> None:
+    token = token if token is not None else os.environ.get("GITHUB_TOKEN")
+    repository = repository if repository is not None else os.environ.get("GITHUB_REPOSITORY")
+    pr_number = pr_number if pr_number is not None else find_pr_number()
+
+    if not token:
+        print("corridor-ci PR comment skipped: missing GITHUB_TOKEN")
+        return
+    if not repository:
+        print("corridor-ci PR comment skipped: missing GITHUB_REPOSITORY")
+        return
+    if not pr_number:
+        print("corridor-ci PR comment skipped: missing pull request number")
+        return
+
+    api_url = os.environ.get("GITHUB_API_URL", GITHUB_API_URL).rstrip("/")
+    transport = transport or github_api_request
+    body = {"body": f"{COMMENT_MARKER}\n\n{markdown}"}
+    comments_url = f"{api_url}/repos/{repository}/issues/{pr_number}/comments?per_page=100"
+
+    try:
+        comments = transport("GET", comments_url, token, None) or []
+        for comment in comments:
+            if COMMENT_MARKER in str(comment.get("body", "")) and comment.get("id"):
+                update_url = f"{api_url}/repos/{repository}/issues/comments/{comment['id']}"
+                transport("PATCH", update_url, token, body)
+                return
+        create_url = f"{api_url}/repos/{repository}/issues/{pr_number}/comments"
+        transport("POST", create_url, token, body)
+    except urllib.error.HTTPError as exc:
+        print(f"corridor-ci PR comment skipped: GitHub API returned {exc.code} {exc.reason}")
+    except Exception as exc:
+        print(f"corridor-ci PR comment skipped: {exc}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Validate a PR against a declared corridor.")
     parser.add_argument("--repo", default=".", help="repository checkout path")
     parser.add_argument("--mode", choices=("fail", "warn"), default=os.environ.get("INPUT_MODE", "warn"))
     parser.add_argument("--allow-dependencies", default=os.environ.get("INPUT_ALLOW_DEPENDENCIES", "false"))
-    parser.add_argument("--max-changed-files", type=int, default=int(os.environ.get("INPUT_MAX_CHANGED_FILES", "0") or "0"))
+    parser.add_argument("--max-changed-files", type=int, default=int(os.environ.get("INPUT_MAX_CHANGED_FILES", "12") or "12"))
+    parser.add_argument("--comment", default=os.environ.get("INPUT_COMMENT", "false"))
     parser.add_argument(
         "--small-change-max-files",
         type=int,
@@ -377,6 +516,8 @@ def main(argv: list[str] | None = None) -> int:
     markdown = render_markdown(report)
     print(markdown)
     write_step_summary(markdown)
+    if truthy(args.comment):
+        upsert_pr_comment(markdown)
     return exit_code(report, args.mode)
 
 

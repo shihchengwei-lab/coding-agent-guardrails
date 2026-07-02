@@ -2,10 +2,11 @@ name: Corridor CI
 
 on:
   pull_request:
+    types: [opened, edited, synchronize, reopened]
 
 permissions:
   contents: read
-  pull-requests: read
+  pull-requests: write
 
 jobs:
   corridor:
@@ -20,3 +21,4 @@ jobs:
           mode: fail
           small_change_max_files: 1
           max_changed_files: 12
+          comment: true
