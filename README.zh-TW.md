@@ -68,7 +68,7 @@ Python（需 3.11 以上），並接好 agentcam 的 session 掛鉤——Claude 
 
 ## 版本規則
 
-一個 repo、四個工具，release tag 以工具名為前綴：`agentcam-v0.3.1`、
+一個 repo、四個工具，release tag 以工具名為前綴：`agentcam-v0.3.2`、
 `corridor-ci-v11`⋯⋯。更早的版本（`v0.2.0`、`v10`⋯⋯）留在各工具原本的
 repo 裡。
 
