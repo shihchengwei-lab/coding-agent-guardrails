@@ -5,7 +5,19 @@ All notable changes to agentcam are recorded here. Format follows
 Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 0.x is unstable on purpose.
 
-## [Unreleased]
+## [0.3.1] — 2026-07-06
+
+### Fixed
+
+- **`__version__` said 0.2.0.** The hardcoded string in
+  `agentcam/__init__.py` was not bumped for 0.3.0, so the published
+  0.3.0 stamps `agentcam 0.2.0` into report provenance
+  (`agentcam_version`, `builtin_ruleset_version`) and `agentcam
+  version` output. Do not use 0.3.0; it is superseded by this release.
+  The package version is now read from `__init__.py` at build time
+  (single source), so the two can no longer drift.
+
+## [0.3.0] — 2026-07-06 (superseded by 0.3.1)
 
 ### Added (2026-07-05, PR handoff integration with corridor-ci)
 

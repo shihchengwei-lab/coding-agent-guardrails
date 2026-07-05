@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agentcam"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Local-first CLI wrapper that records what your AI coding agent changed in your repo."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -42,6 +42,9 @@ dev = [
 
 [project.scripts]
 agentcam = "agentcam.cli:main"
+
+[tool.hatch.version]
+path = "src/agentcam/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentcam"]
