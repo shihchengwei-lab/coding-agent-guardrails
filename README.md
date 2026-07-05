@@ -16,6 +16,24 @@ corridor from "agent starts typing" to "human presses merge".
 | After the agent claims done | [agentcam](agentcam/) | Records what actually changed — files, risk flags, diff stat — and drafts the PR handoff from that record. |
 | Before a human reviews | [corridor-ci](corridor-ci/) | Validates the five-line handoff against the actual diff and appends the recorded evidence to the PR report. |
 
+## Look Ma, no PRs
+
+Full disclosure: I am not a software engineer. I can't write a line of
+code, have never reviewed a PR, and have never read a diff line by line.
+Check this repo's history — the commits were pushed straight to main by
+agents, and the handful of PRs you'll find were opened by agents testing
+these tools on themselves. My review process for those: saw green,
+pressed merge. Yes, the exact habit this toolkit exists to catch. A pure
+vibe coder.
+
+That is exactly why this toolkit exists. I trust the agent's output
+unconditionally, because I have no way not to. What's left to doubt is
+the process: what actually changed, whether the check actually ran,
+whether the next person can actually take over. Every tool here does the
+same job — turn "trust me" into a recorded fact. These guardrails aren't
+built around the code; they're built around the workflow of someone who
+can't read it.
+
 ## Install (one command)
 
 ```bash
