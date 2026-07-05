@@ -45,8 +45,9 @@ Re-running is safe. The installer wires the discipline block (rules plus
 the agentcam handoff loop) into `CLAUDE.md` and `AGENTS.md` (Claude Code
 reads the former; Codex and friends read the latter), installs the
 slime-coding hooks, drops a starter corridor-ci workflow (skipping any
-you already have), and pip-installs agentcam from the checkout into your
-current Python (3.11+ required).
+you already have), pip-installs agentcam from the checkout into your
+current Python (3.11+ required), and wires agentcam's session hooks so
+Claude Code sessions are recorded without the `agentcam run` wrapper.
 
 ## The loop
 

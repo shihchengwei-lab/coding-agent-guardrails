@@ -39,8 +39,9 @@ git clone https://github.com/shihchengwei-lab/coding-agent-guardrails ~/guardrai
 重跑安全。安裝器會把紀律區塊（規則＋agentcam 交接循環）接進
 `CLAUDE.md` 與 `AGENTS.md`（Claude Code 讀前者、Codex 等讀後者）、
 裝好 slime-coding 的 hooks、放一份 corridor-ci 起手 workflow（你已有
-的不會被覆蓋），並把 agentcam 從這份 checkout 直接 pip 裝進你目前的
-Python（需 3.11 以上）。
+的不會被覆蓋）、把 agentcam 從這份 checkout 直接 pip 裝進你目前的
+Python（需 3.11 以上），並接好 agentcam 的 session 掛鉤——Claude Code
+的 session 不用打 `agentcam run` 也會自動錄。
 
 ## 閉環
 
