@@ -45,8 +45,8 @@ Evidence & handoff (agentcam — do this without being asked):
 1. After your change passes its tests, run them once more under the
    recorder: `agentcam verify -- <project test command>`. It runs the
    check itself and records command, exit code, and duration as observed
-   facts. If it errors because no recorded run exists (the session was
-   not started via `agentcam run`), skip steps 2–3 and say so.
+   facts. If it errors because nothing is being recorded (no wrapped
+   run and no in-progress recorded session), skip steps 2–3 and say so.
 2. When preparing the PR: `agentcam handoff` prints the five-line
    handoff drafted from the record. Paste it into the PR body, fill in
    `Decision` yourself, and leave `Verified` as the fill-in unless a

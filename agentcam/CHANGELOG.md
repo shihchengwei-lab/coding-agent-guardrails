@@ -5,6 +5,24 @@ All notable changes to agentcam are recorded here. Format follows
 Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 0.x is unstable on purpose.
 
+## [Unreleased]
+
+### Fixed
+
+- **`agentcam verify` during an in-progress hook session.** `--run
+  latest` used to resolve to the most recent run under `runs/`, which
+  mid-session in hook mode is a *previous* session's run — the check
+  was pinned to the wrong case file, or errored when no run existed
+  yet. verify now stashes the check with the in-progress session
+  (`sessions/<sid>/verifications.jsonl`) and SessionEnd merges it into
+  the run it renders. Sessions that end with no git-visible diff drop
+  the stash along with the rest of the session state. Explicit
+  `--run RUN_ID` behavior is unchanged. SessionEnd claims the session
+  dir (rename to `*.ending`) before tearing it down, so a check that
+  outlives its session fails loudly (exit 2) instead of reporting
+  success for a record that was about to be deleted (Codex review
+  HIGH, this release).
+
 ## [0.3.1] — 2026-07-06
 
 ### Fixed

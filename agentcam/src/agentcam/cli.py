@@ -192,7 +192,8 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="RUN_ID",
         help=(
             "Run id under .git/agentcam/runs/ to attach the check to, "
-            "or 'latest' (default) for the most recently modified run."
+            "or 'latest' (default): the in-progress Claude Code session "
+            "if one exists, otherwise the most recently modified run."
         ),
     )
     verify.add_argument(
@@ -414,6 +415,32 @@ def _handoff_command(args) -> int:
     return 0
 
 
+def _latest_in_progress_session(git_dir: Path) -> Path | None:
+    """Most recently started in-progress hook session, or None.
+
+    A session dir with a state_before.pickle is a Claude Code session
+    that started but has not ended (SessionEnd removes the dir).
+    """
+    sessions_root = git_dir / "agentcam" / "sessions"
+    try:
+        candidates = [
+            d
+            for d in sessions_root.iterdir()
+            # *.ending = session mid-teardown (claimed by SessionEnd,
+            # hooks.py); it no longer accepts checks.
+            if not d.name.endswith(".ending")
+            and (d / "state_before.pickle").is_file()
+        ]
+        if not candidates:
+            return None
+        return max(
+            candidates,
+            key=lambda d: (d / "state_before.pickle").stat().st_mtime,
+        )
+    except OSError:
+        return None
+
+
 def _verify_command(args) -> int:
     import shutil
     import subprocess
@@ -445,40 +472,51 @@ def _verify_command(args) -> int:
         print(f"agentcam: git error: {e}", file=sys.stderr)
         return 2
 
-    try:
-        run_dir = resolve_run_dir(git_dir, args.run)
-    except ExportError as e:
-        print(f"agentcam: {e}", file=sys.stderr)
-        return 2
+    # Hook mode: an in-progress Claude Code session has a snapshot under
+    # sessions/ but no run under runs/ yet (the run is rendered at
+    # SessionEnd), so `latest` would pin the check to a PREVIOUS
+    # session's run. Stash it in the session dir instead; SessionEnd
+    # merges it into the run it renders. An explicit --run ID still
+    # targets runs/.
+    session_dir = None
+    if args.run == "latest":
+        session_dir = _latest_in_progress_session(git_dir)
 
-    manifest_path = run_dir / "manifest.json"
-    try:
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as e:
-        print(
-            f"agentcam: could not read {manifest_path}: {e}",
-            file=sys.stderr,
-        )
-        return 2
+    if session_dir is None:
+        try:
+            run_dir = resolve_run_dir(git_dir, args.run)
+        except ExportError as e:
+            print(f"agentcam: {e}", file=sys.stderr)
+            return 2
 
-    evidence = data.get("evidence")
-    if evidence is None:
-        print(
-            f"agentcam: run {run_dir.name} has no evidence section "
-            "(recorded by an older agentcam). Re-record the run with "
-            "this version before recording checks.",
-            file=sys.stderr,
-        )
-        return 2
-    if not isinstance(evidence, dict) or not isinstance(
-        evidence.get("verifications", []), list
-    ):
-        print(
-            f"agentcam: run {run_dir.name} has a malformed evidence "
-            "section; refusing to record checks into it.",
-            file=sys.stderr,
-        )
-        return 2
+        manifest_path = run_dir / "manifest.json"
+        try:
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            print(
+                f"agentcam: could not read {manifest_path}: {e}",
+                file=sys.stderr,
+            )
+            return 2
+
+        evidence = data.get("evidence")
+        if evidence is None:
+            print(
+                f"agentcam: run {run_dir.name} has no evidence section "
+                "(recorded by an older agentcam). Re-record the run with "
+                "this version before recording checks.",
+                file=sys.stderr,
+            )
+            return 2
+        if not isinstance(evidence, dict) or not isinstance(
+            evidence.get("verifications", []), list
+        ):
+            print(
+                f"agentcam: run {run_dir.name} has a malformed evidence "
+                "section; refusing to record checks into it.",
+                file=sys.stderr,
+            )
+            return 2
 
     # Resolve via PATH like the run backend (runner.py) so PATHEXT-only
     # runners (`npm`, `pytest.cmd`) work without a shell; the recorded
@@ -503,6 +541,35 @@ def _verify_command(args) -> int:
     duration = (
         datetime.now(timezone.utc).astimezone() - started_at
     ).total_seconds()
+
+    record = {
+        "command": " ".join(redact_argv(list(check_argv))),
+        "exit_code": proc.returncode,
+        "duration_seconds": round(duration, 3),
+        "recorded_at": started_at.isoformat(),
+    }
+
+    if session_dir is not None:
+        try:
+            with (session_dir / "verifications.jsonl").open(
+                "a", encoding="utf-8"
+            ) as f:
+                f.write(json.dumps(record) + "\n")
+        except OSError as e:
+            print(
+                f"agentcam: check finished (exit {proc.returncode}) but "
+                f"could not record it for session {session_dir.name}: "
+                f"{e}; nothing was recorded.",
+                file=sys.stderr,
+            )
+            return 2
+        print(
+            f"agentcam: recorded check (exit {proc.returncode}) for "
+            f"in-progress session {session_dir.name}; it attaches to "
+            "the session's run when the session ends",
+            file=sys.stderr,
+        )
+        return proc.returncode
 
     # Re-read before writing: the check itself (or a concurrent verify)
     # may have modified the manifest while it ran, and appending to the
@@ -532,14 +599,7 @@ def _verify_command(args) -> int:
     # duration are observed facts, not the wrapped agent's claims. The
     # command line is stored redacted because it rides into the
     # committable manifest.redacted.json via `export --files`.
-    evidence.setdefault("verifications", []).append(
-        {
-            "command": " ".join(redact_argv(list(check_argv))),
-            "exit_code": proc.returncode,
-            "duration_seconds": round(duration, 3),
-            "recorded_at": started_at.isoformat(),
-        }
-    )
+    evidence.setdefault("verifications", []).append(record)
     manifest_path.write_text(
         json.dumps(data, indent=2), encoding="utf-8"
     )

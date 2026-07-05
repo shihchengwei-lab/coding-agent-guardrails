@@ -13,8 +13,11 @@ blocked:
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -502,3 +505,149 @@ class TestRulesetProvenanceHookMode:
         assert rs["builtin_ruleset_id"] == "agentcam-default"
         assert rs["load_status"] == "builtin_only"
         assert rs["merged_rules_sha256"].startswith("sha256:")
+
+
+# ---------------------------------------------------------------------------
+# `agentcam verify` during an in-progress hook session
+# ---------------------------------------------------------------------------
+
+def _verify(cwd: Path, *check: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [sys.executable, "-m", "agentcam.cli", "verify", "--", *check],
+        cwd=cwd,
+        capture_output=True,
+        timeout=25,
+    )
+
+
+PASS_CMD = (sys.executable, "-c", "raise SystemExit(0)")
+
+
+class TestVerifyDuringSession:
+    def test_verify_attaches_to_session_not_previous_run(
+        self, tmp_git_repo: Path
+    ):
+        # A previous wrap-mode run exists — the mis-attachment target.
+        proc = subprocess.run(
+            [
+                sys.executable, "-m", "agentcam.cli", "run", "--",
+                sys.executable, "-c", "open('old.txt','w').write('x')",
+            ],
+            cwd=tmp_git_repo, capture_output=True, timeout=25,
+        )
+        assert proc.returncode == 0, proc.stderr
+        old_run = next(_runs_dir(tmp_git_repo).iterdir())
+
+        sid = "live-session"
+        _agentcam_hook(
+            tmp_git_repo, "hook-session-start",
+            _hook_payload(sid, tmp_git_repo, "SessionStart"),
+        )
+        proc = _verify(tmp_git_repo, *PASS_CMD)
+        assert proc.returncode == 0, proc.stderr
+        assert b"in-progress session" in proc.stderr
+
+        # Stashed with the session; the previous run stays untouched.
+        assert (
+            _session_dir(tmp_git_repo, sid) / "verifications.jsonl"
+        ).exists()
+        old_manifest = json.loads(
+            (old_run / "manifest.json").read_text(encoding="utf-8")
+        )
+        assert old_manifest["evidence"].get("verifications", []) == []
+
+        # Session ends with a diff -> its run carries the check.
+        (tmp_git_repo / "by_agent.txt").write_text("hi")
+        _agentcam_hook(
+            tmp_git_repo, "hook-session-end",
+            _hook_payload(sid, tmp_git_repo, "SessionEnd"),
+        )
+        session_run = next(
+            d for d in _runs_dir(tmp_git_repo).iterdir()
+            if "claude-session" in d.name
+        )
+        checks = json.loads(
+            (session_run / "manifest.json").read_text(encoding="utf-8")
+        )["evidence"]["verifications"]
+        assert len(checks) == 1
+        assert checks[0]["exit_code"] == 0
+        assert checks[0]["command"]
+
+    def test_verify_works_with_no_previous_runs(
+        self, tmp_git_repo: Path
+    ):
+        sid = "first-ever-session"
+        _agentcam_hook(
+            tmp_git_repo, "hook-session-start",
+            _hook_payload(sid, tmp_git_repo, "SessionStart"),
+        )
+        proc = _verify(tmp_git_repo, *PASS_CMD)
+        assert proc.returncode == 0, proc.stderr
+        assert b"in-progress session" in proc.stderr
+
+    def test_no_diff_session_drops_stashed_checks(
+        self, tmp_git_repo: Path
+    ):
+        sid = "quiet-session"
+        _agentcam_hook(
+            tmp_git_repo, "hook-session-start",
+            _hook_payload(sid, tmp_git_repo, "SessionStart"),
+        )
+        assert _verify(tmp_git_repo, *PASS_CMD).returncode == 0
+        _agentcam_hook(
+            tmp_git_repo, "hook-session-end",
+            _hook_payload(sid, tmp_git_repo, "SessionEnd"),
+        )
+        # No diff -> no run, session dir (and the stash) cleaned up.
+        assert not _session_dir(tmp_git_repo, sid).exists()
+        runs = _runs_dir(tmp_git_repo)
+        assert not runs.exists() or not any(runs.iterdir())
+
+    def test_corrupt_stash_line_does_not_break_the_report(
+        self, tmp_git_repo: Path
+    ):
+        sid = "corrupt-stash"
+        _agentcam_hook(
+            tmp_git_repo, "hook-session-start",
+            _hook_payload(sid, tmp_git_repo, "SessionStart"),
+        )
+        assert _verify(tmp_git_repo, *PASS_CMD).returncode == 0
+        stash = _session_dir(tmp_git_repo, sid) / "verifications.jsonl"
+        stash.write_text(
+            stash.read_text(encoding="utf-8") + "not json\n",
+            encoding="utf-8",
+        )
+        (tmp_git_repo / "by_agent.txt").write_text("hi")
+        _agentcam_hook(
+            tmp_git_repo, "hook-session-end",
+            _hook_payload(sid, tmp_git_repo, "SessionEnd"),
+        )
+        run_dir = next(_runs_dir(tmp_git_repo).iterdir())
+        checks = json.loads(
+            (run_dir / "manifest.json").read_text(encoding="utf-8")
+        )["evidence"]["verifications"]
+        # The good record survives; the corrupt line is dropped.
+        assert len(checks) == 1
+
+    def test_verify_skips_session_being_torn_down(
+        self, tmp_git_repo: Path
+    ):
+        """A dir renamed to *.ending is a session mid-teardown
+        (claimed by SessionEnd): verify must not stash checks there,
+        even when it looks newer than the live session."""
+        sid = "live-a"
+        _agentcam_hook(
+            tmp_git_repo, "hook-session-start",
+            _hook_payload(sid, tmp_git_repo, "SessionStart"),
+        )
+        live = _session_dir(tmp_git_repo, sid)
+        ending = live.parent / "old-b.ending"
+        shutil.copytree(live, ending)
+        future = time.time() + 300
+        os.utime(ending / "state_before.pickle", (future, future))
+
+        proc = _verify(tmp_git_repo, *PASS_CMD)
+        assert proc.returncode == 0, proc.stderr
+        assert b"live-a" in proc.stderr
+        assert (live / "verifications.jsonl").exists()
+        assert not (ending / "verifications.jsonl").exists()

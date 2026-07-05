@@ -198,6 +198,12 @@ generic wrapping path above (`agentcam run -- ...`).
 Both hook commands always exit 0; Claude Code is never blocked even
 if agentcam has an internal error.
 
+`agentcam verify` works mid-session: while a session is in progress it
+records the check against that session — not against a previous run —
+and the check is merged into the session's run when the session ends.
+A session that ends without a git-visible diff renders no run and
+drops its recorded checks with the rest of the session state.
+
 **Hook-mode reports do not include stdout/stderr.** Claude Code does
 not pipe its terminal output through hook subprocesses, so agentcam
 cannot capture it. The Logs section in a hook-mode report points to

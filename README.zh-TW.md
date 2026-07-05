@@ -49,7 +49,9 @@ Python（需 3.11 以上），並接好 agentcam 的 session 掛鉤——Claude 
 
 1. **實錄** — `agentcam run -- <agent 指令>`（或直接在 Claude Code 裡
    工作：安裝器接好的 agentcam session 掛鉤會自動錄）。agent 改的一切
-   記錄在 `.git/agentcam/runs/`。
+   記錄在 `.git/agentcam/runs/`。取捨先講明：hook 模式的證據比較薄——
+   Claude Code 不會把終端輸出餵給掛鉤，所以輸出樣式型的風險旗標
+   （`rm -rf` 之類）抓不到；要最完整的實錄，用 `agentcam run` 包著跑。
 2. **驗證** — `agentcam verify -- pytest -q`。由 agentcam 親自執行測試，
    記下指令、退出碼、耗時——是儀器量到的事實，不是 agent 的自述。
    通過的檢查會自動草擬交接單的 `Verified` 行。

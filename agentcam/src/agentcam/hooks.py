@@ -196,6 +196,30 @@ def _do_session_start() -> int:
     return 0
 
 
+def _load_pending_verifications(session_dir: Path) -> list[dict]:
+    """Checks stashed by `agentcam verify` during an in-progress
+    session (cli.py writes one JSON object per line). Tolerant: a
+    corrupt line loses that line, never the report."""
+    records: list[dict] = []
+    try:
+        with (session_dir / "verifications.jsonl").open(
+            encoding="utf-8"
+        ) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(rec, dict):
+                    records.append(rec)
+    except OSError:
+        return []
+    return records
+
+
 def cmd_hook_session_end() -> int:
     """SessionEnd hook: compare against the persisted SessionStart
     snapshot, render a report if there's a diff, then clean up the
@@ -257,6 +281,24 @@ def _do_session_end() -> int:
         # No matching SessionStart — silent no-op. Common cases: hook
         # registered mid-session; SessionEnd from a different session id.
         return 0
+
+    # Claim the session dir before anything else: rename it so a
+    # concurrent `agentcam verify` cannot keep stashing checks into a
+    # session that is ending — its append fails loudly (exit 2) instead
+    # of claiming success for a record that the cleanup below would
+    # delete. POSIX: an append already in flight follows the rename and
+    # is still merged. Windows: the rename fails while the stash file
+    # is momentarily open — fall back to the unclaimed dir; the stash
+    # is loaded after the (slow) render, so the residual loss window is
+    # the merge+cleanup instants, not the whole render.
+    claimed = session_dir.with_name(session_dir.name + ".ending")
+    try:
+        shutil.rmtree(claimed, ignore_errors=True)  # stale claim, if any
+        os.rename(session_dir, claimed)
+        session_dir = claimed
+        state_file = session_dir / "state_before.pickle"
+    except OSError:
+        pass
 
     # Codex round-1: catch broadly. pickle can raise ValueError /
     # TypeError / RecursionError; dict extraction below can raise
@@ -374,6 +416,23 @@ def _do_session_end() -> int:
             capture=capture,
             ruleset=provenance_for_builtin_ruleset(),
         )
+        # Load the stash only after the (slow) render above: checks
+        # appended by `agentcam verify` while the report was being
+        # built are still merged.
+        pending_verifications = _load_pending_verifications(session_dir)
+        if pending_verifications:
+            # Same append-to-manifest shape as `agentcam verify` itself
+            # (cli.py). A failure here re-raises: a report silently
+            # missing checks the user was told were recorded is worse
+            # than no report, and the except below cleans up.
+            manifest_path = Path(run_paths.manifest_json)
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+            data["evidence"].setdefault("verifications", []).extend(
+                pending_verifications
+            )
+            manifest_path.write_text(
+                json.dumps(data, indent=2), encoding="utf-8"
+            )
     except Exception:
         # Half-written run dir is worse than no run dir — it confuses
         # the user (placeholder logs, no report, unclear what
