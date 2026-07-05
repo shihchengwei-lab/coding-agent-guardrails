@@ -627,6 +627,14 @@ class CorridorCiTest(unittest.TestCase):
                 "overall_risk": "HIGH",
                 "diff_stat": " 1 file changed, 1 insertion(+)",
                 "diff_stat_cached": "",
+                "verifications": [
+                    {
+                        "command": "pytest -q",
+                        "exit_code": 0,
+                        "duration_seconds": 2.3,
+                        "recorded_at": "2026-07-05T12:00:00+00:00",
+                    }
+                ],
             },
         }
 
@@ -674,12 +682,43 @@ class CorridorCiTest(unittest.TestCase):
         self.assertIn("## Recorded Evidence (agentcam)", with_evidence)
         self.assertIn("overall risk: HIGH", with_evidence)
         self.assertIn("HIGH | auth path", with_evidence)
+        self.assertIn(
+            "recorded check: `pytest -q` | exit 0 (2.3s)", with_evidence
+        )
         without = corridor_ci.render_markdown(report)
         self.assertNotIn("Recorded Evidence", without)
         with_note = corridor_ci.render_markdown(
             report, agentcam_note="agentcam manifest could not be read"
         )
         self.assertIn("could not be read", with_note)
+
+    def test_render_evidence_tolerates_malformed_verifications(self):
+        evidence = self._sample_evidence_manifest()["evidence"]
+        evidence["verifications"] = [
+            "not-a-dict",
+            {"command": "ruff check ."},
+        ]
+        rendered = "\n".join(
+            corridor_ci.render_agentcam_section(evidence, None)
+        )
+        self.assertIn("recorded check: `ruff check .` | exit ?", rendered)
+        self.assertNotIn("not-a-dict", rendered)
+
+    def test_render_evidence_never_raises_on_adversarial_shapes(self):
+        # Committed manifests are author-controlled; display-only means
+        # no shape may crash the renderer before the verdict is set.
+        evidence = self._sample_evidence_manifest()["evidence"]
+        evidence["risk_flags"] = ["not-a-dict", {"level": "HIGH"}]
+        evidence["verifications"] = 42
+        evidence["changed_files"] = "abc"
+        evidence["diff_stat"] = ["not", "a", "string"]
+        rendered = "\n".join(
+            corridor_ci.render_agentcam_section(evidence, None)
+        )
+        self.assertIn("HIGH | ? | ``", rendered)
+        self.assertNotIn("not-a-dict", rendered)
+        self.assertNotIn("recorded changed files", rendered)
+        self.assertNotIn("```", rendered)
 
     def test_cli_appends_evidence_section_without_affecting_verdict(self):
         import contextlib

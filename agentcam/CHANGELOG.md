@@ -19,6 +19,11 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 - **`agentcam export --files DIR`.** Writes `AGENT_RUN_REPORT.md` +
   `manifest.redacted.json` as committable files (no logs), the form
   corridor-ci reads as recorded evidence.
+- **`agentcam verify -- <cmd>`.** Runs a check (e.g. the test suite) as
+  agentcam's child process and appends the redacted command, exit code,
+  and duration to the run's `evidence.verifications`. Passing checks
+  draft the handoff `Verified` line (`[recorded by agentcam]`); failing
+  ones leave it a fill-in. The check's exit code is passed through.
 
 ## [0.2.0] — 2026-06-28
 

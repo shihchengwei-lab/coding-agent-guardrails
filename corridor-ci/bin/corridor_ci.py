@@ -373,7 +373,12 @@ def should_show_handoff_template(report: Report) -> bool:
 def render_agentcam_section(
     evidence: dict | None, note: str | None
 ) -> list[str]:
-    """Markdown lines for the recorded-evidence section, or []."""
+    """Markdown lines for the recorded-evidence section, or [].
+
+    The manifest is a committed, author-controlled file, so any field
+    may carry any shape; entries render best-effort or are skipped.
+    Display-only means no shape may raise before the verdict is set.
+    """
     if evidence is None and note is None:
         return []
     lines = ["", "## Recorded Evidence (agentcam)"]
@@ -383,15 +388,31 @@ def render_agentcam_section(
     overall = evidence.get("overall_risk")
     if overall:
         lines.append(f"- overall risk: {overall}")
-    recorded = evidence.get("changed_files") or []
-    if recorded:
+    recorded = evidence.get("changed_files")
+    if isinstance(recorded, list) and recorded:
         lines.append(f"- recorded changed files: {len(recorded)}")
-    for flag in evidence.get("risk_flags") or []:
+    flags = evidence.get("risk_flags")
+    for flag in flags if isinstance(flags, list) else []:
+        if not isinstance(flag, dict):
+            continue
         level = flag.get("level", "?")
         rule = flag.get("rule", "?")
         found = flag.get("evidence", "")
         lines.append(f"- {level} | {rule} | `{found}`")
-    diff_stat = (evidence.get("diff_stat") or "").strip()
+    checks = evidence.get("verifications")
+    for check in checks if isinstance(checks, list) else []:
+        if not isinstance(check, dict):
+            continue
+        cmd = check.get("command") or "?"
+        code = check.get("exit_code")
+        code_note = "?" if code is None else code
+        dur = check.get("duration_seconds")
+        dur_note = f" ({dur}s)" if isinstance(dur, (int, float)) else ""
+        lines.append(f"- recorded check: `{cmd}` | exit {code_note}{dur_note}")
+    raw_diff_stat = evidence.get("diff_stat")
+    diff_stat = (
+        raw_diff_stat.strip() if isinstance(raw_diff_stat, str) else ""
+    )
     if diff_stat:
         lines.append("")
         lines.append("```text")

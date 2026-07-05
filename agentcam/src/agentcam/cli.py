@@ -155,9 +155,10 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Reads the run's manifest evidence and prints the compact "
             "handoff (Decision / Scope / Review first / Verified / "
-            "Risk) for the pull request body. Decision and Verified "
-            "are left for the author: agentcam records what changed, "
-            "not why, and it does not observe test runs."
+            "Risk) for the pull request body. Decision is left for the "
+            "author: agentcam records what changed, not why. Verified "
+            "is drafted from checks recorded by `agentcam verify`; "
+            "without a passing recorded check it stays a fill-in."
         ),
     )
     handoff.add_argument(
@@ -168,6 +169,36 @@ def build_parser() -> argparse.ArgumentParser:
             "Run id under .git/agentcam/runs/, or 'latest' (default) "
             "for the most recently modified run."
         ),
+    )
+
+    verify = sub.add_parser(
+        "verify",
+        help=(
+            "Run a check command and record its result into a run's "
+            "evidence."
+        ),
+        description=(
+            "Runs the given command (typically the test suite) with "
+            "agentcam as the parent process, then appends the redacted "
+            "command line, exit code, and duration to the run's "
+            "manifest evidence. `agentcam handoff` drafts the Verified "
+            "line from checks recorded with exit code 0. The check's "
+            "exit code is passed through."
+        ),
+    )
+    verify.add_argument(
+        "--run",
+        default="latest",
+        metavar="RUN_ID",
+        help=(
+            "Run id under .git/agentcam/runs/ to attach the check to, "
+            "or 'latest' (default) for the most recently modified run."
+        ),
+    )
+    verify.add_argument(
+        "argv",
+        nargs=argparse.REMAINDER,
+        help="The check command, after a `--` separator.",
     )
 
     return parser
@@ -204,6 +235,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "handoff":
         return _handoff_command(args)
+
+    if args.cmd == "verify":
+        return _verify_command(args)
 
     parser.error(f"unknown subcommand: {args.cmd}")
     return 2  # unreachable; parser.error exits
@@ -290,6 +324,29 @@ def _pick_review_first(paths: list[str], flags: list[dict]) -> str:
     return paths[0]
 
 
+def _verified_line(verifications: list) -> str:
+    """Draft the handoff Verified line from recorded checks.
+
+    Only checks agentcam itself ran (exit code observed, not claimed)
+    fill the line; with no passing check it stays a fill-in — the
+    claim belongs to the author, and red must not read as verified.
+    """
+    recorded = [v for v in verifications if isinstance(v, dict)]
+    passing = [v for v in recorded if v.get("exit_code") == 0]
+    if passing:
+        checks = "; ".join(
+            f"{v.get('command', '?')} (exit 0)" for v in passing
+        )
+        return f"{checks} [recorded by agentcam]"
+    if recorded:
+        last = recorded[-1]
+        return (
+            "<fill in: recorded check failed: "
+            f"{last.get('command', '?')} (exit {last.get('exit_code')})>"
+        )
+    return "<fill in: agentcam did not observe a test run>"
+
+
 def _handoff_command(args) -> int:
     from agentcam.export import ExportError, resolve_run_dir
     from agentcam.git_state import NotAGitRepoError, resolve_git_dir
@@ -352,9 +409,146 @@ def _handoff_command(args) -> int:
     print("Decision: <fill in: issue or decision link>")
     print(f"Scope: {', '.join(paths)}")
     print(f"Review first: {review_first}")
-    print("Verified: <fill in: agentcam did not observe a test run>")
+    print(f"Verified: {_verified_line(evidence.get('verifications') or [])}")
     print(f"Risk: {risk}")
     return 0
+
+
+def _verify_command(args) -> int:
+    import shutil
+    import subprocess
+
+    from agentcam.export import ExportError, resolve_run_dir
+    from agentcam.git_state import NotAGitRepoError, resolve_git_dir
+    from agentcam.redaction import redact_argv
+
+    check_argv = _strip_leading_dashdash(args.argv or [])
+    if not check_argv:
+        print(
+            "agentcam verify: no command provided. "
+            "Usage: agentcam verify -- <command...>",
+            file=sys.stderr,
+        )
+        return 2
+
+    cwd = Path.cwd()
+    try:
+        git_dir = resolve_git_dir(cwd)
+    except NotAGitRepoError:
+        print(
+            "agentcam: not in a git repository. agentcam verify needs "
+            "to find runs under <git_dir>/agentcam/runs/.",
+            file=sys.stderr,
+        )
+        return 2
+    except Exception as e:  # noqa: BLE001
+        print(f"agentcam: git error: {e}", file=sys.stderr)
+        return 2
+
+    try:
+        run_dir = resolve_run_dir(git_dir, args.run)
+    except ExportError as e:
+        print(f"agentcam: {e}", file=sys.stderr)
+        return 2
+
+    manifest_path = run_dir / "manifest.json"
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        print(
+            f"agentcam: could not read {manifest_path}: {e}",
+            file=sys.stderr,
+        )
+        return 2
+
+    evidence = data.get("evidence")
+    if evidence is None:
+        print(
+            f"agentcam: run {run_dir.name} has no evidence section "
+            "(recorded by an older agentcam). Re-record the run with "
+            "this version before recording checks.",
+            file=sys.stderr,
+        )
+        return 2
+    if not isinstance(evidence, dict) or not isinstance(
+        evidence.get("verifications", []), list
+    ):
+        print(
+            f"agentcam: run {run_dir.name} has a malformed evidence "
+            "section; refusing to record checks into it.",
+            file=sys.stderr,
+        )
+        return 2
+
+    # Resolve via PATH like the run backend (runner.py) so PATHEXT-only
+    # runners (`npm`, `pytest.cmd`) work without a shell; the recorded
+    # command keeps the form the author typed.
+    exec_argv = list(check_argv)
+    resolved = shutil.which(exec_argv[0])
+    if resolved:
+        exec_argv[0] = resolved
+
+    started_at = datetime.now(timezone.utc).astimezone()
+    try:
+        proc = subprocess.run(exec_argv, cwd=cwd)
+    except FileNotFoundError:
+        print(
+            f"agentcam: command not found: {check_argv[0]}",
+            file=sys.stderr,
+        )
+        return 2
+    except OSError as e:
+        print(f"agentcam: could not run check: {e}", file=sys.stderr)
+        return 2
+    duration = (
+        datetime.now(timezone.utc).astimezone() - started_at
+    ).total_seconds()
+
+    # Re-read before writing: the check itself (or a concurrent verify)
+    # may have modified the manifest while it ran, and appending to the
+    # pre-check copy would clobber those records.
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        print(
+            f"agentcam: check finished (exit {proc.returncode}) but "
+            f"{manifest_path} could not be re-read: {e}; nothing was "
+            "recorded.",
+            file=sys.stderr,
+        )
+        return 2
+    evidence = data.get("evidence")
+    if not isinstance(evidence, dict) or not isinstance(
+        evidence.get("verifications", []), list
+    ):
+        print(
+            f"agentcam: check finished (exit {proc.returncode}) but the "
+            "manifest evidence is malformed; nothing was recorded.",
+            file=sys.stderr,
+        )
+        return 2
+
+    # The check ran as agentcam's direct child, so command / exit code /
+    # duration are observed facts, not the wrapped agent's claims. The
+    # command line is stored redacted because it rides into the
+    # committable manifest.redacted.json via `export --files`.
+    evidence.setdefault("verifications", []).append(
+        {
+            "command": " ".join(redact_argv(list(check_argv))),
+            "exit_code": proc.returncode,
+            "duration_seconds": round(duration, 3),
+            "recorded_at": started_at.isoformat(),
+        }
+    )
+    manifest_path.write_text(
+        json.dumps(data, indent=2), encoding="utf-8"
+    )
+    print(
+        f"agentcam: recorded check (exit {proc.returncode}) "
+        f"in run {run_dir.name}",
+        file=sys.stderr,
+    )
+    return proc.returncode
 
 
 # ---------------------------------------------------------------------------

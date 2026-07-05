@@ -71,5 +71,6 @@ fi
 echo ""
 echo "Done. The loop:"
 echo "  agentcam run -- <agent command>            # record what the agent does"
+echo "  agentcam verify -- <test command>          # run the check under agentcam, record the exit code"
 echo "  agentcam handoff                           # five-line handoff draft for the PR body"
 echo "  agentcam export latest --files .agentcam/  # commit recorded evidence for corridor-ci"

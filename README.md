@@ -35,16 +35,21 @@ The tools feed each other — that is the point of the package:
 1. **Record** — `agentcam run -- <agent command>` (or work in Claude Code
    with the slime hooks active). Everything the agent changed is recorded
    under `.git/agentcam/runs/`.
-2. **Hand off** — `agentcam handoff` prints the five-line corridor handoff
+2. **Verify** — `agentcam verify -- pytest -q`. agentcam runs the check
+   itself and records command, exit code, and duration — observed facts,
+   not the agent's claim. Passing checks draft the handoff's `Verified`
+   line.
+3. **Hand off** — `agentcam handoff` prints the five-line corridor handoff
    drafted from the record. Paste it into the PR body, then fill in
-   `Decision` and `Verified` — the two lines only the author can know.
-3. **Attach evidence** — `agentcam export latest --files .agentcam/`
+   `Decision` — the line only the author can know (`Verified` too, if no
+   recorded check passed).
+4. **Attach evidence** — `agentcam export latest --files .agentcam/`
    writes the redacted run record in committable form; commit it with
    the PR.
-4. **Gate** — corridor-ci on the PR validates the handoff against the
-   actual diff and appends the recorded evidence (risk flags, diff stat)
-   to its report. Evidence is display-only: it informs the reviewer, it
-   never flips the check.
+5. **Gate** — corridor-ci on the PR validates the handoff against the
+   actual diff and appends the recorded evidence (risk flags, recorded
+   checks, diff stat) to its report. Evidence is display-only: it informs
+   the reviewer, it never flips the check.
 
 Every tool also works standalone — each subdirectory has its own README.
 

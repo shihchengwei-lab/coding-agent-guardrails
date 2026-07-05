@@ -266,24 +266,36 @@ where it goes.
 
 ## Handing off a PR
 
-Two commands connect a recorded run to a pull request (they pair with
+Three commands connect a recorded run to a pull request (they pair with
 [corridor-ci](https://github.com/shihchengwei-lab/coding-agent-guardrails),
 but the output is plain text any reviewer can use):
+
+```bash
+agentcam verify -- pytest -q
+# agentcam: recorded check (exit 0) in run 20260705-...
+```
+
+`verify` runs the check itself, as agentcam's child process, so the
+recorded command, exit code, and duration are observed facts rather
+than the agent's claim. The check's exit code is passed through, and
+the result lands in the run's evidence.
 
 ```bash
 agentcam handoff
 # Decision: <fill in: issue or decision link>
 # Scope: src/auth/login.py
 # Review first: src/auth/login.py
-# Verified: <fill in: agentcam did not observe a test run>
+# Verified: pytest -q (exit 0) [recorded by agentcam]
 # Risk: high
 ```
 
 `handoff` drafts the five-line review handoff from the recorded run:
 `Scope` from the files that actually changed, `Review first` from the
-highest-severity risk flag, `Risk` from the overall verdict. `Decision`
-and `Verified` are left for you — agentcam records what changed, not
-why, and it does not observe test runs.
+highest-severity risk flag, `Risk` from the overall verdict, `Verified`
+from recorded passing checks. `Decision` always stays with you —
+agentcam records what changed, not why. Without a recorded check (or
+with only failing ones) `Verified` stays a fill-in too: red must not
+read as verified.
 
 ```bash
 agentcam export latest --files .agentcam/
