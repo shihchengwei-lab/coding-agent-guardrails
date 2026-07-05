@@ -570,15 +570,16 @@ class CorridorCiTest(unittest.TestCase):
 
     def test_pull_request_body_edits_rerun_corridor(self):
         repo = Path(__file__).resolve().parents[1]
+        monorepo_root = repo.parent  # dogfood workflow lives at the monorepo root
         expected = "on:\n  pull_request:\n    types: [opened, edited, synchronize, reopened]"
 
-        self.assertIn(expected, (repo / ".github" / "workflows" / "corridor.yml").read_text(encoding="utf-8"))
+        self.assertIn(expected, (monorepo_root / ".github" / "workflows" / "corridor.yml").read_text(encoding="utf-8"))
         self.assertIn(expected, (repo / "examples" / "workflow.yml").read_text(encoding="utf-8"))
         self.assertIn(expected, (repo / "README.md").read_text(encoding="utf-8"))
 
     def test_dogfood_workflow_writes_sticky_comment(self):
-        repo = Path(__file__).resolve().parents[1]
-        workflow = (repo / ".github" / "workflows" / "corridor.yml").read_text(encoding="utf-8")
+        monorepo_root = Path(__file__).resolve().parents[2]  # dogfood workflow lives at the monorepo root
+        workflow = (monorepo_root / ".github" / "workflows" / "corridor.yml").read_text(encoding="utf-8")
 
         self.assertIn("contents: read", workflow)
         self.assertIn("pull-requests: write", workflow)
