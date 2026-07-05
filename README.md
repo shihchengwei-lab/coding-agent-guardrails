@@ -37,7 +37,7 @@ can't read it.
 ## Install (one command)
 
 ```bash
-git clone <this repo> ~/guardrails
+git clone https://github.com/shihchengwei-lab/coding-agent-guardrails ~/guardrails
 ~/guardrails/install.sh /path/to/your/project
 ```
 
@@ -76,7 +76,7 @@ Every tool also works standalone — each subdirectory has its own README.
 ## Versioning
 
 One repo, four tools, so release tags are prefixed per tool:
-`agentcam-v0.3.0`, `corridor-ci-v11`, and so on. Earlier releases
+`agentcam-v0.3.1`, `corridor-ci-v11`, and so on. Earlier releases
 (`v0.2.0`, `v10`, …) live in each tool's original repository.
 
 ## History
