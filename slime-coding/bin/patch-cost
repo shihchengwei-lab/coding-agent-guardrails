@@ -1,0 +1,455 @@
+#!/usr/bin/env python3
+"""L2 deterministic gates + L3 fuzzy measurement.
+
+One binary, registered on two events; it dispatches on hook_event_name.
+
+  PreToolUse (Edit|Write)  -> L2 corridor gate.
+                              Deny edits when .slime/corridor.md is absent —
+                              no corridor means no evidence for where to cut.
+
+  Stop                     -> L2 tool-fact gates (block) + L3 cost report.
+                              * typecheck gate: SLIME_TYPECHECK_CMD (e.g.
+                                `dart analyze`) is red at Stop -> block. It is
+                                the contact sensor for hallucinated attachment
+                                points; no log-and-leave escape (unresolved
+                                code is broken, not abandoned). Opt-in; degrades
+                                if unset.
+                              * new-dependency gate: pubspec.yaml gained a
+                                dependency this session -> block, demand a
+                                keep/remove decision.
+                              * failing-check-at-stop gate: SLIME_TEST_CMD is
+                                red at Stop and nothing was recorded in
+                                PRUNED.md -> block. The teeth are on the
+                                unambiguous fact "the check is failing as you
+                                finish"; recording the abandoned design in
+                                PRUNED.md is just the acknowledgement that lets
+                                you stop on red (the other way out is to make
+                                the check pass). It is NOT a check that you
+                                "pruned" anything — abandoning a design is not a
+                                git fact.
+                              L3 metrics (touched/new files, public-API adds)
+                              are reported. Out-of-corridor product-code edits
+                              block by default because they are direct evidence
+                              of semantic displacement.
+
+L2 gates fire only on unambiguous git facts (zero inference), so a false block
+that would train users to disable the hook cannot happen here. L3 carries the
+fuzzy signals and reports by default; the corridor boundary is the exception
+because the file path either matches the committed corridor or it doesn't.
+
+Tunables (env):
+  SLIME_TEST_CMD       shell command run as the check for the prune gate.
+                       If unset, the prune-logging gate degrades (skipped).
+  SLIME_TEST_TIMEOUT   seconds before the check is abandoned (default 600).
+  SLIME_PUBSPEC        path to the dependency manifest (default pubspec.yaml).
+  SLIME_STRICT_CORRIDOR
+                       Default: strict. Set 0/false/no/off to make
+                       out-of-corridor product-code edits report-only.
+"""
+import fnmatch
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+
+PUBSPEC = os.environ.get("SLIME_PUBSPEC", "pubspec.yaml")
+
+
+def env_falsey(name):
+    return os.environ.get(name, "").strip().lower() in {"0", "false", "no", "off"}
+
+
+def strict_corridor_enabled():
+    return not env_falsey("SLIME_STRICT_CORRIDOR")
+
+
+def read_input():
+    try:
+        return json.load(sys.stdin)
+    except Exception:
+        return {}
+
+
+def git(cwd, *args):
+    try:
+        r = subprocess.run(
+            ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=30
+        )
+        return r.stdout if r.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
+def is_git(cwd):
+    return bool(git(cwd, "rev-parse", "--is-inside-work-tree").strip())
+
+
+# --------------------------------------------------------------------------
+# L2 — PreToolUse corridor gate
+# --------------------------------------------------------------------------
+TEMPLATE_ID = "example-feature"
+TEMPLATE_GLOBS = {"lib/feature/example/**", "test/feature/example/**"}
+
+
+def corridor_id(cwd):
+    path = os.path.join(cwd, ".slime", "corridor.md")
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                m = re.match(r"#\s*Corridor:\s*(.+)", line.strip())
+                if m:
+                    return m.group(1).strip()
+    except OSError:
+        return None
+    return None
+
+
+def corridor_problem(cwd):
+    """Return a reason string if the corridor is missing/invalid, else None.
+
+    Only unambiguous signals block: missing file, missing header, the template
+    id, an empty Paths list, or paths still pointing at the template example.
+    """
+    path = os.path.join(cwd, ".slime", "corridor.md")
+    if not os.path.exists(path):
+        return ".slime/corridor.md is missing"
+    cid = corridor_id(cwd)
+    if not cid:
+        return ".slime/corridor.md has no '# Corridor: <id>' header"
+    if cid == TEMPLATE_ID:
+        return ".slime/corridor.md is still the template (id 'example-feature')"
+    globs = corridor_globs(cwd)
+    if not globs:
+        return ".slime/corridor.md has an empty '## Paths' list"
+    if any(g in TEMPLATE_GLOBS for g in globs):
+        return ".slime/corridor.md still lists the template example paths"
+    return None
+
+
+# Repo-metadata files: not product code, no real frontier to compute, so the
+# corridor concept doesn't apply. Matched by basename so a nested .gitignore
+# (which git itself honours at any depth) is also exempt. README.md is
+# deliberately NOT here — it describes product behaviour and is a real edit
+# target. Keep the list conservative; widening it is a one-line change.
+META_BASENAMES = {
+    ".gitignore",
+    ".gitattributes",
+    ".editorconfig",
+    "LICENSE",
+    "LICENSE.md",
+    "LICENSE.txt",
+    "CHANGELOG.md",
+}
+
+
+def under_slime(cwd, tool_input):
+    """True when the edit targets a .slime/ artifact (always allowed, so the
+    corridor and pruned log can be bootstrapped without a corridor)."""
+    fp = (tool_input or {}).get("file_path") or (tool_input or {}).get("path") or ""
+    if not fp:
+        return False
+    abs_fp = fp if os.path.isabs(fp) else os.path.join(cwd, fp)
+    try:
+        rel = os.path.relpath(abs_fp, cwd)
+    except ValueError:
+        return False
+    return rel.split(os.sep)[0] == ".slime"
+
+
+def is_meta_file(tool_input):
+    """True when the edit target's basename is in META_BASENAMES, so nested
+    .gitignore / .gitattributes (which git honours at any depth) also pass."""
+    fp = (tool_input or {}).get("file_path") or (tool_input or {}).get("path") or ""
+    return os.path.basename(fp) in META_BASENAMES if fp else False
+
+
+def corridor_gate(data):
+    cwd = data.get("cwd") or os.getcwd()
+    tool_input = data.get("tool_input")
+    # Bootstrap exemption: writing .slime/ artifacts (corridor.md, PRUNED.md)
+    # never needs a corridor, otherwise creating one would deadlock.
+    if under_slime(cwd, tool_input):
+        sys.exit(0)
+    # Repo-metadata exemption: .gitignore et al. are not product code, so the
+    # corridor concept has no real frontier against them — requiring a corridor
+    # is pure friction.
+    if is_meta_file(tool_input):
+        sys.exit(0)
+    problem = corridor_problem(cwd)
+    if problem:
+        out = {
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": (
+                    "Slime Coding: " + problem + ". Define the Meeting Corridor "
+                    "before editing — run /slime-corridor (or the slime-navigate "
+                    "skill). No valid corridor = no evidence for where the "
+                    "minimal change should land."
+                ),
+            }
+        }
+        print(json.dumps(out))
+    sys.exit(0)
+
+
+# --------------------------------------------------------------------------
+# L2 — Stop: new-dependency gate
+# --------------------------------------------------------------------------
+def parse_deps(text):
+    deps = set()
+    in_block = False
+    for line in text.splitlines():
+        if re.match(r"^dependencies:\s*$", line):
+            in_block = True
+            continue
+        if in_block:
+            if re.match(r"^\S", line):  # next top-level key ends the block
+                break
+            m = re.match(r"^  ([\w-]+):", line)
+            if m:
+                deps.add(m.group(1))
+    return deps
+
+
+def new_dependencies(cwd):
+    head = git(cwd, "show", "HEAD:" + PUBSPEC)
+    if not head:
+        # No baseline at HEAD (fresh repo, or manifest not yet committed) — we
+        # cannot tell new deps from existing ones, so degrade rather than
+        # false-block. L2 gates must never fire on an ambiguous signal.
+        return []
+    try:
+        with open(os.path.join(cwd, PUBSPEC), encoding="utf-8") as f:
+            cur = f.read()
+    except OSError:
+        return []
+    return sorted(parse_deps(cur) - parse_deps(head))
+
+
+# --------------------------------------------------------------------------
+# L2 — Stop: prune-logging gate
+# --------------------------------------------------------------------------
+def pruned_touched(cwd):
+    return bool(git(cwd, "status", "--porcelain", "--", ".slime/PRUNED.md").strip())
+
+
+def run_check(cwd):
+    cmd = os.environ.get("SLIME_TEST_CMD")
+    if not cmd:
+        return None  # gate degrades when no runnable check exists
+    try:
+        timeout = int(os.environ.get("SLIME_TEST_TIMEOUT", "600"))
+        r = subprocess.run(
+            cmd, cwd=cwd, shell=True, capture_output=True, text=True, timeout=timeout
+        )
+        return r.returncode
+    except Exception:
+        return None
+
+
+def run_typecheck(cwd):
+    """Run SLIME_TYPECHECK_CMD (e.g. `dart analyze`) as a contact sensor for the
+    patch. Returns (returncode, output) when the command actually ran, or None
+    when the gate must degrade (unset / missing command / timeout / error) — a
+    typechecker is the only thing that can tell a real attachment point from a
+    hallucinated one, but L2 must never false-block on an ambiguous signal."""
+    cmd = os.environ.get("SLIME_TYPECHECK_CMD")
+    if not cmd:
+        return None
+    # "command not found -> degrade" cross-platform. POSIX shells report exit
+    # 127, but Windows cmd.exe returns 1 — indistinguishable from a real
+    # typecheck failure — so the exit code alone can't carry this signal. Resolve
+    # the program (first token) on PATH first; if it isn't installed the command
+    # is misconfigured, not evidence of a hallucinated reference, so degrade. L2
+    # must never false-block on an ambiguous signal.
+    try:
+        parts = shlex.split(cmd, posix=(os.name != "nt"))
+    except ValueError:
+        parts = cmd.split()
+    prog = parts[0] if parts else ""
+    if prog and not shutil.which(prog):
+        return None
+    try:
+        timeout = int(os.environ.get("SLIME_TEST_TIMEOUT", "600"))
+        r = subprocess.run(
+            cmd, cwd=cwd, shell=True, capture_output=True, text=True, timeout=timeout
+        )
+        if r.returncode == 127:
+            # POSIX "command not found" — same rationale as the PATH check above.
+            return None
+        return r.returncode, (r.stdout or r.stderr or "")
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------
+# L3 — Stop: cost report
+# --------------------------------------------------------------------------
+def corridor_globs(cwd):
+    path = os.path.join(cwd, ".slime", "corridor.md")
+    globs = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            in_paths = False
+            for line in f:
+                s = line.strip()
+                if s.lower().startswith("## paths"):
+                    in_paths = True
+                    continue
+                if in_paths:
+                    if s.startswith("##"):
+                        break
+                    m = re.match(r"-\s+(.+)", s)
+                    if m:
+                        globs.append(m.group(1).strip())
+    except OSError:
+        return []
+    return globs
+
+
+def changed_paths(cwd):
+    touched = [n for n in git(cwd, "diff", "HEAD", "--name-only").splitlines() if n]
+    new_files = [
+        u
+        for u in git(cwd, "ls-files", "--others", "--exclude-standard").splitlines()
+        if u
+    ]
+    return touched, new_files
+
+
+def out_of_corridor_files(cwd):
+    globs = corridor_globs(cwd)
+    if not globs:
+        return []
+    touched, new_files = changed_paths(cwd)
+    out_corr = []
+    for n in touched + new_files:
+        # .slime/ artifacts aren't scope creep: corridor edits are tracked
+        # separately (corridor changed), and PRUNED.md updates are required.
+        if n.startswith(".slime/"):
+            continue
+        # Repo metadata is not product code, so the default strict corridor gate
+        # should not turn harmless config hygiene into a hard stop.
+        if os.path.basename(n) in META_BASENAMES:
+            continue
+        if not any(fnmatch.fnmatch(n, g) for g in globs):
+            out_corr.append(n)
+    return out_corr
+
+
+def l3_report(cwd):
+    touched, new_files = changed_paths(cwd)
+    diff = git(cwd, "diff", "HEAD")
+    api = 0
+    for line in diff.splitlines():
+        if line.startswith("+") and not line.startswith("+++"):
+            c = line[1:].lstrip()
+            if re.match(r"(export\s|class\s|enum\s|mixin\s|typedef\s|extension\s)", c):
+                api += 1
+
+    globs = corridor_globs(cwd)
+    out_corr = out_of_corridor_files(cwd)
+
+    lines = [
+        "Slime Coding — cost report:",
+        f"  touched files: {len(touched)}",
+        f"  new files: {len(new_files)}",
+        f"  public-API additions (Dart export/class/enum/mixin/typedef): {api}",
+    ]
+    if globs:
+        suffix = f" -> {', '.join(out_corr[:10])}" if out_corr else ""
+        lines.append(f"  out-of-corridor files: {len(out_corr)}{suffix}")
+    else:
+        lines.append("  out-of-corridor: (no '## Paths' defined in corridor.md)")
+    # The corridor gate always lets .slime/ through (to avoid a bootstrap
+    # deadlock), so widening the corridor mid-task is possible. That can be
+    # legitimate new evidence, so we don't block — but surface it for the user.
+    corridor_changed = bool(
+        git(cwd, "status", "--porcelain", "--", ".slime/corridor.md").strip()
+    )
+    lines.append(f"  corridor changed this session: {'yes' if corridor_changed else 'no'}")
+    return "\n".join(lines)
+
+
+def stop(data):
+    cwd = data.get("cwd") or os.getcwd()
+    if not is_git(cwd):
+        sys.exit(0)
+
+    blocks = []
+    # Guard against infinite Stop loops: only block on the first pass.
+    if not data.get("stop_hook_active"):
+        # Typecheck (contact sensor) goes first: a reference that doesn't
+        # resolve means the code never compiled, which is more fundamental than
+        # a dependency or a red test. Unlike the failing-check gate below, this
+        # has NO log-and-leave escape — an unresolved reference is broken code,
+        # not an abandoned-but-acknowledged design, so the only way out is to
+        # fix the reference (or scope it as new work in the corridor).
+        tc = run_typecheck(cwd)
+        if tc is not None and tc[0] != 0:
+            blocks.append(
+                "Typecheck failed (SLIME_TYPECHECK_CMD exited "
+                + str(tc[0])
+                + "): the patch references something that does not resolve in "
+                "the repo — often a hallucinated attachment point. Fix the "
+                "reference. If it should exist but doesn't yet, it is new work, "
+                "not an anchor — go back and add it to the corridor's Goal "
+                "Frontier.\n\n"
+                + tc[1][:1500]
+            )
+        deps = new_dependencies(cwd)
+        if deps:
+            blocks.append(
+                "New dependency added to "
+                + PUBSPEC
+                + ": "
+                + ", ".join(deps)
+                + ". Each must be justified by the current corridor — keep it "
+                "(and say why) or remove it before finishing."
+            )
+        rc = run_check(cwd)
+        if rc is not None and rc != 0 and not pruned_touched(cwd):
+            blocks.append(
+                "Stopping with a failing check: SLIME_TEST_CMD exited "
+                + str(rc)
+                + ". Don't finish silently on red — either make the check pass, "
+                "or, if you abandoned a design that led here, record it in "
+                ".slime/PRUNED.md (/slime-prune) so the next round doesn't retry "
+                "it. (Detected via git status on .slime/PRUNED.md, not a session "
+                "boundary.)"
+            )
+        out_corr = out_of_corridor_files(cwd) if strict_corridor_enabled() else []
+        if out_corr:
+            blocks.append(
+                "Out-of-corridor product-code edits detected: "
+                + ", ".join(out_corr[:10])
+                + ". This increases semantic displacement beyond the current "
+                "Meeting Corridor. Either move the change back inside the "
+                "corridor, or update .slime/corridor.md with the new evidence "
+                "before finishing."
+            )
+
+    report = l3_report(cwd)
+    if blocks:
+        print(json.dumps({"decision": "block", "reason": "\n\n".join(blocks) + "\n\n" + report}))
+        sys.exit(0)
+    print(json.dumps({"systemMessage": report}))
+    sys.exit(0)
+
+
+def main():
+    data = read_input()
+    event = data.get("hook_event_name")
+    if event == "PreToolUse":
+        corridor_gate(data)
+    elif event == "Stop":
+        stop(data)
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

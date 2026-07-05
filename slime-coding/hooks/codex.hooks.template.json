@@ -1,0 +1,53 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"__SLIME_HOME__\"/bin/prune-inject",
+            "commandWindows": "__PYTHON_WIN__ \"__SLIME_HOME_WIN__\\bin\\prune-inject\"",
+            "statusMessage": "Loading Slime Coding pruned paths"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"__SLIME_HOME__\"/bin/prune-inject",
+            "commandWindows": "__PYTHON_WIN__ \"__SLIME_HOME_WIN__\\bin\\prune-inject\"",
+            "statusMessage": "Loading Slime Coding pruned paths"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"__SLIME_HOME__\"/bin/patch-cost",
+            "commandWindows": "__PYTHON_WIN__ \"__SLIME_HOME_WIN__\\bin\\patch-cost\"",
+            "statusMessage": "Checking Slime Coding corridor"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"__SLIME_HOME__\"/bin/patch-cost",
+            "commandWindows": "__PYTHON_WIN__ \"__SLIME_HOME_WIN__\\bin\\patch-cost\"",
+            "statusMessage": "Checking Slime Coding stop gates"
+          }
+        ]
+      }
+    ]
+  }
+}
