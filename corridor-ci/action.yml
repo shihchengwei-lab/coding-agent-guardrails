@@ -1,0 +1,41 @@
+name: Corridor CI
+description: Require PRs to explain their review boundary before maintainer review.
+branding:
+  icon: git-pull-request
+  color: green
+
+inputs:
+  mode:
+    description: "fail blocks the check; warn only writes the report."
+    required: false
+    default: warn
+  allow_dependencies:
+    description: "Whether dependency manifest changes are allowed."
+    required: false
+    default: "false"
+  max_changed_files:
+    description: "Optional changed-file limit. Set 0 to disable."
+    required: false
+    default: "12"
+  small_change_max_files:
+    description: "Allow PRs without a handoff when changed-file count is at or below this value. Set 0 to disable."
+    required: false
+    default: "0"
+  comment:
+    description: "Upsert the Corridor CI report as a sticky PR comment."
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Check PR corridor
+      shell: bash
+      env:
+        INPUT_MODE: ${{ inputs.mode }}
+        INPUT_ALLOW_DEPENDENCIES: ${{ inputs.allow_dependencies }}
+        INPUT_MAX_CHANGED_FILES: ${{ inputs.max_changed_files }}
+        INPUT_SMALL_CHANGE_MAX_FILES: ${{ inputs.small_change_max_files }}
+        INPUT_COMMENT: ${{ inputs.comment }}
+        GITHUB_TOKEN: ${{ github.token }}
+      run: python "$GITHUB_ACTION_PATH/bin/corridor_ci.py"

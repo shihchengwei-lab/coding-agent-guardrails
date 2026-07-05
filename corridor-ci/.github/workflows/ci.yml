@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python -m unittest discover -s tests -v
+
+  tag-consistency:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tagged tree must reference its own major tag
+        run: |
+          major="${GITHUB_REF_NAME%%.*}"
+          grep -F "corridor-ci@${major}" README.md
+          grep -F "corridor-ci@${major}" examples/workflow.yml
