@@ -159,6 +159,7 @@ jobs:
 | `max_changed_files` | `12` | Optional changed-file limit. `0` disables it. |
 | `allow_dependencies` | `false` | Allow dependency manifest changes. |
 | `comment` | `false` | Upsert the report as a sticky PR comment. |
+| `agentcam_evidence` | `.agentcam/manifest.redacted.json` | Committed agentcam manifest (from `agentcam export --files`); its recorded evidence is appended to the report. Display-only, never affects pass/fail. |
 
 ## Philosophy
 

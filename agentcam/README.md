@@ -264,6 +264,39 @@ where it goes.
 
 ---
 
+## Handing off a PR
+
+Two commands connect a recorded run to a pull request (they pair with
+[corridor-ci](https://github.com/shihchengwei-lab/coding-agent-guardrails),
+but the output is plain text any reviewer can use):
+
+```bash
+agentcam handoff
+# Decision: <fill in: issue or decision link>
+# Scope: src/auth/login.py
+# Review first: src/auth/login.py
+# Verified: <fill in: agentcam did not observe a test run>
+# Risk: high
+```
+
+`handoff` drafts the five-line review handoff from the recorded run:
+`Scope` from the files that actually changed, `Review first` from the
+highest-severity risk flag, `Risk` from the overall verdict. `Decision`
+and `Verified` are left for you — agentcam records what changed, not
+why, and it does not observe test runs.
+
+```bash
+agentcam export latest --files .agentcam/
+# → .agentcam/AGENT_RUN_REPORT.md
+# → .agentcam/manifest.redacted.json
+```
+
+`export --files` writes the redacted run record in committable form.
+Commit it with the PR and corridor-ci appends it to its report as
+recorded evidence (display-only; it never affects the check).
+
+---
+
 ## Risk flags (heuristics)
 
 Two levels: **HIGH** and **MEDIUM**. There is no LOW — filename-only

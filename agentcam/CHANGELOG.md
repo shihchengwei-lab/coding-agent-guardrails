@@ -7,6 +7,19 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Added (2026-07-05, PR handoff integration with corridor-ci)
+
+- **`evidence` block in `manifest.json`.** Changed files, risk flags,
+  overall risk, and diff stat are now written to the machine-readable
+  manifest (previously report-only). Detected by key presence, like
+  `capture`; schema_version unchanged.
+- **`agentcam handoff`.** Prints the five-line corridor review handoff
+  drafted from a recorded run. `Decision` and `Verified` stay with the
+  author.
+- **`agentcam export --files DIR`.** Writes `AGENT_RUN_REPORT.md` +
+  `manifest.redacted.json` as committable files (no logs), the form
+  corridor-ci reads as recorded evidence.
+
 ## [0.2.0] — 2026-06-28
 
 ### Added (2026-06-28, PTY-backed wrap for bare interactive TUI agents)
