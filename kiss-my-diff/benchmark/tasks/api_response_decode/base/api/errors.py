@@ -1,0 +1,2 @@
+class ResponseDecodeError(ValueError):
+    pass

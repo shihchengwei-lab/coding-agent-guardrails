@@ -1,0 +1,96 @@
+{
+  "tasks": [
+    {
+      "id": "csv_order_totals",
+      "prompt": "CSV order imports break on real export rows with quoted fields and thousands separators. Fix order_totals so it keeps returning cents per order.",
+      "public_command": "python -m pytest -q",
+      "hidden_command": "python -m pytest -q",
+      "max_files": 1,
+      "max_line_delta": 18,
+      "quality_checks": [
+        {"type": "contains", "file": "orders/importer.py", "value": "csv"}
+      ]
+    },
+    {
+      "id": "markdown_heading_links",
+      "prompt": "Docs sidebar links point to wrong anchors when a page has duplicate headings and fenced code examples. Fix heading_anchors.",
+      "public_command": "python -m pytest -q",
+      "hidden_command": "python -m pytest -q",
+      "max_files": 1,
+      "max_line_delta": 28,
+      "quality_checks": [
+        {"type": "contains", "file": "docs/toc.py", "value": "slugify"}
+      ]
+    },
+    {
+      "id": "permission_policy",
+      "prompt": "Billing permissions are too loose: admins can delete invoices, and action aliases are inconsistent. Fix has_permission so deny rules win and aliases/wildcards behave.",
+      "public_command": "python -m pytest -q",
+      "hidden_command": "python -m pytest -q",
+      "max_files": 1,
+      "max_line_delta": 30,
+      "quality_checks": [
+        {"type": "contains", "file": "auth/policy.py", "value": "expand_action"}
+      ]
+    },
+    {
+      "id": "feature_flag_rollout",
+      "prompt": "Percentage feature-flag rollouts are unstable and missing flags can crash. Fix is_enabled without changing the public API.",
+      "public_command": "python -m pytest -q",
+      "hidden_command": "python -m pytest -q",
+      "max_files": 1,
+      "max_line_delta": 24,
+      "quality_checks": [
+        {"type": "contains", "file": "flags/evaluator.py", "value": "stable_bucket"}
+      ]
+    },
+    {
+      "id": "ledger_event_balance",
+      "prompt": "Account balances double count retried ledger events and sometimes include voided entries. Fix balance_for_account.",
+      "public_command": "python -m pytest -q",
+      "hidden_command": "python -m pytest -q",
+      "max_files": 1,
+      "max_line_delta": 28,
+      "quality_checks": [
+        {"type": "contains", "file": "ledger/balance.py", "value": "event_key"},
+        {"type": "contains", "file": "ledger/balance.py", "value": "is_voided"}
+      ]
+    },
+    {
+      "id": "env_config_merge",
+      "discipline": "invalid_state",
+      "prompt": "Environment overrides are corrupting runtime config: blank values should be ignored, booleans/lists should keep their intended types, and unknown keys should not be added. Fix resolve_config.",
+      "public_command": "python -m pytest -q",
+      "hidden_command": "python -m pytest -q",
+      "max_files": 1,
+      "max_line_delta": 32,
+      "quality_checks": [
+        {"type": "contains", "file": "config/merge.py", "value": "coerce_value"}
+      ]
+    },
+    {
+      "id": "api_response_decode",
+      "discipline": "fail_fast",
+      "prompt": "API response decoding is hiding bad upstream responses. Fix parse_response so invalid JSON raises ResponseDecodeError, id/status/items are required, and items must be a list.",
+      "public_command": "python -m pytest -q",
+      "hidden_command": "python -m pytest -q",
+      "max_files": 1,
+      "max_line_delta": 24,
+      "quality_checks": [
+        {"type": "contains", "file": "api/response.py", "value": "ResponseDecodeError"}
+      ]
+    },
+    {
+      "id": "payment_state_transition",
+      "discipline": "invalid_state",
+      "prompt": "Payment state transitions currently allow impossible states. Fix apply_event so illegal transitions raise InvalidTransition and valid transitions still work.",
+      "public_command": "python -m pytest -q",
+      "hidden_command": "python -m pytest -q",
+      "max_files": 1,
+      "max_line_delta": 30,
+      "quality_checks": [
+        {"type": "contains", "file": "payments/state.py", "value": "InvalidTransition"}
+      ]
+    }
+  ]
+}
