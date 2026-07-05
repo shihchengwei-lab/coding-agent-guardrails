@@ -5,35 +5,48 @@
 **CI green is not done. Done is when a human can take over.**
 
 Coding agents finish the task. Tests pass. The check turns green. Then a human
-inherits the diff — reads it, owns it, maintains it. Everything the agent left
-behind lands on that person's desk.
+inherits the diff — reads it, owns it, maintains it. This toolkit sits on the
+agent's side of that handoff: one install wires four tools that cover the
+corridor from "agent starts typing" to "human presses merge".
 
-This repo is four agent-side tools that hold a coding agent to a handoff
-standard, at four points between prompt and merge. Each grew out of one working
-philosophy:
+| Stage | Tool | What it adds |
+|---|---|---|
+| Before the agent starts | [kiss-my-diff](kiss-my-diff/) × [slime-coding](slime-coding/) rules | One unified discipline block in your `CLAUDE.md` ([templates/DISCIPLINE.md](templates/DISCIPLINE.md)): smallest readable change, minimal semantic drift, stop when done. |
+| While the agent works | [slime-coding](slime-coding/) hooks | Automatic gates that hold the agent inside the corridor it declared before editing. |
+| After the agent claims done | [agentcam](agentcam/) | Records what actually changed — files, risk flags, diff stat — and drafts the PR handoff from that record. |
+| Before a human reviews | [corridor-ci](corridor-ci/) | Validates the five-line handoff against the actual diff and appends the recorded evidence to the PR report. |
 
-| Stage | Tool | Philosophy | What it is |
-|---|---|---|---|
-| Before the agent starts | [kiss-my-diff](kiss-my-diff/) | Occam's razor | A tiny `AGENT.md` rule file: smallest readable change, stop when done. Benchmark: 31% smaller patches, 20% fewer files touched. |
-| While the agent works | [slime-coding](slime-coding/) | The slime mold | Claude Code hooks + skills that enforce minimal semantic drift — change only what this task requires, leave architecture and naming alone. |
-| After the agent claims done | [agentcam](agentcam/) | Watch what it does, not what it says | A local-first CLI wrapper that records what the agent actually changed and writes a Markdown run report. |
-| Before a human reviews | [corridor-ci](corridor-ci/) | First principles: code is cheap, review is not | A GitHub Action that asks every non-trivial PR for a five-line handoff — scope, where to start reading, what was verified — before it earns review attention. |
+## Install (one command)
 
-Each tool works alone. Together they cover the whole corridor from "agent
-starts typing" to "human presses merge".
+```bash
+git clone <this repo> ~/guardrails
+~/guardrails/install.sh /path/to/your/project
+pip install agentcam
+```
 
-## Quick start
+Re-running is safe. The installer wires the discipline block into
+`CLAUDE.md`, installs the slime-coding hooks, and drops a starter
+corridor-ci workflow (skipping any you already have).
 
-- **kiss-my-diff** — copy [`kiss-my-diff/AGENT.md`](kiss-my-diff/AGENT.md) into
-  your repo. That's the entire install.
-- **slime-coding** — clone this repo, then
-  `./slime-coding/install.sh /path/to/your/project`.
-- **agentcam** — `pip install agentcam`
-  ([PyPI](https://pypi.org/project/agentcam/)).
-- **corridor-ci** — in your workflow:
-  `uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@<tag>`.
+## The loop
 
-Details and docs live in each tool's own README.
+The tools feed each other — that is the point of the package:
+
+1. **Record** — `agentcam run -- <agent command>` (or work in Claude Code
+   with the slime hooks active). Everything the agent changed is recorded
+   under `.git/agentcam/runs/`.
+2. **Hand off** — `agentcam handoff` prints the five-line corridor handoff
+   drafted from the record. Paste it into the PR body, then fill in
+   `Decision` and `Verified` — the two lines only the author can know.
+3. **Attach evidence** — `agentcam export latest --files .agentcam/`
+   writes the redacted run record in committable form; commit it with
+   the PR.
+4. **Gate** — corridor-ci on the PR validates the handoff against the
+   actual diff and appends the recorded evidence (risk flags, diff stat)
+   to its report. Evidence is display-only: it informs the reviewer, it
+   never flips the check.
+
+Every tool also works standalone — each subdirectory has its own README.
 
 ## Versioning
 
@@ -43,10 +56,10 @@ One repo, four tools, so release tags are prefixed per tool:
 
 ## History
 
-Each tool started as its own repository and was imported here with full commit
-history — `git log` inside any subdirectory goes back to that tool's first
-commit.
+Each tool started as its own repository and was imported here with full
+commit history — `git log` inside any subdirectory goes back to that
+tool's first commit.
 
 ## License
 
-MIT, for the collection and for every tool in it.
+MIT, for the toolkit and for every tool in it.

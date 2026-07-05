@@ -1,0 +1,17 @@
+name: toolkit CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['install.sh', 'templates/**', 'tests/**']
+  pull_request:
+    branches: [main]
+    paths: ['install.sh', 'templates/**', 'tests/**']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tests/test-install.sh
