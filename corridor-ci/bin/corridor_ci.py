@@ -333,6 +333,31 @@ def evaluate(
     )
 
 
+AGENTCAM_EVIDENCE_DEFAULT = ".agentcam/manifest.redacted.json"
+
+
+def read_agentcam_evidence(path: Path) -> tuple[dict | None, str | None]:
+    """Best-effort read of a committed agentcam evidence manifest.
+
+    Returns ``(evidence, note)``. Recorded evidence is display-only and
+    must never affect pass/fail, so this never raises: a missing file
+    yields ``(None, None)`` (no section), an unreadable or evidence-less
+    manifest yields ``(None, one-line note)``.
+    """
+    if not path.is_file():
+        return None, None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return None, f"agentcam manifest at `{path.name}` could not be read: {exc}"
+    if not isinstance(data, dict) or not isinstance(data.get("evidence"), dict):
+        return None, (
+            f"agentcam manifest at `{path.name}` has no evidence section "
+            "(recorded by an older agentcam)."
+        )
+    return data["evidence"], None
+
+
 def compact_markdown(value: str) -> list[str]:
     return [line.rstrip() for line in value.splitlines() if line.strip()]
 
@@ -345,7 +370,41 @@ def should_show_handoff_template(report: Report) -> bool:
     )
 
 
-def render_markdown(report: Report) -> str:
+def render_agentcam_section(
+    evidence: dict | None, note: str | None
+) -> list[str]:
+    """Markdown lines for the recorded-evidence section, or []."""
+    if evidence is None and note is None:
+        return []
+    lines = ["", "## Recorded Evidence (agentcam)"]
+    if note is not None:
+        lines.append(f"- {note}")
+        return lines
+    overall = evidence.get("overall_risk")
+    if overall:
+        lines.append(f"- overall risk: {overall}")
+    recorded = evidence.get("changed_files") or []
+    if recorded:
+        lines.append(f"- recorded changed files: {len(recorded)}")
+    for flag in evidence.get("risk_flags") or []:
+        level = flag.get("level", "?")
+        rule = flag.get("rule", "?")
+        found = flag.get("evidence", "")
+        lines.append(f"- {level} | {rule} | `{found}`")
+    diff_stat = (evidence.get("diff_stat") or "").strip()
+    if diff_stat:
+        lines.append("")
+        lines.append("```text")
+        lines.extend(diff_stat.splitlines())
+        lines.append("```")
+    return lines
+
+
+def render_markdown(
+    report: Report,
+    agentcam_evidence: dict | None = None,
+    agentcam_note: str | None = None,
+) -> str:
     status = "PASS" if report.ok else "FAIL"
     lines = [
         f"# Corridor CI: {status}",
@@ -384,6 +443,8 @@ def render_markdown(report: Report) -> str:
         lines.append("")
         lines.append("## Dependency Changes")
         lines.extend(f"- `{p}`" for p in report.dependency_files)
+
+    lines.extend(render_agentcam_section(agentcam_evidence, agentcam_note))
 
     if report.issues:
         lines.append("")
@@ -491,6 +552,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=int(os.environ.get("INPUT_SMALL_CHANGE_MAX_FILES", "0") or "0"),
         help="allow PRs without a review boundary when changed-file count is at or below this value",
     )
+    parser.add_argument(
+        "--agentcam-evidence",
+        default=os.environ.get("INPUT_AGENTCAM_EVIDENCE", AGENTCAM_EVIDENCE_DEFAULT),
+        help=(
+            "checkout-relative path of a committed agentcam "
+            "manifest.redacted.json; its recorded evidence is appended to "
+            "the report, display-only, never affecting pass/fail"
+        ),
+    )
     return parser
 
 
@@ -506,7 +576,12 @@ def main(argv: list[str] | None = None) -> int:
         max_changed_files=args.max_changed_files,
         small_change_max_files=args.small_change_max_files,
     )
-    markdown = render_markdown(report)
+    evidence, evidence_note = read_agentcam_evidence(
+        repo / args.agentcam_evidence
+    )
+    markdown = render_markdown(
+        report, agentcam_evidence=evidence, agentcam_note=evidence_note
+    )
     print(markdown)
     write_step_summary(markdown)
     if truthy(args.comment):

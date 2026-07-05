@@ -603,6 +603,144 @@ class CorridorCiTest(unittest.TestCase):
         self.assertIsNotNone(workflow_tag)
         self.assertEqual(readme_tag.group(1), workflow_tag.group(1))
 
+    # -- agentcam recorded evidence (display-only) --------------------
+
+    @staticmethod
+    def _sample_evidence_manifest() -> dict:
+        return {
+            "schema_version": "0.1",
+            "evidence": {
+                "changed_files": [
+                    {
+                        "path": "frontend/src/components/ui/rating.tsx",
+                        "status": "unstaged_modified",
+                        "secret_like_name": False,
+                    }
+                ],
+                "risk_flags": [
+                    {
+                        "level": "HIGH",
+                        "rule": "auth path",
+                        "evidence": "frontend/src/components/ui/rating.tsx",
+                    }
+                ],
+                "overall_risk": "HIGH",
+                "diff_stat": " 1 file changed, 1 insertion(+)",
+                "diff_stat_cached": "",
+            },
+        }
+
+    def test_read_agentcam_evidence_missing_file_is_silent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence, note = corridor_ci.read_agentcam_evidence(
+                Path(tmp) / "nope" / "manifest.redacted.json"
+            )
+        self.assertIsNone(evidence)
+        self.assertIsNone(note)
+
+    def test_read_agentcam_evidence_malformed_yields_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "manifest.redacted.json"
+            path.write_text("{not json", encoding="utf-8")
+            evidence, note = corridor_ci.read_agentcam_evidence(path)
+        self.assertIsNone(evidence)
+        self.assertIn("could not be read", note)
+
+    def test_read_agentcam_evidence_without_evidence_key_yields_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "manifest.redacted.json"
+            path.write_text(
+                json.dumps({"schema_version": "0.1"}), encoding="utf-8"
+            )
+            evidence, note = corridor_ci.read_agentcam_evidence(path)
+        self.assertIsNone(evidence)
+        self.assertIn("no evidence section", note)
+
+    def test_render_markdown_includes_recorded_evidence(self):
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+            corridor_text=VALID_HANDOFF,
+            allow_dependencies=False,
+            max_changed_files=12,
+            small_change_max_files=0,
+        )
+        evidence = self._sample_evidence_manifest()["evidence"]
+        with_evidence = corridor_ci.render_markdown(
+            report, agentcam_evidence=evidence
+        )
+        self.assertIn("## Recorded Evidence (agentcam)", with_evidence)
+        self.assertIn("overall risk: HIGH", with_evidence)
+        self.assertIn("HIGH | auth path", with_evidence)
+        without = corridor_ci.render_markdown(report)
+        self.assertNotIn("Recorded Evidence", without)
+        with_note = corridor_ci.render_markdown(
+            report, agentcam_note="agentcam manifest could not be read"
+        )
+        self.assertIn("could not be read", with_note)
+
+    def test_cli_appends_evidence_section_without_affecting_verdict(self):
+        import contextlib
+        import io
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init", "-b", "main"], cwd=root, check=True, capture_output=True, text=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
+            src = root / "frontend" / "src" / "components" / "ui"
+            tests = root / "frontend" / "tests"
+            src.mkdir(parents=True)
+            tests.mkdir(parents=True)
+            (src / "rating.tsx").write_text("old\n", encoding="utf-8")
+            (tests / "rating.spec.ts").write_text("old\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-m", "initial"], cwd=root, check=True, capture_output=True, text=True)
+            subprocess.run(["git", "checkout", "-b", "feature"], cwd=root, check=True, capture_output=True, text=True)
+            (src / "rating.tsx").write_text("new\n", encoding="utf-8")
+            (tests / "rating.spec.ts").write_text("new\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-m", "change rating"], cwd=root, check=True, capture_output=True, text=True)
+
+            evidence_dir = root / ".agentcam"
+            evidence_dir.mkdir()
+            (evidence_dir / "manifest.redacted.json").write_text(
+                json.dumps(self._sample_evidence_manifest()),
+                encoding="utf-8",
+            )
+
+            event = root / "event.json"
+            event.write_text(
+                json.dumps({"pull_request": {"body": VALID_HANDOFF}}),
+                encoding="utf-8-sig",
+            )
+
+            old_event_path = os.environ.get("GITHUB_EVENT_PATH")
+            old_base_ref = os.environ.get("GITHUB_BASE_REF")
+            os.environ["GITHUB_EVENT_PATH"] = str(event)
+            os.environ["GITHUB_BASE_REF"] = "main"
+            stdout = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(stdout):
+                    code = corridor_ci.main(["--repo", str(root), "--mode", "fail"])
+            finally:
+                if old_event_path is None:
+                    os.environ.pop("GITHUB_EVENT_PATH", None)
+                else:
+                    os.environ["GITHUB_EVENT_PATH"] = old_event_path
+                if old_base_ref is None:
+                    os.environ.pop("GITHUB_BASE_REF", None)
+                else:
+                    os.environ["GITHUB_BASE_REF"] = old_base_ref
+
+        self.assertEqual(code, 0)
+        output = stdout.getvalue()
+        self.assertIn("# Corridor CI: PASS", output)
+        self.assertIn("## Recorded Evidence (agentcam)", output)
+        self.assertIn("overall risk: HIGH", output)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -25,6 +25,14 @@ inputs:
     description: "Upsert the Corridor CI report as a sticky PR comment."
     required: false
     default: "false"
+  agentcam_evidence:
+    description: >-
+      Checkout-relative path of a committed agentcam manifest.redacted.json
+      (written by `agentcam export --files`). When present, its recorded
+      evidence is appended to the report. Display-only; never affects
+      pass/fail.
+    required: false
+    default: ".agentcam/manifest.redacted.json"
 
 runs:
   using: composite
@@ -37,5 +45,6 @@ runs:
         INPUT_MAX_CHANGED_FILES: ${{ inputs.max_changed_files }}
         INPUT_SMALL_CHANGE_MAX_FILES: ${{ inputs.small_change_max_files }}
         INPUT_COMMENT: ${{ inputs.comment }}
+        INPUT_AGENTCAM_EVIDENCE: ${{ inputs.agentcam_evidence }}
         GITHUB_TOKEN: ${{ github.token }}
       run: python "$GITHUB_ACTION_PATH/bin/corridor_ci.py"
