@@ -333,3 +333,41 @@ def export(
     files = build_bundle_files(run_dir, include_raw=include_raw)
     write_zip(files, output_path)
     return run_dir
+
+
+def export_files(
+    run_dir: Path, dest_dir: Path, *, force: bool = False
+) -> list[Path]:
+    """Write the committable evidence files for one run into ``dest_dir``.
+
+    Writes ``AGENT_RUN_REPORT.md`` and ``manifest.redacted.json`` — the
+    artifacts safe to commit into a repo so CI (e.g. corridor-ci) can
+    read recorded evidence. Logs, raw or redacted, are never included.
+    """
+    manifest_json = run_dir / "manifest.json"
+    if not manifest_json.exists():
+        raise ExportError(f"manifest.json missing in {run_dir}")
+
+    targets: dict[str, bytes] = {}
+    report_md = run_dir / "AGENT_RUN_REPORT.md"
+    if report_md.exists():
+        targets["AGENT_RUN_REPORT.md"] = report_md.read_bytes()
+    redacted = redact_manifest(manifest_json.read_text("utf-8"))
+    targets["manifest.redacted.json"] = (
+        json.dumps(redacted, indent=2).encode("utf-8")
+    )
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for name in targets:
+        out = dest_dir / name
+        if out.exists() and not force:
+            raise ExportError(
+                f"Output already exists: {out}. Pass --force to overwrite."
+            )
+
+    written: list[Path] = []
+    for name, blob in targets.items():
+        out = dest_dir / name
+        out.write_bytes(blob)
+        written.append(out)
+    return written

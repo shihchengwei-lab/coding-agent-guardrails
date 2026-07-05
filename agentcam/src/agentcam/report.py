@@ -198,7 +198,11 @@ def write_run_artifacts(
         render_report(bundle),
         encoding="utf-8",
     )
-    write_manifest(manifest, Path(run_paths.manifest_json))
+    write_manifest(
+        manifest,
+        Path(run_paths.manifest_json),
+        evidence=serialize_evidence(state_after, list(risk_flags)),
+    )
 
     return bundle
 
@@ -286,9 +290,52 @@ def _serialize_capture(c: CaptureCapability) -> dict:
     }
 
 
-def write_manifest(m: RunManifest, path: Path) -> None:
+def overall_risk_level(flags: list[RiskFlag]) -> str:
+    """Overall risk from individual flags: HIGH > MEDIUM > LOW."""
+    if any(f.level == "HIGH" for f in flags):
+        return "HIGH"
+    if any(f.level == "MEDIUM" for f in flags):
+        return "MEDIUM"
+    return "LOW"
+
+
+def serialize_evidence(
+    state_after: GitState, risk_flags: list[RiskFlag]
+) -> dict:
+    """Machine-readable run evidence for the manifest "evidence" block.
+
+    Downstream consumers (`agentcam handoff`, corridor-ci) read this
+    instead of parsing the rendered Markdown report. Like "capture",
+    the block is omitted from legacy manifests so JSON consumers can
+    use `"evidence" in data` to detect schema presence cleanly.
+    """
+    return {
+        "changed_files": [
+            {
+                "path": cf.path,
+                "status": cf.status,
+                "secret_like_name": cf.secret_like_name,
+            }
+            for cf in state_after.changed_files
+        ],
+        "risk_flags": [
+            {"level": f.level, "rule": f.rule, "evidence": f.evidence}
+            for f in risk_flags
+        ],
+        "overall_risk": overall_risk_level(risk_flags),
+        "diff_stat": state_after.diff_stat,
+        "diff_stat_cached": state_after.diff_stat_cached,
+    }
+
+
+def write_manifest(
+    m: RunManifest, path: Path, evidence: dict | None = None
+) -> None:
+    data = serialize_manifest(m)
+    if evidence is not None:
+        data["evidence"] = evidence
     path.write_text(
-        json.dumps(serialize_manifest(m), indent=2),
+        json.dumps(data, indent=2),
         encoding="utf-8",
     )
 
@@ -402,12 +449,11 @@ def _render_capture_visibility(c: CaptureCapability | None) -> str:
 
 
 def _render_verdict(flags: list[RiskFlag]) -> str:
-    if any(f.level == "HIGH" for f in flags):
-        overall, review = "HIGH", "yes"
-    elif any(f.level == "MEDIUM" for f in flags):
-        overall, review = "MEDIUM", "yes"
-    else:
+    level = overall_risk_level(flags)
+    if level == "LOW":
         overall, review = "LOW (no risk flags)", "no"
+    else:
+        overall, review = level, "yes"
     return (
         "## Verdict\n\n"
         f"- Overall risk: **{overall}**\n"

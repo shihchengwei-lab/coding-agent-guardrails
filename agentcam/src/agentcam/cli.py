@@ -17,6 +17,7 @@ See ``docs/design.md`` (forthcoming) for the rationale.
 from __future__ import annotations
 
 import argparse
+import json
 import platform
 import sys
 from datetime import datetime, timezone
@@ -133,6 +134,41 @@ def build_parser() -> argparse.ArgumentParser:
             "default for safer sharing."
         ),
     )
+    export.add_argument(
+        "--files",
+        default=None,
+        metavar="DIR",
+        help=(
+            "Instead of a zip, write AGENT_RUN_REPORT.md and "
+            "manifest.redacted.json into DIR — the committable form "
+            "corridor-ci reads as recorded evidence. Logs are never "
+            "included in this mode."
+        ),
+    )
+
+    handoff = sub.add_parser(
+        "handoff",
+        help=(
+            "Print a corridor-ci five-line handoff draft from a "
+            "recorded run."
+        ),
+        description=(
+            "Reads the run's manifest evidence and prints the compact "
+            "handoff (Decision / Scope / Review first / Verified / "
+            "Risk) for the pull request body. Decision and Verified "
+            "are left for the author: agentcam records what changed, "
+            "not why, and it does not observe test runs."
+        ),
+    )
+    handoff.add_argument(
+        "run_id",
+        nargs="?",
+        default="latest",
+        help=(
+            "Run id under .git/agentcam/runs/, or 'latest' (default) "
+            "for the most recently modified run."
+        ),
+    )
 
     return parser
 
@@ -166,6 +202,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "export":
         return _export_command(args)
 
+    if args.cmd == "handoff":
+        return _handoff_command(args)
+
     parser.error(f"unknown subcommand: {args.cmd}")
     return 2  # unreachable; parser.error exits
 
@@ -196,6 +235,27 @@ def _export_command(args) -> int:
         print(f"agentcam: {e}", file=sys.stderr)
         return 2
 
+    if args.files:
+        from agentcam.export import export_files
+
+        if args.include_raw:
+            print(
+                "agentcam: --include-raw cannot be combined with "
+                "--files; raw logs are not safe to commit.",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            written = export_files(
+                run_dir, Path(args.files), force=args.force
+            )
+        except ExportError as e:
+            print(f"agentcam: {e}", file=sys.stderr)
+            return 2
+        for out in written:
+            print(f"agentcam: export written to {out}", file=sys.stderr)
+        return 0
+
     if args.output:
         out_path = Path(args.output)
     else:
@@ -217,6 +277,83 @@ def _export_command(args) -> int:
         f"agentcam: export written to {out_path}",
         file=sys.stderr,
     )
+    return 0
+
+
+def _pick_review_first(paths: list[str], flags: list[dict]) -> str:
+    """Highest-severity flagged file that is in the changed set, else
+    the first changed file."""
+    for level in ("HIGH", "MEDIUM"):
+        for flag in flags:
+            if flag.get("level") == level and flag.get("evidence") in paths:
+                return flag["evidence"]
+    return paths[0]
+
+
+def _handoff_command(args) -> int:
+    from agentcam.export import ExportError, resolve_run_dir
+    from agentcam.git_state import NotAGitRepoError, resolve_git_dir
+
+    cwd = Path.cwd()
+    try:
+        git_dir = resolve_git_dir(cwd)
+    except NotAGitRepoError:
+        print(
+            "agentcam: not in a git repository. agentcam handoff needs "
+            "to find runs under <git_dir>/agentcam/runs/.",
+            file=sys.stderr,
+        )
+        return 2
+    except Exception as e:  # noqa: BLE001
+        print(f"agentcam: git error: {e}", file=sys.stderr)
+        return 2
+
+    try:
+        run_dir = resolve_run_dir(git_dir, args.run_id)
+    except ExportError as e:
+        print(f"agentcam: {e}", file=sys.stderr)
+        return 2
+
+    manifest_path = run_dir / "manifest.json"
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        print(
+            f"agentcam: could not read {manifest_path}: {e}",
+            file=sys.stderr,
+        )
+        return 2
+
+    evidence = data.get("evidence")
+    if evidence is None:
+        print(
+            f"agentcam: run {run_dir.name} has no evidence section "
+            "(recorded by an older agentcam). Re-record the run with "
+            "this version to generate a handoff.",
+            file=sys.stderr,
+        )
+        return 2
+
+    changed = evidence.get("changed_files") or []
+    if not changed:
+        print(
+            f"agentcam: run {run_dir.name} recorded no changed files; "
+            "nothing to hand off.",
+            file=sys.stderr,
+        )
+        return 2
+
+    paths = [cf["path"] for cf in changed]
+    review_first = _pick_review_first(
+        paths, evidence.get("risk_flags") or []
+    )
+    risk = str(evidence.get("overall_risk") or "low").lower()
+
+    print("Decision: <fill in: issue or decision link>")
+    print(f"Scope: {', '.join(paths)}")
+    print(f"Review first: {review_first}")
+    print("Verified: <fill in: agentcam did not observe a test run>")
+    print(f"Risk: {risk}")
     return 0
 
 
