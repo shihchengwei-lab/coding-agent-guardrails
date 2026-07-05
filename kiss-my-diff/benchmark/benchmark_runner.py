@@ -22,6 +22,7 @@ VARIANTS = [
     "kiss_contrast_core",
     "kiss_weighted_core",
     "kiss_weighted_contrast_core",
+    "discipline",
 ]
 KISS_ONE_LINE_AGENT = "Follow the KISS principle (Keep It Simple, Stupid).\n"
 KISS_CONTRAST_CORE_AGENT = """Read the existing code before editing; do not guess APIs, helpers, or patterns.
@@ -107,6 +108,8 @@ def prepare_run(
         (work_dir / "AGENT.md").write_text(KISS_WEIGHTED_CORE_AGENT, encoding="utf-8")
     elif variant == "kiss_weighted_contrast_core":
         (work_dir / "AGENT.md").write_text(KISS_WEIGHTED_CONTRAST_CORE_AGENT, encoding="utf-8")
+    elif variant == "discipline":
+        shutil.copy2(discipline_file(lab_dir), work_dir / "AGENT.md")
 
     (run_dir / "PROMPT.md").write_text(_build_prompt(task, variant), encoding="utf-8")
     (run_dir / "RUN.json").write_text(
@@ -169,6 +172,13 @@ def agent_file(lab_dir: Path) -> Path:
     if local.exists():
         return local
     return lab_dir.parent / "AGENT.md"
+
+
+def discipline_file(lab_dir: Path) -> Path:
+    # The fused block the monorepo root installer ships (templates/
+    # DISCIPLINE.md, two levels above benchmark/), measured as plain
+    # prompt text through the same AGENT.md channel as the kiss variant.
+    return lab_dir.parent.parent / "templates" / "DISCIPLINE.md"
 
 
 def collect_result(task: dict, lab_dir: Path, run_dir: Path, timeout_seconds: int = 60) -> dict:

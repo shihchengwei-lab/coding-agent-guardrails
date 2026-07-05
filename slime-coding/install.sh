@@ -161,10 +161,8 @@ fi
 
 cat <<EOF
 
-Done. Remaining manual step (L0 discipline is a request, so it is not forced):
-  paste the block in
-    $SLIME_HOME/templates/CLAUDE.slime.md
-  into $PROJECT/CLAUDE.md
+Done. The L0 discipline block comes from the toolkit's root installer
+(templates/DISCIPLINE.md -> CLAUDE.md + AGENTS.md).
 
 Optional config (env): SLIME_TEST_CMD, SLIME_PRUNE_RECENT, SLIME_TEST_TIMEOUT,
 SLIME_PUBSPEC. See $SLIME_HOME/README.md.

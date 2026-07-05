@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+dist/
+build/
+.venv/
+.venv*/
+venv/
+env/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.ccb/
+
+# agentcam's dev-notes file is intentionally untracked
+agentcam/CLAUDE.md
+
+# benchmark run outputs
+kiss-my-diff/benchmark/runs*/

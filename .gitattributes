@@ -1,0 +1,24 @@
+# Store all text as LF and check it out as LF everywhere, so Windows
+# and POSIX contributors see identical bytes and CI never fights
+# CRLF/LF diffs.
+
+* text=auto eol=lf
+
+# Pin the common text types explicitly so future auto-detect changes
+# don't surprise anyone.
+*.py    text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.toml  text eol=lf
+*.txt   text eol=lf
+*.json  text eol=lf
+*.sh    text eol=lf
+*.ps1   text eol=lf
+
+# Mark binary so git never tries to diff or convert these.
+*.gif   binary
+*.png   binary
+*.jpg   binary
+*.whl   binary
+*.tar.gz binary

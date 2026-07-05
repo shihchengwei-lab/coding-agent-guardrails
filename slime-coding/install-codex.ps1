@@ -30,17 +30,20 @@ function Install-ManagedBlock {
   param(
     [string]$Path,
     [string]$Block,
-    [string]$Name
+    [string]$Start,
+    [string]$End
   )
-  $start = "<!-- >>> $Name -->"
-  $end = "<!-- <<< $Name -->"
-  $managed = "$start`n$Block`n$end"
+  $managed = "$Start`n$Block`n$End"
   $content = ""
   if (Test-Path -LiteralPath $Path) {
     $content = Get-Content -LiteralPath $Path -Raw
   }
-  $pattern = "(?s)" + [regex]::Escape($start) + ".*?" + [regex]::Escape($end) + "\s*"
-  $content = [regex]::Replace($content, $pattern, "").TrimEnd()
+  $pattern = "(?s)" + [regex]::Escape($Start) + ".*?" + [regex]::Escape($End) + "\s*"
+  $content = [regex]::Replace($content, $pattern, "")
+  # Pre-fusion installs wrote a "Slime Coding Codex" block; clear it so an
+  # upgrade does not leave two overlapping discipline texts behind.
+  $legacy = "(?s)" + [regex]::Escape("<!-- >>> Slime Coding Codex -->") + ".*?" + [regex]::Escape("<!-- <<< Slime Coding Codex -->") + "\s*"
+  $content = [regex]::Replace($content, $legacy, "").TrimEnd()
   if ($content.Length -gt 0) {
     $content = "$content`n`n$managed`n"
   } else {
@@ -158,9 +161,15 @@ if (-not (Test-Path -LiteralPath (Join-Path $slimeDir "corridor.md"))) {
   Write-Host "  .slime/ already present - left untouched"
 }
 
-$agentsBlock = Get-Content -LiteralPath (Join-Path $SlimeHome "templates/AGENTS.slime.md") -Raw
-Install-ManagedBlock -Path (Join-Path $Project "AGENTS.md") -Block $agentsBlock.Trim() -Name "Slime Coding Codex"
-Write-Host "  installed AGENTS.md block -> $(Join-Path $Project 'AGENTS.md')"
+# The discipline text is the toolkit-wide single source: the root
+# templates/DISCIPLINE.md, written with the same markers the root
+# installer uses, so running either installer leaves exactly one block.
+$disciplineFile = Join-Path (Split-Path -Parent $SlimeHome) "templates/DISCIPLINE.md"
+$agentsBlock = Get-Content -LiteralPath $disciplineFile -Raw
+Install-ManagedBlock -Path (Join-Path $Project "AGENTS.md") -Block $agentsBlock.Trim() `
+  -Start "<!-- coding-agent-guardrails:discipline:start -->" `
+  -End "<!-- coding-agent-guardrails:discipline:end -->"
+Write-Host "  installed discipline block (root templates/DISCIPLINE.md) -> $(Join-Path $Project 'AGENTS.md')"
 
 Install-GitHook -PythonWin $pythonWin
 

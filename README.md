@@ -11,7 +11,7 @@ corridor from "agent starts typing" to "human presses merge".
 
 | Stage | Tool | What it adds |
 |---|---|---|
-| Before the agent starts | [kiss-my-diff](kiss-my-diff/) × [slime-coding](slime-coding/) rules | One unified discipline block in your `CLAUDE.md` ([templates/DISCIPLINE.md](templates/DISCIPLINE.md)): smallest readable change, minimal semantic drift, stop when done. |
+| Before the agent starts | [kiss-my-diff](kiss-my-diff/) × [slime-coding](slime-coding/) rules | One unified discipline block in your `CLAUDE.md` / `AGENTS.md` ([templates/DISCIPLINE.md](templates/DISCIPLINE.md)): smallest readable change, minimal semantic drift, stop when done. |
 | While the agent works | [slime-coding](slime-coding/) hooks | Automatic gates that hold the agent inside the corridor it declared before editing. |
 | After the agent claims done | [agentcam](agentcam/) | Records what actually changed — files, risk flags, diff stat — and drafts the PR handoff from that record. |
 | Before a human reviews | [corridor-ci](corridor-ci/) | Validates the five-line handoff against the actual diff and appends the recorded evidence to the PR report. |
@@ -21,12 +21,14 @@ corridor from "agent starts typing" to "human presses merge".
 ```bash
 git clone <this repo> ~/guardrails
 ~/guardrails/install.sh /path/to/your/project
-pip install agentcam
 ```
 
-Re-running is safe. The installer wires the discipline block into
-`CLAUDE.md`, installs the slime-coding hooks, and drops a starter
-corridor-ci workflow (skipping any you already have).
+Re-running is safe. The installer wires the discipline block (rules plus
+the agentcam handoff loop) into `CLAUDE.md` and `AGENTS.md` (Claude Code
+reads the former; Codex and friends read the latter), installs the
+slime-coding hooks, drops a starter corridor-ci workflow (skipping any
+you already have), and pip-installs agentcam from the checkout into your
+current Python (3.11+ required).
 
 ## The loop
 

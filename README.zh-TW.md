@@ -10,7 +10,7 @@ diff——讀它、擁有它、維護它。這個工具包裝在 agent 那一側
 
 | 關卡 | 工具 | 它補上什麼 |
 |---|---|---|
-| agent 動工之前 | [kiss-my-diff](kiss-my-diff/) × [slime-coding](slime-coding/) 規則 | 一份統一紀律區塊進你的 `CLAUDE.md`（[templates/DISCIPLINE.md](templates/DISCIPLINE.md)）：最小可讀改動、最小語義位移、做完就停。 |
+| agent 動工之前 | [kiss-my-diff](kiss-my-diff/) × [slime-coding](slime-coding/) 規則 | 一份統一紀律區塊進你的 `CLAUDE.md` 與 `AGENTS.md`（[templates/DISCIPLINE.md](templates/DISCIPLINE.md)）：最小可讀改動、最小語義位移、做完就停。 |
 | agent 工作途中 | [slime-coding](slime-coding/) hooks | 自動關卡，把 agent 押在它動工前宣告的走廊裡。 |
 | agent 說做完之後 | [agentcam](agentcam/) | 錄下實際改了什麼——檔案、風險旗標、diff 統計——並從實錄起草 PR 交接單。 |
 | 人類 review 之前 | [corridor-ci](corridor-ci/) | 用實際 diff 驗證五行交接單，並把實錄證據附進 PR 報告。 |
@@ -20,11 +20,13 @@ diff——讀它、擁有它、維護它。這個工具包裝在 agent 那一側
 ```bash
 git clone <這個 repo> ~/guardrails
 ~/guardrails/install.sh /path/to/your/project
-pip install agentcam
 ```
 
-重跑安全。安裝器會把紀律區塊接進 `CLAUDE.md`、裝好 slime-coding 的
-hooks、放一份 corridor-ci 起手 workflow（你已有的不會被覆蓋）。
+重跑安全。安裝器會把紀律區塊（規則＋agentcam 交接循環）接進
+`CLAUDE.md` 與 `AGENTS.md`（Claude Code 讀前者、Codex 等讀後者）、
+裝好 slime-coding 的 hooks、放一份 corridor-ci 起手 workflow（你已有
+的不會被覆蓋），並把 agentcam 從這份 checkout 直接 pip 裝進你目前的
+Python（需 3.11 以上）。
 
 ## 閉環
 

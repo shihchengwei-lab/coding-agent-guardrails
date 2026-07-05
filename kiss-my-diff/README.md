@@ -1,8 +1,14 @@
 # kiss-my-diff
 
-[繁體中文](README.zh-TW.md)
-
 ![kiss-my-diff hero](assets/kiss-my-diff-hero.png)
+
+> In this monorepo the rules ship through the root installer as part of
+> [`templates/DISCIPLINE.md`](../templates/DISCIPLINE.md). The numbers
+> below were measured on [`AGENT.md`](AGENT.md) used standalone; the file
+> is kept here verbatim as the measured specimen. The fused installer
+> block has its own same-day two-arm run — 24.8% smaller patches, 9.8%
+> fewer files touched, correctness unchanged on `gpt-5.5` — recorded in
+> [`benchmark/discipline-fusion-run.md`](benchmark/discipline-fusion-run.md).
 
 Agents usually finish the task. The question is whether you want to kiss the diff afterward.
 
@@ -165,4 +171,4 @@ Copy [`AGENT.md`](AGENT.md) into the root of a repo where coding agents work.
 
 ## License
 
-MIT. See [`LICENSE`](LICENSE).
+MIT. See the repo root [`LICENSE`](../LICENSE).

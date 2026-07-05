@@ -97,6 +97,41 @@ def test_prepare_kiss_run_adds_agent_file(tmp_path):
     assert "Follow the local AGENT.md" in (run_dir / "PROMPT.md").read_text(encoding="utf-8")
 
 
+def test_prepare_discipline_run_uses_toolkit_block(tmp_path):
+    root = tmp_path / "repo"
+    lab = root / "kiss-my-diff" / "benchmark"
+    task_dir = lab / "tasks" / "demo"
+    (task_dir / "base").mkdir(parents=True)
+    (task_dir / "hidden").mkdir()
+    (task_dir / "base" / "app.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (root / "templates").mkdir(parents=True)
+    (root / "templates" / "DISCIPLINE.md").write_text(
+        "## Coding Discipline\nfused block\n", encoding="utf-8"
+    )
+    manifest = {
+        "id": "demo",
+        "prompt": "Fix it.",
+        "public_command": "python -m pytest -q",
+        "hidden_command": "python -m pytest -q",
+        "max_files": 1,
+        "max_line_delta": 8,
+        "quality_checks": [],
+    }
+
+    run_dir = runner.prepare_run(
+        task=manifest,
+        lab_dir=lab,
+        run_root=tmp_path / "runs",
+        model="gpt-test",
+        variant="discipline",
+        force=False,
+    )
+
+    agent_text = (run_dir / "work" / "AGENT.md").read_text(encoding="utf-8")
+    assert agent_text == "## Coding Discipline\nfused block\n"
+    assert "Follow the local AGENT.md" in (run_dir / "PROMPT.md").read_text(encoding="utf-8")
+
+
 def test_prepare_kiss_run_can_use_repo_root_agent_file(tmp_path):
     repo = tmp_path / "repo"
     lab = repo / "benchmark"

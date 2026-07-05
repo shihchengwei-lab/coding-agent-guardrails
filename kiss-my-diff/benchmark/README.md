@@ -25,6 +25,7 @@ Variants:
 - `kiss_contrast_core`: experimental prompt with positive rules paired with explicit "do not" boundaries
 - `kiss_weighted_core`: experimental prompt that repeats the smallest-correct-diff objective before the rule list
 - `kiss_weighted_contrast_core`: experimental prompt that combines core weighting with contrast boundaries
+- `discipline`: copies the monorepo root `templates/DISCIPLINE.md` — the fused block the one-command installer actually ships — measured through the same `AGENT.md` channel
 
 The runner creates a fresh worktree under `runs-local/`, gives the agent only `tasks/<task>/base`, then verifies the result twice:
 

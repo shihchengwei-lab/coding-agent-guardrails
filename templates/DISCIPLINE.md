@@ -1,8 +1,9 @@
-<!-- Unified coding discipline for the toolkit.
-     Merged from kiss-my-diff/AGENT.md and slime-coding/templates/CLAUDE.slime.md.
-     The one-command installer pastes this single block into the consuming
-     project's CLAUDE.md / AGENTS.md. The standalone rule files in each tool
-     stay unchanged for standalone use. -->
+<!-- Unified coding discipline for the toolkit — the single source.
+     The one-command installer writes this block into the consuming
+     project's CLAUDE.md and AGENTS.md; install-codex.ps1 reads the same
+     file. Distilled from kiss-my-diff/AGENT.md (kept verbatim as the
+     benchmark's measured specimen) and the former slime-coding discipline
+     templates, which were removed at monorepo fusion. -->
 
 ## Coding Discipline
 
@@ -38,3 +39,21 @@ Process (uses the slime-coding hooks installed in this project):
    copy the relevant pruned summary into its task prompt.
 4. When you reject a design path, record it with `/slime-prune` (the
    abandoned path + the reason).
+
+Evidence & handoff (agentcam — do this without being asked):
+
+1. After your change passes its tests, run them once more under the
+   recorder: `agentcam verify -- <project test command>`. It runs the
+   check itself and records command, exit code, and duration as observed
+   facts. If it errors because no recorded run exists (the session was
+   not started via `agentcam run`), skip steps 2–3 and say so.
+2. When preparing the PR: `agentcam handoff` prints the five-line
+   handoff drafted from the record. Paste it into the PR body, fill in
+   `Decision` yourself, and leave `Verified` as the fill-in unless a
+   recorded check actually passed.
+3. Attach the evidence: `agentcam export latest --files .agentcam/` and
+   commit that directory with the PR, so corridor-ci can append the
+   recorded evidence to its report.
+
+Never hand-write facts these tools measure: no invented `Verified`
+lines, no edited exit codes.

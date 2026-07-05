@@ -9,6 +9,9 @@
 - 題庫：Ponytail-derived task pool
 - 來源 repo：[DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail)
 - Ponytail commit：`c4d1925`
+- Slime Coding 配置：對應本 repo 歷史的 `291c309`（2026-06-29「Make strict
+  corridor the default」；含當時的 `templates/CLAUDE.slime.md`——該檔已在
+  monorepo 融合時移除，可在該 commit 取回）
 - 模型：`claude-haiku-4-5-20251001`
 - 日期：2026-06-29
 - 題目：19 題
@@ -72,6 +75,8 @@ Slime Coding 在這組任務裡：
 
 - 模型：`gpt-5.4-mini`
 - harness：Codex CLI headless benchmark harness
+- Slime Coding 配置：對應本 repo 歷史的 `4d60108`（2026-07-01「Add Codex
+  support and cross-vendor benchmark」）
 - 日期：2026-07-01
 - 題目：同一批 Ponytail-derived 19 題
 - 組別：`baseline`、`slime-coding`

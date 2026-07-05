@@ -19,4 +19,6 @@ merge with `bash install.sh /tmp/throwaway-project` and confirm it is
 idempotent and quotes the baked path.
 
 The tool's own discipline is described in `README.md`; the discipline block
-that consumers paste lives in `templates/CLAUDE.slime.md`.
+consumers get is the monorepo root `templates/DISCIPLINE.md`, written into
+CLAUDE.md and AGENTS.md by the root installer (install-codex.ps1 reads the
+same file).

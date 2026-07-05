@@ -6,6 +6,16 @@ cloning, so "versions" track the git history rather than published releases.
 
 ## [Unreleased]
 
+### Changed
+- Fused into the coding-agent-guardrails monorepo. The discipline text now
+  has a single source — the root `templates/DISCIPLINE.md` — written into
+  both `CLAUDE.md` and `AGENTS.md` by the root installer; `install-codex.ps1`
+  reads the same file and clears the legacy "Slime Coding Codex" block on
+  upgrade. Removed `templates/CLAUDE.slime.md`, `templates/AGENTS.slime.md`,
+  and the per-tool `LICENSE` / git ignore files (the root copies apply).
+  This changelog is frozen from here on; further history lives in the
+  monorepo git log.
+
 ### Removed
 - `install.sh --with-cg <path>` and its coding-guidelines pairing path. The
   combined setup showed poor fit for Slime Coding's current goal: it tends to

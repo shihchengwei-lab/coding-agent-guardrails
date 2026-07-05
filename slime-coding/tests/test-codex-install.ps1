@@ -29,7 +29,8 @@ try {
   git -C $Project init -q
   git -C $Project config user.email t@t.t
   git -C $Project config user.name t
-  Set-Content -LiteralPath (Join-Path $Project "AGENTS.md") -Value "# Existing`n`nKeep this." -Encoding utf8
+  $seed = "# Existing`n`nKeep this.`n`n<!-- >>> Slime Coding Codex -->`nOld block from a pre-fusion install.`n<!-- <<< Slime Coding Codex -->"
+  Set-Content -LiteralPath (Join-Path $Project "AGENTS.md") -Value $seed -Encoding utf8
 
   & powershell -NoProfile -ExecutionPolicy Bypass -File $Install -Project $Project | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "install-codex.ps1 failed with $LASTEXITCODE" }
@@ -58,17 +59,22 @@ try {
   if ((Test-Path -LiteralPath $Corridor) -and (Test-Path -LiteralPath $Pruned)) { Ok "5  seeds .slime artifacts" } else { Bad "5  seeds .slime artifacts" "missing" }
 
   $agentsText = Get-Content -LiteralPath $Agents -Raw
-  if ($agentsText -match ">>> Slime Coding Codex" -and $agentsText -match "minimal semantic displacement" -and $agentsText -match "Keep this\.") {
-    Ok "6  appends AGENTS.md managed block without dropping existing text"
+  if ($agentsText -match "coding-agent-guardrails:discipline:start" -and $agentsText -match "minimal semantic displacement" -and $agentsText -match "Keep this\.") {
+    Ok "6  installs the root discipline block without dropping existing text"
   } else {
-    Bad "6  appends AGENTS.md managed block without dropping existing text" $agentsText
+    Bad "6  installs the root discipline block without dropping existing text" $agentsText
+  }
+  if ($agentsText -notmatch ">>> Slime Coding Codex") {
+    Ok "6b removes the legacy Slime Coding Codex block"
+  } else {
+    Bad "6b removes the legacy Slime Coding Codex block" $agentsText
   }
   if (Test-Path -LiteralPath $GitHook) { Ok "7  wires prepare-commit-msg hook" } else { Bad "7  wires prepare-commit-msg hook" "missing" }
 
   & powershell -NoProfile -ExecutionPolicy Bypass -File $Install -Project $Project | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "second install-codex.ps1 failed with $LASTEXITCODE" }
   $agentsText2 = Get-Content -LiteralPath $Agents -Raw
-  $count = ([regex]::Matches($agentsText2, ">>> Slime Coding Codex")).Count
+  $count = ([regex]::Matches($agentsText2, "coding-agent-guardrails:discipline:start")).Count
   if ($count -eq 1) { Ok "8  install is idempotent for AGENTS.md block" } else { Bad "8  install is idempotent for AGENTS.md block" "count=$count" }
 } finally {
   foreach ($dir in $TmpDirs) {
