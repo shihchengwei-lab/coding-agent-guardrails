@@ -46,8 +46,9 @@ Python（需 3.11 以上）。
 
 工具互相餵——這就是打包的意義：
 
-1. **實錄** — `agentcam run -- <agent 指令>`（或在裝了 slime hooks 的
-   Claude Code 裡工作）。agent 改的一切記錄在 `.git/agentcam/runs/`。
+1. **實錄** — `agentcam run -- <agent 指令>`（或直接在 Claude Code 裡
+   工作：安裝器接好的 agentcam session 掛鉤會自動錄）。agent 改的一切
+   記錄在 `.git/agentcam/runs/`。
 2. **驗證** — `agentcam verify -- pytest -q`。由 agentcam 親自執行測試，
    記下指令、退出碼、耗時——是儀器量到的事實，不是 agent 的自述。
    通過的檢查會自動草擬交接單的 `Verified` 行。

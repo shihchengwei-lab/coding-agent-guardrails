@@ -52,9 +52,10 @@ current Python (3.11+ required).
 
 The tools feed each other — that is the point of the package:
 
-1. **Record** — `agentcam run -- <agent command>` (or work in Claude Code
-   with the slime hooks active). Everything the agent changed is recorded
-   under `.git/agentcam/runs/`.
+1. **Record** — `agentcam run -- <agent command>` (or just work in
+   Claude Code: the installer wires agentcam session hooks that record
+   automatically). Everything the agent changed is recorded under
+   `.git/agentcam/runs/`.
 2. **Verify** — `agentcam verify -- pytest -q`. agentcam runs the check
    itself and records command, exit code, and duration — observed facts,
    not the agent's claim. Passing checks draft the handoff's `Verified`

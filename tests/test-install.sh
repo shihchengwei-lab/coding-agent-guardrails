@@ -38,9 +38,16 @@ done
 python3 - <<'PY'
 import json
 hooks = json.load(open(".claude/settings.json"))["hooks"]
-assert set(hooks) >= {"SessionStart", "UserPromptSubmit", "PreToolUse", "Stop"}, hooks
-for event, groups in hooks.items():
-    assert len(groups) == 1, f"{event} not idempotent: {len(groups)} groups"
+# slime and agentcam share SessionStart; agentcam alone owns SessionEnd.
+expected = {"SessionStart": 2, "SessionEnd": 1,
+            "UserPromptSubmit": 1, "PreToolUse": 1, "Stop": 1}
+assert set(hooks) == set(expected), hooks
+for event, n in expected.items():
+    assert len(hooks[event]) == n, (
+        f"{event} not idempotent: {len(hooks[event])} groups (expected {n})")
+cmds = [h["command"] for gs in hooks.values() for g in gs for h in g.get("hooks", [])]
+assert any("hook-session-start" in c for c in cmds), cmds
+assert any("hook-session-end" in c for c in cmds), cmds
 PY
 
 test -f .github/workflows/corridor.yml

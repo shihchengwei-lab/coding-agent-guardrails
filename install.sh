@@ -11,6 +11,9 @@
 #   4. agentcam, pip-installed from this checkout (so `verify` and the
 #      rest of the recorded-evidence loop match the docs, even if the
 #      PyPI release lags behind)
+#   5. agentcam session hooks into the project's .claude/settings.json,
+#      so Claude Code sessions are recorded without the `agentcam run`
+#      wrapper (hook mode; other agents still use the wrapper)
 #
 # Usage: ./install.sh [/path/to/target/project]
 # Re-running is safe (idempotent).
@@ -89,9 +92,51 @@ else
   echo "  agentcam installed, but not on PATH - use: $PY -m agentcam.cli <command>"
 fi
 
+# --- 5. agentcam Claude Code session hooks ------------------------------------
+# Hook mode (agentcam README): SessionStart snapshots git state, SessionEnd
+# renders the report. Both always exit 0, so Claude Code is never blocked.
+# When agentcam is not on PATH, bake the resolved interpreter instead.
+if command -v agentcam >/dev/null 2>&1; then
+  AGENTCAM_CMD="agentcam"
+else
+  AGENTCAM_CMD="\"$("$PY" -c 'import sys; print(sys.executable)')\" -m agentcam.cli"
+fi
+SETTINGS="$PROJECT/.claude/settings.json" AGENTCAM_CMD="$AGENTCAM_CMD" python3 - <<'PY'
+import json, os, shutil, time
+
+settings_path = os.environ["SETTINGS"]
+cmd = os.environ["AGENTCAM_CMD"]
+
+settings = {}
+os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+if os.path.exists(settings_path):
+    try:
+        with open(settings_path, encoding="utf-8") as f:
+            settings = json.load(f)
+    except (OSError, ValueError):
+        settings = {}
+    shutil.copy2(settings_path, settings_path + ".agentcam.bak-" + time.strftime("%Y%m%d%H%M%S"))
+
+hooks = settings.setdefault("hooks", {})
+
+def is_ours(group):
+    return any("hook-session-" in h.get("command", "") for h in group.get("hooks", []))
+
+for event, sub in (("SessionStart", "hook-session-start"), ("SessionEnd", "hook-session-end")):
+    kept = [g for g in hooks.get(event, []) if not is_ours(g)]
+    kept.append({"matcher": "", "hooks": [{"type": "command", "command": f"{cmd} {sub}"}]})
+    hooks[event] = kept
+
+with open(settings_path, "w", encoding="utf-8") as f:
+    json.dump(settings, f, indent=2)
+    f.write("\n")
+print("  agentcam session hooks -> " + settings_path)
+PY
+
 echo ""
 echo "Done. The loop:"
 echo "  agentcam run -- <agent command>            # record what the agent does"
+echo "    (Claude Code sessions record automatically via the wired session hooks)"
 echo "  agentcam verify -- <test command>          # run the check under agentcam, record the exit code"
 echo "  agentcam handoff                           # five-line handoff draft for the PR body"
 echo "  agentcam export latest --files .agentcam/  # commit recorded evidence for corridor-ci"
