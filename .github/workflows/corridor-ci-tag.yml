@@ -1,21 +1,15 @@
-name: CI
+name: corridor-ci tag consistency
 
 on:
   push:
-  pull_request:
+    tags: ['corridor-ci-v*']
+
+defaults:
+  run:
+    working-directory: corridor-ci
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
-      - run: python -m unittest discover -s tests -v
-
   tag-consistency:
-    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

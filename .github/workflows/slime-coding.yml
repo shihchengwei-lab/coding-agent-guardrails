@@ -1,10 +1,16 @@
-name: CI
+name: slime-coding CI
 
 on:
   push:
     branches: [main]
+    paths: ['slime-coding/**']
   pull_request:
     branches: [main]
+    paths: ['slime-coding/**']
+
+defaults:
+  run:
+    working-directory: slime-coding
 
 jobs:
   test:

@@ -16,7 +16,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: ./
+      - uses: ./corridor-ci
         with:
           mode: fail
           small_change_max_files: 1

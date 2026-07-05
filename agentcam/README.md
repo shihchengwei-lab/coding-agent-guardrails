@@ -1,6 +1,6 @@
 # agentcam
 
-[![CI](https://github.com/shihchengwei-lab/agentcam/actions/workflows/ci.yml/badge.svg)](https://github.com/shihchengwei-lab/agentcam/actions/workflows/ci.yml)
+[![CI](https://github.com/shihchengwei-lab/coding-agent-guardrails/actions/workflows/agentcam.yml/badge.svg)](https://github.com/shihchengwei-lab/coding-agent-guardrails/actions/workflows/agentcam.yml)
 [![PyPI](https://img.shields.io/pypi/v/agentcam.svg)](https://pypi.org/project/agentcam/)
 
 > Local-first CLI wrapper that records what your AI coding agent changed in your repo and generates a Markdown run report after each run.
@@ -447,8 +447,8 @@ For the full list of "things we deliberately did NOT do," see the
 ## Hacking
 
 ```bash
-git clone https://github.com/shihchengwei-lab/agentcam.git
-cd agentcam
+git clone https://github.com/shihchengwei-lab/coding-agent-guardrails.git
+cd coding-agent-guardrails/agentcam
 python -m venv .venv
 
 # Windows (Git Bash / PowerShell)

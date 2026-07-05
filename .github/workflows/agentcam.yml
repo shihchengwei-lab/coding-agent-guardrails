@@ -1,13 +1,19 @@
-name: CI
+name: agentcam CI
 
 on:
   push:
     branches: [main]
+    paths: ['agentcam/**']
   pull_request:
     branches: [main]
+    paths: ['agentcam/**']
 
 permissions:
   contents: read
+
+defaults:
+  run:
+    working-directory: agentcam
 
 jobs:
   test:

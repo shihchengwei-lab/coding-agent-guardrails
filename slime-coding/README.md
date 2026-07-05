@@ -1,6 +1,6 @@
 # Slime Coding
 
-[![CI](https://github.com/shihchengwei-lab/slime-coding/actions/workflows/ci.yml/badge.svg)](https://github.com/shihchengwei-lab/slime-coding/actions/workflows/ci.yml)
+[![CI](https://github.com/shihchengwei-lab/coding-agent-guardrails/actions/workflows/slime-coding.yml/badge.svg)](https://github.com/shihchengwei-lab/coding-agent-guardrails/actions/workflows/slime-coding.yml)
 
 **Slime Coding — 讓最聰明的 AI，跟最沒腦的黏菌學會克制。**
 
@@ -51,17 +51,17 @@ Slime Coding 不是再寫一段「請不要過度實作」給 AI 看。那種文
 每個要套 Slime Coding 的專案，各跑一次。Claude Code 用：
 
 ```bash
-git clone <這個 repo> ~/slime-coding
+git clone <這個 repo> ~/guardrails
 cd /你的專案
-~/slime-coding/install.sh .
+~/guardrails/slime-coding/install.sh .
 ```
 
 Codex on Windows 用：
 
 ```powershell
-git clone <這個 repo> $HOME\slime-coding
+git clone <這個 repo> $HOME\guardrails
 cd \你的專案
-powershell -ExecutionPolicy Bypass -File $HOME\slime-coding\install-codex.ps1 -Project .
+powershell -ExecutionPolicy Bypass -File $HOME\guardrails\slime-coding\install-codex.ps1 -Project .
 ```
 
 Claude 安裝會做幾件事：

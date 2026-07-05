@@ -595,8 +595,8 @@ class CorridorCiTest(unittest.TestCase):
         repo = Path(__file__).resolve().parents[1]
         readme = (repo / "README.md").read_text(encoding="utf-8")
         workflow = (repo / "examples" / "workflow.yml").read_text(encoding="utf-8")
-        readme_tag = re.search(r"shihchengwei-lab/corridor-ci@(v\d+)", readme)
-        workflow_tag = re.search(r"shihchengwei-lab/corridor-ci@(v\d+)", workflow)
+        readme_tag = re.search(r"corridor-ci@(corridor-ci-v\d+)", readme)
+        workflow_tag = re.search(r"corridor-ci@(corridor-ci-v\d+)", workflow)
 
         self.assertIsNotNone(readme_tag)
         self.assertIsNotNone(workflow_tag)
