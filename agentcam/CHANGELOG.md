@@ -5,7 +5,7 @@ All notable changes to agentcam are recorded here. Format follows
 Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 0.x is unstable on purpose.
 
-## [Unreleased]
+## [0.3.2] — 2026-07-06
 
 ### Fixed
 
