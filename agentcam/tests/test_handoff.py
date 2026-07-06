@@ -11,9 +11,19 @@ import sys
 from pathlib import Path
 
 
-def _agentcam(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+LIGHTWEIGHT_RUN_BACKEND = "pipe"
+
+
+def _agentcam(
+    cwd: Path,
+    *args: str,
+    run_backend: str | None = LIGHTWEIGHT_RUN_BACKEND,
+) -> subprocess.CompletedProcess:
+    argv = list(args)
+    if argv and argv[0] == "run" and run_backend and "--backend" not in argv:
+        argv[1:1] = ["--backend", run_backend]
     return subprocess.run(
-        [sys.executable, "-m", "agentcam.cli", *args],
+        [sys.executable, "-m", "agentcam.cli", *argv],
         cwd=cwd,
         capture_output=True,
         timeout=25,

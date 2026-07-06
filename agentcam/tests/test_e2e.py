@@ -13,12 +13,20 @@ from pathlib import Path
 
 
 GIT_AUTHOR = ["-c", "user.email=t@t", "-c", "user.name=t"]
+LIGHTWEIGHT_RUN_BACKEND = "pipe"
 
 
-def _agentcam(cwd: Path, *args: str) -> subprocess.CompletedProcess:
-    """Invoke agentcam via the same Python that's running pytest (the venv)."""
+def _agentcam(
+    cwd: Path,
+    *args: str,
+    run_backend: str | None = LIGHTWEIGHT_RUN_BACKEND,
+) -> subprocess.CompletedProcess:
+    """Invoke agentcam via the same Python that's running pytest."""
+    argv = list(args)
+    if argv and argv[0] == "run" and run_backend and "--backend" not in argv:
+        argv[1:1] = ["--backend", run_backend]
     return subprocess.run(
-        [sys.executable, "-m", "agentcam.cli", *args],
+        [sys.executable, "-m", "agentcam.cli", *argv],
         cwd=cwd,
         capture_output=True,
         timeout=25,
@@ -60,6 +68,7 @@ class TestSmoke:
         assert proc.returncode == 0
         report = _report(tmp_git_repo)
         assert "hello.txt" in report
+        assert _manifest(tmp_git_repo)["capture"]["mode"] == "wrap_pipe"
 
     def test_git_status_does_not_list_agentcam(self, tmp_git_repo: Path):
         # Plan §1: .git/agentcam/ must NOT appear in git status (git ignores
@@ -597,6 +606,7 @@ class TestBackendFlag:
         proc = _agentcam(
             tmp_git_repo, "run", "--keep-empty", "--",
             sys.executable, "-c", "print('default-pty')",
+            run_backend=None,
         )
         assert proc.returncode == 0
         m = json.loads(
@@ -678,6 +688,7 @@ class TestRepoDestruction:
         proc = _agentcam(
             tmp_git_repo, "run", "--keep-empty", "--",
             sys.executable, "-c", "import shutil; shutil.rmtree('.git')",
+            run_backend=None,
         )
         assert proc.returncode == 1
         assert b"unexpected error" in proc.stderr
