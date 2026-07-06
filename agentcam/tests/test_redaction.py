@@ -65,6 +65,21 @@ class TestInlineRedaction:
         out = redact_inline("MY_CREDENTIAL=letmein")
         assert "letmein" not in out
 
+    def test_env_assignment_double_quoted_value(self):
+        out = redact_inline('export API_KEY="hunter2secret999"')
+        assert "hunter2secret999" not in out
+        assert "[REDACTED:ENV]" in out
+
+    def test_env_assignment_single_quoted_value(self):
+        out = redact_inline("DB_PASSWORD='hunter2secret999'")
+        assert "hunter2secret999" not in out
+        assert "[REDACTED:ENV]" in out
+
+    def test_env_assignment_quoted_with_spaces_inside(self):
+        out = redact_inline('MY_SECRET = "several words here"')
+        assert "several words" not in out
+        assert "[REDACTED:ENV]" in out
+
     def test_env_case_insensitive(self):
         out = redact_inline("api_token=sneakylowercase")
         assert "sneakylowercase" not in out
@@ -206,6 +221,30 @@ class TestStreamingPEM:
         assert b"AAAA" not in out
         assert b"BBBB" not in out
         assert b"[REDACTED:PEM_INCOMPLETE]" in out
+
+    def test_pem_over_hard_limit_swallows_remainder_until_end(self):
+        # A PEM body that crosses PEM_HARD_LIMIT gets truncated — and every
+        # subsequent chunk of the same still-open block is key material that
+        # must be dropped, not flushed as ordinary text.
+        chunks = [b"-----BEGIN RSA PRIVATE KEY-----\n"]
+        chunks += [b"KEYMATERIALAAAA" * 64 + b"\n" for _ in range(80)]  # ~77KB
+        chunks += [b"TRAILINGKEYBBBB\n" for _ in range(10)]
+        chunks += [b"-----END RSA PRIVATE KEY-----\n", b"plain after pem\n"]
+        out = _drain(chunks)
+        assert b"[REDACTED:PEM_TRUNCATED]" in out
+        assert b"KEYMATERIALAAAA" not in out
+        assert b"TRAILINGKEYBBBB" not in out
+        assert b"END RSA PRIVATE KEY" not in out
+        assert b"plain after pem" in out
+
+    def test_pem_over_hard_limit_without_end_drops_tail_at_close(self):
+        chunks = [b"-----BEGIN RSA PRIVATE KEY-----\n"]
+        chunks += [b"KEYMATERIALAAAA" * 64 + b"\n" for _ in range(80)]
+        chunks += [b"NOENDCCCC\n"]
+        out = _drain(chunks)
+        assert b"[REDACTED:PEM_TRUNCATED]" in out
+        assert b"KEYMATERIALAAAA" not in out
+        assert b"NOENDCCCC" not in out
 
 
 class TestStreamingPassthrough:

@@ -59,8 +59,13 @@ _INLINE_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
     ),
     (
         "ENV_ASSIGN",
+        # The value alternation accepts quoted forms first: KEY="..." and
+        # KEY='...' are the most common shapes in real agent output, and a
+        # value group that can't start with a quote would skip them
+        # entirely, leaking the secret verbatim.
         re.compile(
-            r"(?i)([A-Z_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)[A-Z_]*\s*=\s*)([^\s\"']+)"
+            r"(?i)([A-Z_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)[A-Z_]*\s*=\s*)"
+            r"(\"[^\"\n]*\"|'[^'\n]*'|[^\s\"']+)"
         ),
         r"\1[REDACTED:ENV]",
     ),
@@ -176,9 +181,17 @@ class StreamingRedactor:
     # Max bytes to hold while waiting for PEM END marker.
     PEM_HARD_LIMIT = 64 * 1024
 
+    # After PEM_HARD_LIMIT truncation, keep this many trailing chars while
+    # swallowing so an END marker split across chunks can reassemble.
+    PEM_END_TAIL_CHARS = 128
+
     def __init__(self, out_fp: IO[bytes]):
         self._out = out_fp
         self._pending = ""
+        # True after a PEM block hit PEM_HARD_LIMIT: the [REDACTED:PEM_TRUNCATED]
+        # marker is already written, and everything up to the END marker is
+        # still key material that must be dropped, not flushed as plain text.
+        self._swallowing_pem = False
 
     def feed(self, chunk: bytes) -> None:
         if not chunk:
@@ -201,6 +214,23 @@ class StreamingRedactor:
     # ----------------------------------------------------------- private
 
     def _process(self, *, final: bool) -> None:
+        # Pass 0: if a PEM block was truncated at PEM_HARD_LIMIT, keep
+        # dropping key material until its END marker (or EOF) shows up.
+        if self._swallowing_pem:
+            end_match = _PEM_END_RE.search(self._pending)
+            if end_match:
+                self._swallowing_pem = False
+                rest = self._pending[end_match.end():]
+                rest = rest.lstrip("\r").removeprefix("\n")
+                self._pending = rest
+                # Fall through: process whatever followed the PEM normally.
+            elif final:
+                self._pending = ""
+                return
+            else:
+                self._pending = self._pending[-self.PEM_END_TAIL_CHARS:]
+                return
+
         # Pass 1: collapse complete PEM blocks to [REDACTED:PEM].
         self._pending = _PEM_BLOCK_RE.sub("[REDACTED:PEM]", self._pending)
 
@@ -217,6 +247,9 @@ class StreamingRedactor:
             if tail_bytes >= self.PEM_HARD_LIMIT:
                 self._out.write(b"[REDACTED:PEM_TRUNCATED]\n")
                 self._pending = ""
+                # The rest of this PEM body is still arriving; swallow it
+                # until the END marker instead of flushing it as plain text.
+                self._swallowing_pem = True
             elif final:
                 self._out.write(b"[REDACTED:PEM_INCOMPLETE]\n")
                 self._pending = ""
