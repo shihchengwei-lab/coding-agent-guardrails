@@ -585,6 +585,40 @@ class TestVerifyDuringSession:
         assert proc.returncode == 0, proc.stderr
         assert b"in-progress session" in proc.stderr
 
+    def test_verify_ignores_stale_crashed_session(
+        self, tmp_git_repo: Path
+    ):
+        """A session that started >24h ago and never ended is a crash
+        leftover (SessionEnd removes live sessions on the way out);
+        verify must fall back to runs/ instead of stashing checks into
+        a file nothing will ever merge."""
+        proc = subprocess.run(
+            [
+                sys.executable, "-m", "agentcam.cli", "run", "--",
+                sys.executable, "-c", "open('old.txt','w').write('x')",
+            ],
+            cwd=tmp_git_repo, capture_output=True, timeout=25,
+        )
+        assert proc.returncode == 0, proc.stderr
+        run_dir = next(_runs_dir(tmp_git_repo).iterdir())
+
+        sid = "crashed-session"
+        _agentcam_hook(
+            tmp_git_repo, "hook-session-start",
+            _hook_payload(sid, tmp_git_repo, "SessionStart"),
+        )
+        stale = _session_dir(tmp_git_repo, sid)
+        past = time.time() - 25 * 3600
+        os.utime(stale / "state_before.pickle", (past, past))
+
+        proc = _verify(tmp_git_repo, *PASS_CMD)
+        assert proc.returncode == 0, proc.stderr
+        assert not (stale / "verifications.jsonl").exists()
+        checks = json.loads(
+            (run_dir / "manifest.json").read_text(encoding="utf-8")
+        )["evidence"]["verifications"]
+        assert len(checks) == 1
+
     def test_no_diff_session_drops_stashed_checks(
         self, tmp_git_repo: Path
     ):

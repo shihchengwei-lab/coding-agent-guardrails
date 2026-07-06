@@ -74,6 +74,21 @@ class TestHandoff:
         assert "<fill in" in lines[3]
         assert lines[4].removeprefix("Risk: ") in {"low", "medium", "high"}
 
+    def test_handoff_redacts_secret_like_filenames(self, tmp_git_repo: Path):
+        # The handoff is drafted for a PR body; a secret-like filename must
+        # not leave the machine through it (same rule as report/export).
+        proc = _agentcam(
+            tmp_git_repo, "run", "--",
+            sys.executable, "-c",
+            "open('.env.production','w').write('K=1')",
+        )
+        assert proc.returncode == 0, proc.stderr
+        proc = _agentcam(tmp_git_repo, "handoff")
+        assert proc.returncode == 0, proc.stderr
+        out = proc.stdout.decode("utf-8")
+        assert ".env.production" not in out
+        assert "<redacted-secret-filename>" in out
+
     def test_old_manifest_without_evidence_errors(self, tmp_git_repo: Path):
         _make_one_run(tmp_git_repo)
         manifest_path = _run_dir(tmp_git_repo) / "manifest.json"

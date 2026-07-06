@@ -644,3 +644,68 @@ class TestBackendFlag:
             else "wrap_pty_posix"
         )
         assert m["capture"]["mode"] == expected
+
+
+# ---------------------------------------------------------------------------
+# Repo destruction during the run (flight recorder must not crash)
+# ---------------------------------------------------------------------------
+
+class TestRepoDestruction:
+    def test_corrupt_git_still_lands_report(self, tmp_git_repo: Path):
+        # The agent breaks the repo (rm .git/HEAD) but the run dir under
+        # .git/agentcam survives: the report and manifest must still be
+        # written, with a HIGH flag recording that the after-state is
+        # unavailable.
+        proc = _agentcam(
+            tmp_git_repo, "run", "--keep-empty", "--",
+            sys.executable, "-c",
+            "import os; open('x.txt','w').write('hi'); os.remove('.git/HEAD')",
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert b"could not read git state after the run" in proc.stderr
+        assert b"Traceback" not in proc.stderr
+
+        report = _report(tmp_git_repo)
+        assert "post-run git state unavailable" in report
+        m = _manifest(tmp_git_repo)
+        rules = [f["rule"] for f in m["evidence"]["risk_flags"]]
+        assert "post-run git state unavailable" in rules
+
+    def test_rm_rf_git_fails_gracefully(self, tmp_git_repo: Path):
+        # rm -rf .git takes the run dir (and raw logs) with it: nothing can
+        # be recorded, but agentcam must exit with a clear message, not a
+        # traceback.
+        proc = _agentcam(
+            tmp_git_repo, "run", "--keep-empty", "--",
+            sys.executable, "-c", "import shutil; shutil.rmtree('.git')",
+        )
+        assert proc.returncode == 1
+        assert b"unexpected error" in proc.stderr
+        assert b"Traceback" not in proc.stderr
+
+
+# ---------------------------------------------------------------------------
+# Tee capture that cannot finish (grandchild holds the pipe)
+# ---------------------------------------------------------------------------
+
+class TestTeeCaptureIncomplete:
+    def test_pipe_backend_warns_when_grandchild_holds_pipe(
+        self, tmp_git_repo: Path
+    ):
+        import sys as _sys
+        if _sys.platform == "win32":
+            import pytest
+            pytest.skip("POSIX shell job control")
+        # `sleep 15 &` inherits the stdout pipe, so the tee thread sees no
+        # EOF after the shell exits. agentcam must say the capture did not
+        # finish instead of silently redacting/scanning a truncated log.
+        # (15s > the runner's 5s first join + two 2s stall rounds, with
+        # margin for slow CI runners.)
+        proc = _agentcam(
+            tmp_git_repo, "run", "--keep-empty", "--backend", "pipe", "--",
+            "sh", "-c", "sleep 15 & echo pipe-held",
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert b"capture did not finish" in proc.stderr
+        raw = (_run_dir(tmp_git_repo) / "stdout.log").read_bytes()
+        assert b"pipe-held" in raw
