@@ -366,7 +366,6 @@ def _run_pty_posix(
     import fcntl
     import pty
     import termios
-    import threading
     import tty
 
     cmd_arg: list[str] | str = (
@@ -696,8 +695,9 @@ def run_wrapped(
 ) -> RunResult:
     """Run the wrapped command via the chosen backend; return :class:`RunResult`.
 
-    ``backend`` selects the wrap implementation; currently only ``"pipe"``
-    (default) is supported.
+    ``backend`` selects the wrap implementation: ``"pipe"``, ``"pty_posix"``,
+    or ``"pty_windows"`` (cli.py resolves the ``pty`` alias by platform
+    before calling).
 
     Redaction is NOT done in this function. Callers consume the raw logs via
     :class:`agentcam.redaction.StreamingRedactor` to produce ``*.redacted.log``.

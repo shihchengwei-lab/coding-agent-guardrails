@@ -1,9 +1,17 @@
 """agentcam command-line entry point.
 
 Subcommands:
-  - ``agentcam version``           — print version and exit
-  - ``agentcam run -- <argv...>``  — wrap a command, record raw + redacted
-                                     logs, generate AGENT_RUN_REPORT.md
+  - ``agentcam version``            — print version and exit
+  - ``agentcam run -- <argv...>``   — wrap a command, record raw + redacted
+                                      logs, generate AGENT_RUN_REPORT.md
+  - ``agentcam verify -- <argv>``   — run a check, record command / exit
+                                      code / duration into run evidence
+  - ``agentcam handoff [run_id]``   — print the five-line corridor handoff
+                                      drafted from a recorded run
+  - ``agentcam export <run_id>``    — share-safe redacted bundle (zip, or
+                                      committable files via ``--files``)
+  - ``agentcam hook-session-start`` / ``hook-session-end``
+                                    — Claude Code session hooks
 
 ``run`` is intentionally argv-only; for shell features (pipes, redirects,
 variable expansion) wrap your own shell explicitly, e.g.::
@@ -12,7 +20,7 @@ variable expansion) wrap your own shell explicitly, e.g.::
     agentcam run -- pwsh -Command "Get-Process | Out-File procs.txt"
     agentcam run -- cmd /c "dir > files.txt"
 
-See ``docs/design.md`` (forthcoming) for the rationale.
+See ``docs/design.md`` for the rationale.
 """
 from __future__ import annotations
 
@@ -673,14 +681,10 @@ def _run_command(args) -> int:
         capture_for_wrap_pty_windows,
     )
     from agentcam.paths import RunIdCollisionError, create_run_dir
-    from agentcam.redaction import StreamingRedactor, redact_argv
+    from agentcam.redaction import redact_argv
     from agentcam.report import write_run_artifacts
     from agentcam.runner import CommandNotFoundError, run_wrapped
-    from agentcam.scanner import (
-        provenance_for_builtin_ruleset,
-        scan_output,
-        scan_paths,
-    )
+    from agentcam.scanner import provenance_for_builtin_ruleset, scan_paths
 
     run_argv = _strip_leading_dashdash(args.argv or [])
     if not run_argv:
