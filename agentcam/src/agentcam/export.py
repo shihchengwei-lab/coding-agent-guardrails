@@ -109,7 +109,7 @@ def _walk_redact(obj, redact_text_fn):
 def redact_manifest(manifest_json_text: str) -> dict:
     """Return a redacted version of a manifest.json blob.
 
-    Two passes:
+    Three passes:
     1. Every string value in the dict tree passes through
        :func:`agentcam.redaction.redact_text` (handles tokens, PEM
        blocks, env-assignments, URL basic-auth).
@@ -117,14 +117,40 @@ def redact_manifest(manifest_json_text: str) -> dict:
        ``command_argv_redacted`` so the bundle never carries the raw
        form -- raw argv can contain shell-escaped secrets that don't
        match any token shape and so survive ``redact_text``.
+    3. Secret-like *filenames* in the evidence block are replaced with
+       ``<redacted-secret-filename>``. ``.env.production`` is not a
+       token, so pass 1 leaves it alone, yet every markdown surface
+       (report, argv) treats such names as sensitive -- the exported
+       manifest is the one artifact designed to leave the machine, so
+       it must not be the one surface that leaks them.
 
     Structure is preserved. Keys are not renamed.
     """
     from agentcam.redaction import redact_text
+    from agentcam.scanner import (
+        is_secret_like_filename,
+        redact_filenames_in_diff_stat,
+    )
+
     data = json.loads(manifest_json_text)
     redacted = _walk_redact(data, redact_text)
     if "command_argv_redacted" in redacted:
         redacted["command_argv_raw"] = redacted["command_argv_redacted"]
+
+    evidence = redacted.get("evidence")
+    if isinstance(evidence, dict):
+        changed = evidence.get("changed_files")
+        if isinstance(changed, list):
+            for cf in changed:
+                if not isinstance(cf, dict):
+                    continue
+                path = cf.get("path")
+                if isinstance(path, str) and is_secret_like_filename(path):
+                    cf["path"] = "<redacted-secret-filename>"
+        for key in ("diff_stat", "diff_stat_cached"):
+            value = evidence.get(key)
+            if isinstance(value, str):
+                evidence[key] = redact_filenames_in_diff_stat(value)
     return redacted
 
 
