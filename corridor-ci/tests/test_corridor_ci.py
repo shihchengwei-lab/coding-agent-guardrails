@@ -34,6 +34,44 @@ class CorridorCiTest(unittest.TestCase):
             ".github/workflows/corridor.yml",
         )
 
+    def test_single_star_does_not_cross_directories(self):
+        self.assertTrue(corridor_ci.path_matches("src/app.py", "src/*.py"))
+        self.assertFalse(
+            corridor_ci.path_matches("src/vendor/evil/deep.py", "src/*.py")
+        )
+        self.assertFalse(corridor_ci.path_matches("nested/dir/readme.md", "*.md"))
+        self.assertFalse(corridor_ci.path_matches("src/a/b.py", "src/?.py"))
+
+    def test_double_star_matches_zero_or_more_directories(self):
+        self.assertTrue(corridor_ci.path_matches("src/top.py", "src/**/*.py"))
+        self.assertTrue(corridor_ci.path_matches("src/a/b/deep.py", "src/**/*.py"))
+        self.assertFalse(corridor_ci.path_matches("other/top.py", "src/**/*.py"))
+
+    def test_trailing_double_star_still_matches_subtree(self):
+        self.assertTrue(corridor_ci.path_matches("src", "src/**"))
+        self.assertTrue(corridor_ci.path_matches("src/a/b.py", "src/**"))
+        self.assertFalse(corridor_ci.path_matches("srcx/a.py", "src/**"))
+
+    def test_scope_fails_when_star_pattern_hides_nested_file(self):
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+                "frontend/src/components/vendor/injected.tsx",
+            ],
+            corridor_text=(
+                "Decision: #123\n"
+                "Scope: frontend/src/components/*.tsx, frontend/src/components/ui/*.tsx, frontend/tests/*.ts\n"
+                "Review first: frontend/src/components/ui/rating.tsx\n"
+                "Verified: python -m unittest\n"
+                "Risk: none\n"
+            ),
+        )
+        self.assertFalse(report.ok)
+        self.assertIn(
+            "frontend/src/components/vendor/injected.tsx", report.outside_files
+        )
+
     def test_pr_body_reads_utf8_sig_event(self):
         with tempfile.TemporaryDirectory() as tmp:
             event = Path(tmp) / "event.json"

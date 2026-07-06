@@ -226,6 +226,56 @@ def split_path_list(raw: str) -> list[str]:
     return paths
 
 
+def _glob_to_regex(pattern: str) -> "re.Pattern[str]":
+    """Translate a git-style glob into a compiled regex.
+
+    Unlike ``fnmatch``, ``*`` and ``?`` never cross ``/``, so a Scope of
+    ``src/*.py`` cannot silently admit ``src/vendor/deep.py``. ``**/``
+    matches zero or more whole directories, so ``src/**/*.py`` covers
+    ``src/top.py`` as well as ``src/a/b.py``.
+    """
+    parts: list[str] = []
+    i = 0
+    n = len(pattern)
+    while i < n:
+        ch = pattern[i]
+        if ch == "*":
+            if pattern.startswith("**/", i):
+                parts.append("(?:[^/]+/)*")
+                i += 3
+            elif pattern.startswith("**", i):
+                parts.append(".*")
+                i += 2
+            else:
+                parts.append("[^/]*")
+                i += 1
+        elif ch == "?":
+            parts.append("[^/]")
+            i += 1
+        elif ch == "[":
+            j = i + 1
+            if j < n and pattern[j] in "!^":
+                j += 1
+            if j < n and pattern[j] == "]":
+                j += 1
+            while j < n and pattern[j] != "]":
+                j += 1
+            if j < n:
+                body = pattern[i + 1 : j].replace("!", "^", 1) if pattern[i + 1] == "!" else pattern[i + 1 : j]
+                parts.append("[" + body + "]")
+                i = j + 1
+            else:
+                parts.append(re.escape(ch))
+                i += 1
+        else:
+            parts.append(re.escape(ch))
+            i += 1
+    return re.compile("".join(parts) + r"\Z")
+
+
+_GLOB_REGEX_CACHE: dict[str, "re.Pattern[str]"] = {}
+
+
 def path_matches(path: str, pattern: str) -> bool:
     path = normalize_path(path)
     pattern = normalize_path(pattern)
@@ -234,7 +284,11 @@ def path_matches(path: str, pattern: str) -> bool:
     if pattern.endswith("/**"):
         prefix = pattern[:-3].rstrip("/")
         return path == prefix or path.startswith(prefix + "/")
-    return fnmatch.fnmatch(path, pattern)
+    regex = _GLOB_REGEX_CACHE.get(pattern)
+    if regex is None:
+        regex = _glob_to_regex(pattern)
+        _GLOB_REGEX_CACHE[pattern] = regex
+    return regex.match(path) is not None
 
 
 def is_allowed(path: str, allowed_paths: list[str]) -> bool:

@@ -152,6 +152,30 @@ case "$out" in
   *) bad "13b SLIME_STRICT_CORRIDOR=0 -> report only" "$out" ;;
 esac
 
+# A3c: git-style glob semantics — a single * must not cross directories, so
+#      lib/*.dart cannot silently admit lib/vendor/deep.dart; and **/ matches
+#      zero directories, so lib/**/*.dart covers lib/top.dart.
+G2="$(mkrepo)"
+mkdir -p "$G2/.slime"
+printf '# Corridor: real\n## Paths\n- lib/*.dart\n' > "$G2/.slime/corridor.md"
+git -C "$G2" add -A && git -C "$G2" commit -qm init
+mkdir -p "$G2/lib/vendor"; printf 'x\n' > "$G2/lib/vendor/deep.dart"
+out=$(stop "$G2" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*"out-of-corridor"*) ok "13c single * does not cross / -> nested edit blocks" ;;
+  *) bad "13c single * does not cross / -> nested edit blocks" "$out" ;;
+esac
+G3="$(mkrepo)"
+mkdir -p "$G3/.slime"
+printf '# Corridor: real\n## Paths\n- lib/**/*.dart\n' > "$G3/.slime/corridor.md"
+git -C "$G3" add -A && git -C "$G3" commit -qm init
+mkdir -p "$G3/lib"; printf 'x\n' > "$G3/lib/top.dart"
+out=$(stop "$G3" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*"out-of-corridor"*) bad "13d **/ matches zero dirs -> top-level edit allowed" "$out" ;;
+  *) ok "13d **/ matches zero dirs -> top-level edit allowed" ;;
+esac
+
 # A4: missing pubspec.yaml -> dependency gate degrades (no block)
 H="$(mkrepo)"
 mkdir -p "$H/.slime"

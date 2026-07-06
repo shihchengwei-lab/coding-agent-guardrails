@@ -6,7 +6,6 @@ summary of the current corridor and staged diff facts. It never blocks commits:
 on missing files, non-git directories, or malformed corridor content, it exits
 0 without changing the message.
 """
-import fnmatch
 import os
 import re
 import subprocess
@@ -113,6 +112,45 @@ def staged_paths(root):
     return [p for p in git(root, "diff", "--cached", "--name-only").splitlines() if p]
 
 
+def glob_to_regex(pattern):
+    """git-style glob -> regex: * and ? never cross /, **/ spans zero+ dirs.
+
+    Kept in sync with the copy in patch-cost (both bin scripts are
+    deliberately self-contained, like parse_deps).
+    """
+    parts = []
+    i = 0
+    n = len(pattern)
+    while i < n:
+        ch = pattern[i]
+        if ch == "*":
+            if pattern.startswith("**/", i):
+                parts.append("(?:[^/]+/)*")
+                i += 3
+            elif pattern.startswith("**", i):
+                parts.append(".*")
+                i += 2
+            else:
+                parts.append("[^/]*")
+                i += 1
+        elif ch == "?":
+            parts.append("[^/]")
+            i += 1
+        else:
+            parts.append(re.escape(ch))
+            i += 1
+    return re.compile("".join(parts) + r"\Z")
+
+
+def glob_match(path, pattern):
+    if pattern in ("*", "**", "**/*"):
+        return True
+    if pattern.endswith("/**"):
+        prefix = pattern[:-3].rstrip("/")
+        return path == prefix or path.startswith(prefix + "/")
+    return glob_to_regex(pattern).match(path) is not None
+
+
 def out_of_corridor(paths, globs):
     if not globs:
         return []
@@ -122,7 +160,7 @@ def out_of_corridor(paths, globs):
             continue
         if os.path.basename(path) in META_BASENAMES:
             continue
-        if not any(fnmatch.fnmatch(path, glob) for glob in globs):
+        if not any(glob_match(path, glob) for glob in globs):
             out.append(path)
     return out
 
