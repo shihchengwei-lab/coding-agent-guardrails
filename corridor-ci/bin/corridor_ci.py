@@ -114,13 +114,40 @@ def decorated_field_candidates(stripped: str) -> list[tuple[str, str]]:
     return candidates
 
 
+def iter_visible_lines(text: str):
+    """Yield lines that are outside fenced code blocks.
+
+    PR bodies routinely carry a fenced handoff *example* — the template
+    seeds one, and corridor-ci's own failure comment offers a copyable
+    block. Since field parsing is first-non-empty-value-wins, a fenced
+    ``Scope: auto`` example would otherwise shadow the author's real
+    handoff below it (and silently disable the corridor check).
+    """
+    fence: str | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        marker = None
+        if stripped.startswith("```"):
+            marker = "```"
+        elif stripped.startswith("~~~"):
+            marker = "~~~"
+        if marker is not None:
+            if fence is None:
+                fence = marker
+            elif fence == marker:
+                fence = None
+            continue
+        if fence is None:
+            yield line
+
+
 def detect_near_miss_fields(corridor_text: str | None) -> dict[str, str]:
     near_misses: dict[str, str] = {}
     if not corridor_text:
         return near_misses
 
     labels = handoff_field_labels()
-    for line in corridor_text.splitlines():
+    for line in iter_visible_lines(corridor_text):
         stripped = line.strip()
         if not stripped:
             continue
@@ -138,7 +165,7 @@ def extract_compact_handoff(corridor_text: str | None) -> dict[str, str]:
         return handoff
 
     labels = handoff_field_labels()
-    for line in corridor_text.splitlines():
+    for line in iter_visible_lines(corridor_text):
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or ":" not in stripped:
             continue
