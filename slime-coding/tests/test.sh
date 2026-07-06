@@ -348,5 +348,65 @@ case "$out" in
   *) bad "29 default strict + metadata edit -> no block" "$out" ;;
 esac
 
+# === Gate integrity (round 2) ===============================================
+
+# 30: PRUNED.md seeded untracked by install.sh must not neuter the
+#     failing-check gate — the untracked template only counts as "prune
+#     logged" once it carries a record for a real corridor.
+Q="$(mkrepo)"
+mkdir -p "$Q/.slime"
+printf '# Corridor: real\n## Paths\n- lib/**\n' > "$Q/.slime/corridor.md"
+git -C "$Q" add -A && git -C "$Q" commit -qm init
+cp "$ROOT/templates/.slime/PRUNED.md" "$Q/.slime/PRUNED.md"   # untracked, as installed
+out=$(stop "$Q" | SLIME_TEST_CMD='exit 1' python3 "$PATCH")
+case "$out" in
+  *'"block"'*"failing check"*) ok "30 untracked template PRUNED.md does not disarm red-check gate" ;;
+  *) bad "30 untracked template PRUNED.md does not disarm red-check gate" "$out" ;;
+esac
+
+# 30b: a real record appended to the still-untracked log re-arms the exit.
+printf '\n## [2026-07-06] corridor:real\n**Pruned:** the abandoned design\n' >> "$Q/.slime/PRUNED.md"
+out=$(stop "$Q" | SLIME_TEST_CMD='exit 1' python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "30b untracked PRUNED.md with real record -> may stop on red" "$out" ;;
+  *systemMessage*) ok "30b untracked PRUNED.md with real record -> may stop on red" ;;
+  *) bad "30b untracked PRUNED.md with real record -> may stop on red" "$out" ;;
+esac
+
+# 31: emptying corridor.md after editing product code must not launder the
+#     out-of-corridor check (.slime/ writes are exempt at PreToolUse).
+R2="$(mkrepo)"
+mkdir -p "$R2/.slime"
+printf '# Corridor: real\n## Paths\n- lib/**\n' > "$R2/.slime/corridor.md"
+git -C "$R2" add -A && git -C "$R2" commit -qm init
+mkdir -p "$R2/other"; printf 'x\n' > "$R2/other/z.py"
+printf '# Corridor: real\n## Paths\n' > "$R2/.slime/corridor.md"   # scope laundering
+out=$(stop "$R2" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*"Restore or complete"*) ok "31 emptied corridor + product change -> block" ;;
+  *) bad "31 emptied corridor + product change -> block" "$out" ;;
+esac
+
+# 31b: report-only mode still escapes (no false-block training).
+out=$(stop "$R2" | SLIME_STRICT_CORRIDOR=0 python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "31b emptied corridor + STRICT=0 -> report only" "$out" ;;
+  *systemMessage*) ok "31b emptied corridor + STRICT=0 -> report only" ;;
+  *) bad "31b emptied corridor + STRICT=0 -> report only" "$out" ;;
+esac
+
+# 32: dependency gate survives 4-space pubspec indentation.
+P6="$(mkrepo)"
+printf 'name: d\ndependencies:\n    flutter:\n        sdk: flutter\n' > "$P6/pubspec.yaml"
+mkdir -p "$P6/.slime"
+printf '# Corridor: real\n## Paths\n- lib/**\n' > "$P6/.slime/corridor.md"
+git -C "$P6" add -A && git -C "$P6" commit -qm init
+printf 'name: d\ndependencies:\n    flutter:\n        sdk: flutter\n    http: ^1\n' > "$P6/pubspec.yaml"
+out=$(stop "$P6" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*http*) ok "32 4-space pubspec + new dep -> block (names it)" ;;
+  *) bad "32 4-space pubspec + new dep -> block (names it)" "$out" ;;
+esac
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
