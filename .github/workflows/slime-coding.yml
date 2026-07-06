@@ -9,6 +9,9 @@ on:
     branches: [main]
     paths: ['slime-coding/**']
 
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: slime-coding
@@ -69,3 +72,15 @@ jobs:
               assert len(groups) == 1, f"{event} not idempotent: {len(groups)} groups"
           print("install.sh smoke test OK")
           PY
+
+  test-windows-installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Windows PowerShell 5.1 on purpose: it is what plain `powershell`
+      # resolves to for users, and it lacks ConvertFrom-Json -AsHashtable,
+      # which the installer must cope with.
+      - name: Run Codex installer tests
+        shell: powershell
+        run: ./tests/test-codex-install.ps1
