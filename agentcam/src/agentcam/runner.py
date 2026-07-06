@@ -305,21 +305,28 @@ def _run_pipe(
                 except OSError:
                     return -1
 
-            last_size = _size()
             tee_thread.join(timeout=5)
-            while tee_thread.is_alive():
+            # Two consecutive no-growth rounds = stalled, not draining.
+            # (The baseline size is sampled after the first join so a
+            # slow first write cannot masquerade as progress.)
+            last_size = _size()
+            stalled_rounds = 0
+            while tee_thread.is_alive() and stalled_rounds < 2:
+                tee_thread.join(timeout=2)
                 size = _size()
                 if size == last_size:
-                    print(
-                        f"agentcam: warning: {raw_path.name} capture did "
-                        "not finish (a grandchild process may hold the "
-                        "pipe open); the log tail may be missing from the "
-                        "redacted log and risk scan",
-                        file=sys.stderr,
-                    )
-                    break
-                last_size = size
-                tee_thread.join(timeout=5)
+                    stalled_rounds += 1
+                else:
+                    stalled_rounds = 0
+                    last_size = size
+            if tee_thread.is_alive():
+                print(
+                    f"agentcam: warning: {raw_path.name} capture did "
+                    "not finish (a grandchild process may hold the "
+                    "pipe open); the log tail may be missing from the "
+                    "redacted log and risk scan",
+                    file=sys.stderr,
+                )
 
     return RunResult(
         exit_detail=interpret_exit(proc.returncode),

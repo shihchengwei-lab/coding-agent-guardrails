@@ -696,12 +696,14 @@ class TestTeeCaptureIncomplete:
         if _sys.platform == "win32":
             import pytest
             pytest.skip("POSIX shell job control")
-        # `sleep 7 &` inherits the stdout pipe, so the tee thread sees no
+        # `sleep 15 &` inherits the stdout pipe, so the tee thread sees no
         # EOF after the shell exits. agentcam must say the capture did not
         # finish instead of silently redacting/scanning a truncated log.
+        # (15s > the runner's 5s first join + two 2s stall rounds, with
+        # margin for slow CI runners.)
         proc = _agentcam(
             tmp_git_repo, "run", "--keep-empty", "--backend", "pipe", "--",
-            "sh", "-c", "sleep 7 & echo pipe-held",
+            "sh", "-c", "sleep 15 & echo pipe-held",
         )
         assert proc.returncode == 0, proc.stderr
         assert b"capture did not finish" in proc.stderr
