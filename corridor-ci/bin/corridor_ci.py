@@ -233,8 +233,11 @@ def diff_base(repo: Path) -> str:
 
 def extract_changed_files(repo: Path) -> list[str]:
     base = diff_base(repo)
+    # core.quotepath=false: git's default C-quoting turns non-ASCII paths
+    # into "src/caf\303\251.py", which can never match a declared Scope
+    # pattern, so such files would always be flagged outside the corridor.
     proc = subprocess.run(
-        ["git", "diff", "--name-only", f"{base}...HEAD"],
+        ["git", "-c", "core.quotepath=false", "diff", "--name-only", f"{base}...HEAD"],
         cwd=repo,
         capture_output=True,
         text=True,
@@ -386,7 +389,10 @@ def evaluate(
                     )
                 else:
                     issues.append(f"compact handoff is missing `{label}`")
-        review_first = normalize_path(handoff.get("Review first", ""))
+        # Strip backticks the way split_path_list does for Scope, so a
+        # markdown-styled `src/a.py` (the form the report itself renders)
+        # does not false-FAIL the review-first check.
+        review_first = normalize_path(handoff.get("Review first", "").strip().strip("`"))
         if review_first and review_first not in changed:
             issues.append(f"review first is not a changed file: {review_first}")
 

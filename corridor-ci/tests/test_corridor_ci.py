@@ -348,6 +348,63 @@ class CorridorCiTest(unittest.TestCase):
         self.assertFalse(report.ok)
         self.assertIn("review first is not a changed file", "\n".join(report.issues))
 
+    def test_review_first_accepts_backticked_path(self):
+        handoff = VALID_HANDOFF.replace(
+            "Review first: frontend/src/components/ui/rating.tsx",
+            "Review first: `frontend/src/components/ui/rating.tsx`",
+        )
+
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+            corridor_text=handoff,
+        )
+
+        self.assertTrue(report.ok, report.issues)
+
+    def test_changed_files_keep_non_ascii_names_unquoted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            subprocess.run(["git", "init", "-b", "main"], cwd=root, check=True, capture_output=True, text=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
+            src = root / "src"
+            src.mkdir()
+            (src / "base.py").write_text("old\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-m", "initial"], cwd=root, check=True, capture_output=True, text=True)
+            subprocess.run(["git", "checkout", "-b", "feature"], cwd=root, check=True, capture_output=True, text=True)
+            (src / "café.py").write_text("new\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-m", "add cafe file"], cwd=root, check=True, capture_output=True, text=True)
+
+            old_base_ref = os.environ.get("GITHUB_BASE_REF")
+            os.environ["GITHUB_BASE_REF"] = "main"
+            try:
+                changed = corridor_ci.extract_changed_files(root)
+            finally:
+                if old_base_ref is None:
+                    os.environ.pop("GITHUB_BASE_REF", None)
+                else:
+                    os.environ["GITHUB_BASE_REF"] = old_base_ref
+
+        # git's default core.quotepath would report "src/caf\303\251.py",
+        # which can never match a Scope pattern like src/*.py.
+        self.assertEqual(changed, ["src/café.py"])
+        report = corridor_ci.evaluate(
+            changed_files=changed,
+            corridor_text=(
+                "Decision: #1\n"
+                "Scope: src/*.py\n"
+                "Review first: src/café.py\n"
+                "Verified: n/a\n"
+                "Risk: none\n"
+            ),
+        )
+        self.assertTrue(report.ok, report.issues)
+
     def test_scope_auto_uses_changed_files(self):
         handoff = VALID_HANDOFF.replace(
             "Scope: frontend/src/components/ui/rating.tsx, frontend/tests/rating.spec.ts",
