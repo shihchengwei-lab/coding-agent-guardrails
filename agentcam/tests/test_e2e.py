@@ -138,6 +138,29 @@ class TestRiskFlags:
         assert "npm package manifest" in report
 
 
+class TestSubdirectoryRun:
+    def test_dep_probe_reads_working_tree_from_git_root(
+        self, tmp_git_repo: Path
+    ):
+        # Regression: changed paths are repo-root-relative, but the dep
+        # probe used to read the working tree relative to the invocation
+        # cwd. From a subdirectory it missed the manifest and fabricated
+        # "removed" entries for every dependency at HEAD.
+        (tmp_git_repo / "requirements.txt").write_text("numpy\nrequests\n")
+        _git(tmp_git_repo, "add", ".")
+        _git(tmp_git_repo, "commit", "-q", "-m", "reqs")
+        sub = tmp_git_repo / "sub"
+        sub.mkdir()
+        _agentcam(
+            sub, "run", "--",
+            sys.executable, "-c",
+            "open('../requirements.txt','a').write('flask\\n')",
+        )
+        report = _report(tmp_git_repo)
+        assert "| added | `flask` |" in report
+        assert "removed" not in report
+
+
 # ---------------------------------------------------------------------------
 # Pre-run dirty
 # ---------------------------------------------------------------------------

@@ -131,9 +131,9 @@ def write_run_artifacts(
     Caller responsibilities:
     - Pass already-resolved, repo-trusted ``cwd`` / ``git_dir`` /
       ``git_root`` paths. The helper performs no path validation; it
-      shells out to ``git show HEAD:<path>`` via ``cwd`` inside the
-      dep probe, so an attacker-controlled ``cwd`` would shift the
-      execution context. Callers obtain these from
+      shells out to ``git show HEAD:<path>`` via ``git_root`` inside
+      the dep probe, so an attacker-controlled ``git_root`` would shift
+      the execution context. Callers obtain these from
       ``resolve_git_dir`` / ``resolve_git_root`` before any wrap- or
       hook-mode work begins.
     - Pass a pre-created ``run_paths`` whose ``run_dir`` already
@@ -151,8 +151,12 @@ def write_run_artifacts(
     """
     from agentcam.dependency_probe import scan_dependencies
 
+    # Changed-file paths are repo-root-relative (git porcelain), so the
+    # probe must read the working tree relative to git_root, not cwd:
+    # from a subdirectory, cwd/<path> misses the manifest entirely and
+    # the diff fabricates "removed" entries for every dependency.
     dependency_changes = scan_dependencies(
-        cwd=cwd,
+        cwd=git_root,
         changed_manifest_paths=[cf.path for cf in state_after.changed_files],
     )
 
