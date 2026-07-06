@@ -16,6 +16,8 @@ It was run once across the same 8 tasks and 4 models, for 32 runs total.
 
 The one-line prompt made patches shorter than the full rule file in this smaller sample, but correctness was lower. That is why the repo keeps the 11-rule `AGENT.md` as the default.
 
+Raw run folders behind these numbers are gitignored (local-only); the tables are recorded measurements, not re-runnable artifacts.
+
 ## Per Model
 
 | model | variant | correctness | files touched | patch size |

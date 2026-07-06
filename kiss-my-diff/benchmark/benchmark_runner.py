@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -201,10 +202,11 @@ def collect_result(task: dict, lab_dir: Path, run_dir: Path, timeout_seconds: in
         quality_total=quality_total,
     )
     score = core.score_result(raw, task["max_files"], task["max_line_delta"])
+    run_meta = json.loads((run_dir / "RUN.json").read_text(encoding="utf-8"))
     result = {
         "task_id": task["id"],
-        "model": json.loads((run_dir / "RUN.json").read_text(encoding="utf-8"))["model"],
-        "variant": json.loads((run_dir / "RUN.json").read_text(encoding="utf-8"))["variant"],
+        "model": run_meta["model"],
+        "variant": run_meta["variant"],
         "public_passed": raw.public_passed,
         "hidden_passed": raw.hidden_passed,
         "changed_files": raw.changed_files,
@@ -304,7 +306,7 @@ def _quality_score(task: dict, work_dir: Path) -> tuple[int, int]:
             hits += 1
         elif check["type"] == "not_contains" and value not in content:
             hits += 1
-        elif check["type"] == "regex" and __import__("re").search(value, content, __import__("re").MULTILINE):
+        elif check["type"] == "regex" and re.search(value, content, re.MULTILINE):
             hits += 1
     return hits, len(checks)
 
