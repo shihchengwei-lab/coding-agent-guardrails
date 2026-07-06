@@ -46,7 +46,6 @@ Tunables (env):
                        Default: strict. Set 0/false/no/off to make
                        out-of-corridor product-code edits report-only.
 """
-import fnmatch
 import json
 import os
 import re
@@ -321,6 +320,46 @@ def changed_paths(cwd):
     return touched, new_files
 
 
+def glob_to_regex(pattern):
+    """git-style glob -> regex: * and ? never cross /, **/ spans zero+ dirs.
+
+    fnmatch's * crosses /, which made a corridor of lib/*.dart silently
+    admit lib/vendor/deep.dart. Duplicated in commit-evidence (both bin
+    scripts are deliberately self-contained, like parse_deps).
+    """
+    parts = []
+    i = 0
+    n = len(pattern)
+    while i < n:
+        ch = pattern[i]
+        if ch == "*":
+            if pattern.startswith("**/", i):
+                parts.append("(?:[^/]+/)*")
+                i += 3
+            elif pattern.startswith("**", i):
+                parts.append(".*")
+                i += 2
+            else:
+                parts.append("[^/]*")
+                i += 1
+        elif ch == "?":
+            parts.append("[^/]")
+            i += 1
+        else:
+            parts.append(re.escape(ch))
+            i += 1
+    return re.compile("".join(parts) + r"\Z")
+
+
+def glob_match(path, pattern):
+    if pattern in ("*", "**", "**/*"):
+        return True
+    if pattern.endswith("/**"):
+        prefix = pattern[:-3].rstrip("/")
+        return path == prefix or path.startswith(prefix + "/")
+    return glob_to_regex(pattern).match(path) is not None
+
+
 def out_of_corridor_files(cwd):
     globs = corridor_globs(cwd)
     if not globs:
@@ -336,7 +375,7 @@ def out_of_corridor_files(cwd):
         # should not turn harmless config hygiene into a hard stop.
         if os.path.basename(n) in META_BASENAMES:
             continue
-        if not any(fnmatch.fnmatch(n, g) for g in globs):
+        if not any(glob_match(n, g) for g in globs):
             out_corr.append(n)
     return out_corr
 

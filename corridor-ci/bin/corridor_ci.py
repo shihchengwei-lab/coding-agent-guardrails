@@ -114,13 +114,40 @@ def decorated_field_candidates(stripped: str) -> list[tuple[str, str]]:
     return candidates
 
 
+def iter_visible_lines(text: str):
+    """Yield lines that are outside fenced code blocks.
+
+    PR bodies routinely carry a fenced handoff *example* — the template
+    seeds one, and corridor-ci's own failure comment offers a copyable
+    block. Since field parsing is first-non-empty-value-wins, a fenced
+    ``Scope: auto`` example would otherwise shadow the author's real
+    handoff below it (and silently disable the corridor check).
+    """
+    fence: str | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        marker = None
+        if stripped.startswith("```"):
+            marker = "```"
+        elif stripped.startswith("~~~"):
+            marker = "~~~"
+        if marker is not None:
+            if fence is None:
+                fence = marker
+            elif fence == marker:
+                fence = None
+            continue
+        if fence is None:
+            yield line
+
+
 def detect_near_miss_fields(corridor_text: str | None) -> dict[str, str]:
     near_misses: dict[str, str] = {}
     if not corridor_text:
         return near_misses
 
     labels = handoff_field_labels()
-    for line in corridor_text.splitlines():
+    for line in iter_visible_lines(corridor_text):
         stripped = line.strip()
         if not stripped:
             continue
@@ -138,7 +165,7 @@ def extract_compact_handoff(corridor_text: str | None) -> dict[str, str]:
         return handoff
 
     labels = handoff_field_labels()
-    for line in corridor_text.splitlines():
+    for line in iter_visible_lines(corridor_text):
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or ":" not in stripped:
             continue
@@ -226,6 +253,56 @@ def split_path_list(raw: str) -> list[str]:
     return paths
 
 
+def _glob_to_regex(pattern: str) -> "re.Pattern[str]":
+    """Translate a git-style glob into a compiled regex.
+
+    Unlike ``fnmatch``, ``*`` and ``?`` never cross ``/``, so a Scope of
+    ``src/*.py`` cannot silently admit ``src/vendor/deep.py``. ``**/``
+    matches zero or more whole directories, so ``src/**/*.py`` covers
+    ``src/top.py`` as well as ``src/a/b.py``.
+    """
+    parts: list[str] = []
+    i = 0
+    n = len(pattern)
+    while i < n:
+        ch = pattern[i]
+        if ch == "*":
+            if pattern.startswith("**/", i):
+                parts.append("(?:[^/]+/)*")
+                i += 3
+            elif pattern.startswith("**", i):
+                parts.append(".*")
+                i += 2
+            else:
+                parts.append("[^/]*")
+                i += 1
+        elif ch == "?":
+            parts.append("[^/]")
+            i += 1
+        elif ch == "[":
+            j = i + 1
+            if j < n and pattern[j] in "!^":
+                j += 1
+            if j < n and pattern[j] == "]":
+                j += 1
+            while j < n and pattern[j] != "]":
+                j += 1
+            if j < n:
+                body = pattern[i + 1 : j].replace("!", "^", 1) if pattern[i + 1] == "!" else pattern[i + 1 : j]
+                parts.append("[" + body + "]")
+                i = j + 1
+            else:
+                parts.append(re.escape(ch))
+                i += 1
+        else:
+            parts.append(re.escape(ch))
+            i += 1
+    return re.compile("".join(parts) + r"\Z")
+
+
+_GLOB_REGEX_CACHE: dict[str, "re.Pattern[str]"] = {}
+
+
 def path_matches(path: str, pattern: str) -> bool:
     path = normalize_path(path)
     pattern = normalize_path(pattern)
@@ -234,7 +311,11 @@ def path_matches(path: str, pattern: str) -> bool:
     if pattern.endswith("/**"):
         prefix = pattern[:-3].rstrip("/")
         return path == prefix or path.startswith(prefix + "/")
-    return fnmatch.fnmatch(path, pattern)
+    regex = _GLOB_REGEX_CACHE.get(pattern)
+    if regex is None:
+        regex = _glob_to_regex(pattern)
+        _GLOB_REGEX_CACHE[pattern] = regex
+    return regex.match(path) is not None
 
 
 def is_allowed(path: str, allowed_paths: list[str]) -> bool:

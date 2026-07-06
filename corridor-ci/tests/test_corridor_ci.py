@@ -34,6 +34,98 @@ class CorridorCiTest(unittest.TestCase):
             ".github/workflows/corridor.yml",
         )
 
+    def test_fenced_example_does_not_shadow_real_handoff(self):
+        # The PR template seeds a fenced example; first-non-empty-value
+        # wins, so without fence-awareness "Scope: auto" in the example
+        # would disable the corridor check for the real handoff below.
+        body = (
+            "```md\n"
+            "Decision: #123 or small fix\n"
+            "Scope: auto\n"
+            "Review first: path/to/file\n"
+            "Verified: test command or manual check\n"
+            "Risk: none\n"
+            "```\n"
+            "\n"
+            "Decision: #456\n"
+            "Scope: src/real.py\n"
+            "Review first: src/real.py\n"
+            "Verified: pytest\n"
+            "Risk: low\n"
+        )
+        handoff = corridor_ci.extract_compact_handoff(body)
+        self.assertEqual(handoff["Scope"], "src/real.py")
+        self.assertEqual(handoff["Decision"], "#456")
+        self.assertEqual(handoff["Review first"], "src/real.py")
+
+    def test_body_with_only_fenced_example_is_missing_handoff(self):
+        body = (
+            "Some prose.\n"
+            "```\n"
+            "Decision: #123\n"
+            "Scope: auto\n"
+            "```\n"
+        )
+        handoff = corridor_ci.extract_compact_handoff(body)
+        self.assertEqual(handoff["Scope"], "")
+        self.assertEqual(handoff["Decision"], "")
+
+    def test_tilde_fence_is_also_skipped(self):
+        body = (
+            "~~~\n"
+            "Scope: auto\n"
+            "~~~\n"
+            "Scope: src/x.py\n"
+        )
+        handoff = corridor_ci.extract_compact_handoff(body)
+        self.assertEqual(handoff["Scope"], "src/x.py")
+
+    def test_near_miss_detection_ignores_fenced_examples(self):
+        body = (
+            "```md\n"
+            "**Scope**: example\n"
+            "```\n"
+        )
+        self.assertEqual(corridor_ci.detect_near_miss_fields(body), {})
+
+    def test_single_star_does_not_cross_directories(self):
+        self.assertTrue(corridor_ci.path_matches("src/app.py", "src/*.py"))
+        self.assertFalse(
+            corridor_ci.path_matches("src/vendor/evil/deep.py", "src/*.py")
+        )
+        self.assertFalse(corridor_ci.path_matches("nested/dir/readme.md", "*.md"))
+        self.assertFalse(corridor_ci.path_matches("src/a/b.py", "src/?.py"))
+
+    def test_double_star_matches_zero_or_more_directories(self):
+        self.assertTrue(corridor_ci.path_matches("src/top.py", "src/**/*.py"))
+        self.assertTrue(corridor_ci.path_matches("src/a/b/deep.py", "src/**/*.py"))
+        self.assertFalse(corridor_ci.path_matches("other/top.py", "src/**/*.py"))
+
+    def test_trailing_double_star_still_matches_subtree(self):
+        self.assertTrue(corridor_ci.path_matches("src", "src/**"))
+        self.assertTrue(corridor_ci.path_matches("src/a/b.py", "src/**"))
+        self.assertFalse(corridor_ci.path_matches("srcx/a.py", "src/**"))
+
+    def test_scope_fails_when_star_pattern_hides_nested_file(self):
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+                "frontend/src/components/vendor/injected.tsx",
+            ],
+            corridor_text=(
+                "Decision: #123\n"
+                "Scope: frontend/src/components/*.tsx, frontend/src/components/ui/*.tsx, frontend/tests/*.ts\n"
+                "Review first: frontend/src/components/ui/rating.tsx\n"
+                "Verified: python -m unittest\n"
+                "Risk: none\n"
+            ),
+        )
+        self.assertFalse(report.ok)
+        self.assertIn(
+            "frontend/src/components/vendor/injected.tsx", report.outside_files
+        )
+
     def test_pr_body_reads_utf8_sig_event(self):
         with tempfile.TemporaryDirectory() as tmp:
             event = Path(tmp) / "event.json"
