@@ -176,6 +176,21 @@ case "$out" in
   *) ok "13d **/ matches zero dirs -> top-level edit allowed" ;;
 esac
 
+# A3e: non-ASCII filename inside the corridor must not false-block — git's
+#      default core.quotepath C-quoting reports "lib/caf\303\251.dart", which
+#      can never match a corridor glob.
+G4="$(mkrepo)"
+mkdir -p "$G4/.slime"
+printf '# Corridor: real\n## Paths\n- lib/**\n' > "$G4/.slime/corridor.md"
+git -C "$G4" add -A && git -C "$G4" commit -qm init
+mkdir -p "$G4/lib"; printf 'x\n' > "$G4/lib/café.dart"
+out=$(stop "$G4" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "13e non-ASCII name inside corridor -> no false block" "$out" ;;
+  *systemMessage*) ok "13e non-ASCII name inside corridor -> no false block" ;;
+  *) bad "13e non-ASCII name inside corridor -> no false block" "$out" ;;
+esac
+
 # A4: missing pubspec.yaml -> dependency gate degrades (no block)
 H="$(mkrepo)"
 mkdir -p "$H/.slime"
