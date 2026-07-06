@@ -28,12 +28,17 @@ def git(cwd, *args):
     # core.quotepath=false: without it, staged non-ASCII paths arrive C-quoted
     # ("lib/caf\303\251.dart") and are recorded as out-of-corridor evidence
     # even when they sit squarely inside the corridor.
+    # encoding="utf-8": git emits UTF-8 path bytes; text=True alone decodes
+    # with the locale codepage (e.g. cp936 on Chinese Windows), which
+    # mangles non-ASCII paths into out-of-corridor evidence the same way.
     try:
         r = subprocess.run(
             ["git", "-c", "core.quotepath=false", *args],
             cwd=cwd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
         )
         return r.stdout if r.returncode == 0 else ""

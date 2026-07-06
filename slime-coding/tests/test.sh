@@ -191,6 +191,23 @@ case "$out" in
   *) bad "13e non-ASCII name inside corridor -> no false block" "$out" ;;
 esac
 
+# A3f: corridor listing the exact non-ASCII filename must match it — git's
+#      UTF-8 path bytes must be decoded as UTF-8, not the locale codepage
+#      (cp936 turns "caf\303\251" into mojibake, so the glob never matches
+#      and the gate false-blocks; lib/** in 13e cannot catch this because
+#      the "lib/" prefix survives the mis-decode).
+G5="$(mkrepo)"
+mkdir -p "$G5/.slime"
+printf '# Corridor: real\n## Paths\n- lib/café.dart\n' > "$G5/.slime/corridor.md"
+git -C "$G5" add -A && git -C "$G5" commit -qm init
+mkdir -p "$G5/lib"; printf 'x\n' > "$G5/lib/café.dart"
+out=$(stop "$G5" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "13f corridor lists exact non-ASCII name -> no false block" "$out" ;;
+  *systemMessage*) ok "13f corridor lists exact non-ASCII name -> no false block" ;;
+  *) bad "13f corridor lists exact non-ASCII name -> no false block" "$out" ;;
+esac
+
 # A4: missing pubspec.yaml -> dependency gate degrades (no block)
 H="$(mkrepo)"
 mkdir -p "$H/.slime"

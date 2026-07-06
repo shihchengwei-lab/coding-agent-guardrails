@@ -76,12 +76,17 @@ def git(cwd, *args):
     # core.quotepath=false: git's default C-quoting turns non-ASCII paths into
     # "lib/caf\303\251.dart", which can never match a corridor glob and would
     # false-block — the one thing an L2 gate must not do.
+    # encoding="utf-8": git emits UTF-8 path bytes; text=True alone decodes
+    # with the locale codepage (e.g. cp936 on Chinese Windows), which
+    # mangles non-ASCII paths and re-opens the same false-block.
     try:
         r = subprocess.run(
             ["git", "-c", "core.quotepath=false", *args],
             cwd=cwd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
         )
         return r.stdout if r.returncode == 0 else ""
