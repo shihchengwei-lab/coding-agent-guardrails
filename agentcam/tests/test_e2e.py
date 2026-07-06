@@ -11,47 +11,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+from cli_harness import _agentcam, _manifest, _report, _run_dir
+
 
 GIT_AUTHOR = ["-c", "user.email=t@t", "-c", "user.name=t"]
-LIGHTWEIGHT_RUN_BACKEND = "pipe"
-
-
-def _agentcam(
-    cwd: Path,
-    *args: str,
-    run_backend: str | None = LIGHTWEIGHT_RUN_BACKEND,
-) -> subprocess.CompletedProcess:
-    """Invoke agentcam via the same Python that's running pytest."""
-    argv = list(args)
-    if argv and argv[0] == "run" and run_backend and "--backend" not in argv:
-        argv[1:1] = ["--backend", run_backend]
-    return subprocess.run(
-        [sys.executable, "-m", "agentcam.cli", *argv],
-        cwd=cwd,
-        capture_output=True,
-        timeout=25,
-    )
 
 
 def _git(cwd: Path, *args: str) -> None:
     subprocess.run(
         ["git", *GIT_AUTHOR, *args],
         cwd=cwd, check=True, capture_output=True,
-    )
-
-
-def _run_dir(repo: Path) -> Path:
-    runs = repo / ".git" / "agentcam" / "runs"
-    return next(runs.iterdir())
-
-
-def _report(repo: Path) -> str:
-    return (_run_dir(repo) / "AGENT_RUN_REPORT.md").read_text(encoding="utf-8")
-
-
-def _manifest(repo: Path) -> dict:
-    return json.loads(
-        (_run_dir(repo) / "manifest.json").read_text(encoding="utf-8")
     )
 
 
