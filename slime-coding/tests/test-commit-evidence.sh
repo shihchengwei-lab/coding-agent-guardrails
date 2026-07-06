@@ -103,6 +103,19 @@ case "$out" in
   *) bad "3  commit evidence reports out-of-corridor staged file" "$out" ;;
 esac
 
+# Non-ASCII staged path inside the corridor must not be recorded as
+# out-of-corridor (git's default core.quotepath C-quoting broke the match).
+printf 'x\n' > "$R/lib/auth/café.py"
+git -C "$R" add "lib/auth/café.py"
+git -C "$R" reset -q -- scripts/tool.py
+printf 'Add café\n' > "$MSG"
+(cd "$R" && python3 "$EVIDENCE" "$MSG")
+out="$(cat "$MSG")"
+case "$out" in
+  *"Slime-Out-Of-Corridor: 0"*) ok "3b non-ASCII staged path in corridor -> not out-of-corridor" ;;
+  *) bad "3b non-ASCII staged path in corridor -> not out-of-corridor" "$out" ;;
+esac
+
 S="$(mkrepo)"
 mkdir -p "$S/.git/hooks"
 cat > "$S/.git/hooks/prepare-commit-msg" <<'EOF'

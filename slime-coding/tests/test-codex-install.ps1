@@ -31,6 +31,11 @@ try {
   git -C $Project config user.name t
   $seed = "# Existing`n`nKeep this.`n`n<!-- >>> Slime Coding Codex -->`nOld block from a pre-fusion install.`n<!-- <<< Slime Coding Codex -->"
   Set-Content -LiteralPath (Join-Path $Project "AGENTS.md") -Value $seed -Encoding utf8
+  # A pre-existing user hook must survive install and reinstall (on Windows
+  # PowerShell 5.1 this also exercises the ConvertFrom-Json fallback path).
+  New-Item -ItemType Directory -Force -Path (Join-Path $Project ".codex") | Out-Null
+  $userHooks = '{ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "echo user-stop-hook" } ] } ] } }'
+  Set-Content -LiteralPath (Join-Path $Project ".codex/hooks.json") -Value $userHooks -Encoding utf8
 
   & powershell -NoProfile -ExecutionPolicy Bypass -File $Install -Project $Project | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "install-codex.ps1 failed with $LASTEXITCODE" }
@@ -76,6 +81,40 @@ try {
   $agentsText2 = Get-Content -LiteralPath $Agents -Raw
   $count = ([regex]::Matches($agentsText2, "coding-agent-guardrails:discipline:start")).Count
   if ($count -eq 1) { Ok "8  install is idempotent for AGENTS.md block" } else { Bad "8  install is idempotent for AGENTS.md block" "count=$count" }
+
+  $hookText2 = Get-Content -LiteralPath $Hooks -Raw
+  $hookJson2 = $hookText2 | ConvertFrom-Json
+  if ($hookText2 -match "user-stop-hook") {
+    Ok "9  pre-existing user hook survives install + reinstall"
+  } else {
+    Bad "9  pre-existing user hook survives install + reinstall" $hookText2
+  }
+  $stopGroups = @($hookJson2.hooks.Stop)
+  if ($stopGroups.Count -eq 2) {
+    Ok "9b reinstall does not duplicate hook groups"
+  } else {
+    Bad "9b reinstall does not duplicate hook groups" "Stop groups=$($stopGroups.Count)"
+  }
+
+  # Quoted absolute python path (the no-py-launcher branch) must yield valid
+  # JSON: the path goes through JSON escaping before template substitution.
+  $Project2 = New-TmpDir
+  git -C $Project2 init -q
+  & powershell -NoProfile -ExecutionPolicy Bypass -File $Install -Project $Project2 `
+    -PythonCommand '"C:\Program Files\Python 3.12\python.exe"' | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "install-codex.ps1 with -PythonCommand failed with $LASTEXITCODE" }
+  $Hooks2 = Join-Path $Project2 ".codex/hooks.json"
+  try {
+    $quotedJson = Get-Content -LiteralPath $Hooks2 -Raw | ConvertFrom-Json
+    $cmdWin = [string]$quotedJson.hooks.PreToolUse[0].hooks[0].commandWindows
+    if ($cmdWin -match 'Program Files' -and $cmdWin.StartsWith('"')) {
+      Ok "10 quoted python path bakes into valid JSON"
+    } else {
+      Bad "10 quoted python path bakes into valid JSON" $cmdWin
+    }
+  } catch {
+    Bad "10 quoted python path bakes into valid JSON" "hooks.json did not parse: $_"
+  }
 } finally {
   foreach ($dir in $TmpDirs) {
     Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue

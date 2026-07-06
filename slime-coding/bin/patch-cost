@@ -73,9 +73,16 @@ def read_input():
 
 
 def git(cwd, *args):
+    # core.quotepath=false: git's default C-quoting turns non-ASCII paths into
+    # "lib/caf\303\251.dart", which can never match a corridor glob and would
+    # false-block — the one thing an L2 gate must not do.
     try:
         r = subprocess.run(
-            ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=30
+            ["git", "-c", "core.quotepath=false", *args],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         return r.stdout if r.returncode == 0 else ""
     except Exception:
@@ -199,18 +206,29 @@ def corridor_gate(data):
 # L2 — Stop: new-dependency gate
 # --------------------------------------------------------------------------
 def parse_deps(text):
+    # Tolerant of real-world pubspec formatting: a trailing comment on the
+    # dependencies: line and any consistent indent width (2 or 4 spaces) —
+    # the old "exactly two spaces" match silently disabled the gate on
+    # 4-space files. Direct deps are the entries at the block's first indent
+    # level; deeper lines (sdk: flutter) are attributes, not deps.
     deps = set()
     in_block = False
+    base_indent = None
     for line in text.splitlines():
-        if re.match(r"^dependencies:\s*$", line):
+        if re.match(r"^dependencies:\s*(#.*)?$", line):
             in_block = True
+            base_indent = None
             continue
         if in_block:
             if re.match(r"^\S", line):  # next top-level key ends the block
                 break
-            m = re.match(r"^  ([\w-]+):", line)
+            m = re.match(r"^(\s+)([\w-]+):", line)
             if m:
-                deps.add(m.group(1))
+                indent = len(m.group(1).expandtabs())
+                if base_indent is None:
+                    base_indent = indent
+                if indent == base_indent:
+                    deps.add(m.group(2))
     return deps
 
 
@@ -233,7 +251,26 @@ def new_dependencies(cwd):
 # L2 — Stop: prune-logging gate
 # --------------------------------------------------------------------------
 def pruned_touched(cwd):
-    return bool(git(cwd, "status", "--porcelain", "--", ".slime/PRUNED.md").strip())
+    status = git(cwd, "status", "--porcelain", "--", ".slime/PRUNED.md").strip()
+    if not status:
+        return False
+    if not status.startswith("??"):
+        # Tracked with uncommitted changes — an unambiguous git fact that the
+        # log was written this session.
+        return True
+    # Untracked. install.sh seeds PRUNED.md as an untracked template, and
+    # counting "??" as touched made this gate permanently dead out of the box.
+    # An untracked log only counts once it carries a record for a real
+    # corridor (the seeded template ships one example-feature record).
+    try:
+        with open(os.path.join(cwd, ".slime", "PRUNED.md"), encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return False
+    for m in re.finditer(r"^##\s*\[.*?\]\s*corridor:(\S+)", text, re.MULTILINE):
+        if m.group(1) != TEMPLATE_ID:
+            return True
+    return False
 
 
 def run_check(cwd):
@@ -471,6 +508,30 @@ def stop(data):
                 "corridor, or update .slime/corridor.md with the new evidence "
                 "before finishing."
             )
+        if strict_corridor_enabled():
+            # Emptying or deleting .slime/corridor.md used to make the
+            # out-of-corridor check vacuously pass (.slime/ writes are always
+            # exempt at PreToolUse, and Bash edits are never gated), so scope
+            # creep could be laundered by clearing the Paths list at the end.
+            # Product changes with no valid corridor are the same evidence gap
+            # the PreToolUse gate denies on.
+            problem = corridor_problem(cwd)
+            if problem:
+                touched, new_files = changed_paths(cwd)
+                product = [
+                    n
+                    for n in touched + new_files
+                    if not n.startswith(".slime/")
+                    and os.path.basename(n) not in META_BASENAMES
+                ]
+                if product:
+                    blocks.append(
+                        "Product code changed but " + problem + ", so the "
+                        "out-of-corridor check has nothing to check against. "
+                        "Restore or complete .slime/corridor.md (id + '## Paths') "
+                        "to cover this session's changes before finishing: "
+                        + ", ".join(product[:10])
+                    )
 
     report = l3_report(cwd)
     if blocks:

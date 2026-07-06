@@ -25,9 +25,16 @@ MARKER = "Slime-Evidence:"
 
 
 def git(cwd, *args):
+    # core.quotepath=false: without it, staged non-ASCII paths arrive C-quoted
+    # ("lib/caf\303\251.dart") and are recorded as out-of-corridor evidence
+    # even when they sit squarely inside the corridor.
     try:
         r = subprocess.run(
-            ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=30
+            ["git", "-c", "core.quotepath=false", *args],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         return r.stdout if r.returncode == 0 else ""
     except Exception:
@@ -166,18 +173,27 @@ def out_of_corridor(paths, globs):
 
 
 def parse_deps(text):
+    # Kept in sync with the copy in patch-cost: tolerant of a trailing
+    # comment on dependencies: and of any consistent indent width; direct
+    # deps are the entries at the block's first indent level.
     deps = set()
     in_block = False
+    base_indent = None
     for line in text.splitlines():
-        if re.match(r"^dependencies:\s*$", line):
+        if re.match(r"^dependencies:\s*(#.*)?$", line):
             in_block = True
+            base_indent = None
             continue
         if in_block:
             if re.match(r"^\S", line):
                 break
-            m = re.match(r"^  ([\w-]+):", line)
+            m = re.match(r"^(\s+)([\w-]+):", line)
             if m:
-                deps.add(m.group(1))
+                indent = len(m.group(1).expandtabs())
+                if base_indent is None:
+                    base_indent = indent
+                if indent == base_indent:
+                    deps.add(m.group(2))
     return deps
 
 

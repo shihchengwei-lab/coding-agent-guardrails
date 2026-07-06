@@ -1,5 +1,8 @@
 param(
-  [string]$Project = "."
+  [string]$Project = ".",
+  # Override python detection (tests use this to exercise the quoted-path
+  # branch on runners where the py launcher exists).
+  [string]$PythonCommand = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,6 +18,36 @@ function Find-PythonCommand {
     return '"' + $python.Source + '"'
   }
   throw "python is required (py -3 or python must be on PATH)."
+}
+
+function Convert-ToHashtable {
+  param($InputObject)
+  if ($null -eq $InputObject) { return $null }
+  if ($InputObject -is [System.Collections.IDictionary]) {
+    $out = [ordered]@{}
+    foreach ($key in @($InputObject.Keys)) { $out[[string]$key] = Convert-ToHashtable $InputObject[$key] }
+    return $out
+  }
+  if ($InputObject -is [System.Management.Automation.PSCustomObject]) {
+    $out = [ordered]@{}
+    foreach ($prop in $InputObject.PSObject.Properties) { $out[$prop.Name] = Convert-ToHashtable $prop.Value }
+    return $out
+  }
+  if ($InputObject -is [System.Collections.IEnumerable] -and $InputObject -isnot [string]) {
+    return ,@($InputObject | ForEach-Object { Convert-ToHashtable $_ })
+  }
+  return $InputObject
+}
+
+function ConvertFrom-JsonCompat {
+  # Windows PowerShell 5.1 has no ConvertFrom-Json -AsHashtable; falling into
+  # the caller's catch there used to silently discard the user's existing
+  # hooks. Parse to objects and convert instead.
+  param([string]$Text)
+  if ((Get-Command ConvertFrom-Json).Parameters.ContainsKey("AsHashtable")) {
+    return $Text | ConvertFrom-Json -AsHashtable
+  }
+  return Convert-ToHashtable ($Text | ConvertFrom-Json)
 }
 
 function Copy-DirectoryFresh {
@@ -61,15 +94,19 @@ function Merge-Hooks {
   $templateText = Get-Content -LiteralPath $TemplatePath -Raw
   $templateText = $templateText.Replace("__SLIME_HOME_WIN__", $SlimeHome.Replace("\", "\\"))
   $templateText = $templateText.Replace("__SLIME_HOME__", $SlimeHome.Replace("\", "/"))
-  $templateText = $templateText.Replace("__PYTHON_WIN__", $PythonWin)
+  # $PythonWin may be a quoted absolute path ("C:\...\python.exe"); escape it
+  # for the JSON string context or the substituted template will not parse.
+  $pythonJson = $PythonWin.Replace("\", "\\").Replace('"', '\"')
+  $templateText = $templateText.Replace("__PYTHON_WIN__", $pythonJson)
   $template = $templateText | ConvertFrom-Json
 
   $settings = [ordered]@{ hooks = [ordered]@{} }
   if (Test-Path -LiteralPath $SettingsPath) {
     Copy-Item -LiteralPath $SettingsPath -Destination ($SettingsPath + ".bak-" + (Get-Date -Format "yyyyMMddHHmmss")) -Force
     try {
-      $settings = Get-Content -LiteralPath $SettingsPath -Raw | ConvertFrom-Json -AsHashtable
+      $settings = ConvertFrom-JsonCompat (Get-Content -LiteralPath $SettingsPath -Raw)
     } catch {
+      Write-Host "  warning: existing $SettingsPath is not valid JSON; starting fresh (backup kept next to it)"
       $settings = [ordered]@{ hooks = [ordered]@{} }
     }
   }
@@ -135,7 +172,13 @@ $end
   Write-Host "  wired git hook -> $hookPath"
 }
 
-$pythonWin = Find-PythonCommand
+$pythonWin = if ($PythonCommand) { $PythonCommand } else { Find-PythonCommand }
+# A bare interpreter path with spaces (user-supplied, or with its quotes eaten
+# at a process boundary) would split into two tokens in every baked command
+# line; wrap it. Launcher forms like `py -3` stay untouched.
+if ($pythonWin -notmatch '^"' -and $pythonWin -match '\s' -and $pythonWin -match '(?i)\.exe$') {
+  $pythonWin = '"' + $pythonWin + '"'
+}
 
 Write-Host "Slime Coding home : $SlimeHome"
 Write-Host "Target project    : $Project"
