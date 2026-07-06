@@ -530,7 +530,8 @@ class TestVerifyDuringSession:
         # A previous wrap-mode run exists — the mis-attachment target.
         proc = subprocess.run(
             [
-                sys.executable, "-m", "agentcam.cli", "run", "--",
+                sys.executable, "-m", "agentcam.cli", "run",
+                "--backend", "pipe", "--",
                 sys.executable, "-c", "open('old.txt','w').write('x')",
             ],
             cwd=tmp_git_repo, capture_output=True, timeout=25,
@@ -594,7 +595,8 @@ class TestVerifyDuringSession:
         a file nothing will ever merge."""
         proc = subprocess.run(
             [
-                sys.executable, "-m", "agentcam.cli", "run", "--",
+                sys.executable, "-m", "agentcam.cli", "run",
+                "--backend", "pipe", "--",
                 sys.executable, "-c", "open('old.txt','w').write('x')",
             ],
             cwd=tmp_git_repo, capture_output=True, timeout=25,
