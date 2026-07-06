@@ -5,6 +5,36 @@ All notable changes to agentcam are recorded here. Format follows
 Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 0.x is unstable on purpose.
 
+## [Unreleased]
+
+### Fixed
+
+- **Repo destruction no longer kills the flight recorder.** If the
+  wrapped agent corrupts the repo (`rm .git/HEAD`), the post-run git
+  failure now degrades to an empty after-state plus a HIGH
+  `post-run git state unavailable` risk flag, and the report/manifest
+  still land (no-diff cleanup disabled for such runs). If the agent
+  removes `.git` entirely — taking the run dir and raw logs with it —
+  `agentcam run` reports the loss plainly and exits 1 instead of
+  dumping a traceback.
+- **PTY spawn failure restores the terminal.** Both PTY backends
+  switch the parent terminal/console to raw mode before spawning; a
+  spawn error used to propagate with the restore code unreached,
+  leaving the shell with no echo and no line editing.
+- **Tee capture that cannot finish is reported.** When a grandchild
+  process holds the stdout/stderr pipe open past the join timeout,
+  the run used to proceed silently with a truncated redacted log and
+  risk scan. The join now keeps waiting while the raw log grows and
+  warns when capture stalls without finishing.
+- **`verify` no longer stashes checks into crash leftovers.** An
+  in-progress hook session older than 24h (SessionEnd never ran) is
+  treated as dead; `verify --run latest` falls back to the latest
+  run instead of appending to a stash nothing will ever merge.
+- **`agentcam handoff` redacts secret-like filenames.** The PR-ready
+  draft printed `.env.production`-style names verbatim in Scope and
+  Review first; both now use the same `<redacted-secret-filename>`
+  placeholder as the report and the redacted export.
+
 ## [0.3.3] — 2026-07-06
 
 ### Fixed
