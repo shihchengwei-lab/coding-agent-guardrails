@@ -26,7 +26,11 @@ from agentcam.models import (
     RunManifest,
     RunPaths,
 )
-from agentcam.scanner import is_secret_like_filename
+from agentcam.scanner import (
+    is_secret_like_filename,
+    redact_filenames_in_diff_check,
+    redact_filenames_in_diff_stat,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -131,9 +135,9 @@ def write_run_artifacts(
     Caller responsibilities:
     - Pass already-resolved, repo-trusted ``cwd`` / ``git_dir`` /
       ``git_root`` paths. The helper performs no path validation; it
-      shells out to ``git show HEAD:<path>`` via ``cwd`` inside the
-      dep probe, so an attacker-controlled ``cwd`` would shift the
-      execution context. Callers obtain these from
+      shells out to ``git show HEAD:<path>`` via ``git_root`` inside
+      the dep probe, so an attacker-controlled ``git_root`` would shift
+      the execution context. Callers obtain these from
       ``resolve_git_dir`` / ``resolve_git_root`` before any wrap- or
       hook-mode work begins.
     - Pass a pre-created ``run_paths`` whose ``run_dir`` already
@@ -151,10 +155,20 @@ def write_run_artifacts(
     """
     from agentcam.dependency_probe import scan_dependencies
 
+    # Changed-file paths are repo-root-relative (git porcelain), so the
+    # probe must read the working tree relative to git_root, not cwd:
+    # from a subdirectory, cwd/<path> misses the manifest entirely and
+    # the diff fabricates "removed" entries for every dependency.
     dependency_changes = scan_dependencies(
-        cwd=cwd,
+        cwd=git_root,
         changed_manifest_paths=[cf.path for cf in state_after.changed_files],
     )
+
+    # The parser layer (git porcelain) doesn't know about secret
+    # heuristics, so stamp the flag here — this is the single place both
+    # wrap and hook mode pass through before evidence is serialized.
+    for cf in state_after.changed_files:
+        cf.secret_like_name = is_secret_like_filename(cf.path)
 
     duration = (ended_at - started_at).total_seconds()
     manifest = RunManifest(
@@ -463,12 +477,43 @@ def _render_verdict(flags: list[RiskFlag]) -> str:
     )
 
 
+def _escape_md_cell(text: str) -> str:
+    """Neutralize markdown-table metacharacters in a cell value.
+
+    Filenames and manifest content are agent-controlled. A path
+    embedding ``|`` or a newline could inject rows or whole sections
+    into the exact artifact a reviewer is told to trust, so every
+    dynamic cell goes through here before hitting the table.
+    """
+    return (
+        text.replace("\\", "\\\\")
+        .replace("|", "\\|")
+        .replace("\r", " ")
+        .replace("\n", " ")
+        .replace("`", "\\`")
+    )
+
+
+def _code_cell(text: str) -> str:
+    """Like :func:`_escape_md_cell` but for values inside a code span,
+    where a raw backtick would terminate the span instead of escaping."""
+    return (
+        text.replace("`", "'")
+        .replace("|", "\\|")
+        .replace("\r", " ")
+        .replace("\n", " ")
+    )
+
+
 def _render_risk_flags(flags: list[RiskFlag]) -> str:
     if not flags:
         return "## Risk Flags\n\n_None._"
     rows = ["| Severity | Rule | Evidence |", "|---|---|---|"]
     for f in flags:
-        rows.append(f"| {f.level} | {f.rule} | {f.evidence} |")
+        rows.append(
+            f"| {_escape_md_cell(f.level)} | {_escape_md_cell(f.rule)} "
+            f"| {_escape_md_cell(f.evidence)} |"
+        )
     return "## Risk Flags\n\n" + "\n".join(rows)
 
 
@@ -481,14 +526,14 @@ def _render_changed_files(state: GitState) -> str:
         if is_secret_like_filename(cf.path):
             display = "<redacted-secret-filename>"
         else:
-            display = cf.path
+            display = _escape_md_cell(cf.path)
         if cf.rename_from:
             # Codex source-review CRITICAL: the old name in a rename is
             # also a markdown surface; if it's secret-like, redact it too.
             old_display = (
                 "<redacted-secret-filename>"
                 if is_secret_like_filename(cf.rename_from)
-                else cf.rename_from
+                else _escape_md_cell(cf.rename_from)
             )
             display += f" (renamed from {old_display})"
         rows.append(f"| {cf.status} | {display} |")
@@ -526,7 +571,7 @@ def _render_dependency_changes(
 
     for (ecosystem, path), entries in grouped.items():
         rows = [
-            f"### `{path}` ({ecosystem})",
+            f"### `{_code_cell(path)}` ({ecosystem})",
             "",
             "| Kind | Name | Before | After |",
             "|---|---|---|---|",
@@ -534,7 +579,9 @@ def _render_dependency_changes(
         for e in entries:
             before = _fmt_version(e.old_version)
             after = _fmt_version(e.new_version)
-            rows.append(f"| {e.kind} | `{e.name}` | {before} | {after} |")
+            rows.append(
+                f"| {e.kind} | `{_code_cell(e.name)}` | {before} | {after} |"
+            )
         parts.append("\n".join(rows))
 
     return "\n\n".join(parts)
@@ -545,7 +592,7 @@ def _fmt_version(v: str | None) -> str:
         return "—"
     if v == "":
         return "(unpinned)"
-    return f"`{v}`"
+    return f"`{_code_cell(v)}`"
 
 
 def _render_diff_stat(state: GitState) -> str:
@@ -553,26 +600,26 @@ def _render_diff_stat(state: GitState) -> str:
     if state.diff_stat_cached:
         parts.append(
             "### staged (--cached)\n\n```text\n"
-            + _redact_filenames_in_diff_stat(state.diff_stat_cached)
+            + redact_filenames_in_diff_stat(state.diff_stat_cached)
             + "\n```"
         )
     if state.diff_stat:
         parts.append(
             "### unstaged\n\n```text\n"
-            + _redact_filenames_in_diff_stat(state.diff_stat)
+            + redact_filenames_in_diff_stat(state.diff_stat)
             + "\n```"
         )
     check_blocks: list[str] = []
     if state.diff_check_cached:
         check_blocks.append(
             "staged:\n\n```text\n"
-            + _redact_filenames_in_diff_check(state.diff_check_cached)
+            + redact_filenames_in_diff_check(state.diff_check_cached)
             + "\n```"
         )
     if state.diff_check:
         check_blocks.append(
             "unstaged:\n\n```text\n"
-            + _redact_filenames_in_diff_check(state.diff_check)
+            + redact_filenames_in_diff_check(state.diff_check)
             + "\n```"
         )
     if check_blocks:
@@ -582,46 +629,9 @@ def _render_diff_stat(state: GitState) -> str:
     return "\n\n".join(parts)
 
 
-def _redact_filenames_in_diff_check(text: str) -> str:
-    """Replace secret-like filenames in ``git diff --check`` output.
-
-    Format: ``<path>:<line>: <message>`` (or ``<path>:<line>:<col>: <message>``).
-    Only the leading path is checked. (Codex source-review CRITICAL: the
-    `diff --check` block was previously concatenated raw into markdown,
-    bypassing the secret-filename redaction surface.)
-    """
-    if not text:
-        return text
-    out_lines: list[str] = []
-    for line in text.splitlines():
-        if ":" in line:
-            path_part, sep, rest = line.partition(":")
-            if is_secret_like_filename(path_part):
-                line = "<redacted-secret-filename>" + sep + rest
-        out_lines.append(line)
-    return "\n".join(out_lines)
-
-
-def _redact_filenames_in_diff_stat(diff_text: str) -> str:
-    """Replace secret-like filenames in ``git diff --stat`` output.
-
-    `git diff --stat` lines look like ``  src/auth/login.py | 5 +-``. The
-    filename is the part before `` | `` (with leading whitespace). Footer
-    lines (``N files changed``) don't contain `` | `` so are left untouched.
-    """
-    if not diff_text:
-        return diff_text
-    out_lines: list[str] = []
-    for line in diff_text.splitlines():
-        if " | " in line:
-            fname_part, rest = line.split(" | ", 1)
-            filename = fname_part.strip()
-            if is_secret_like_filename(filename):
-                indent_len = len(fname_part) - len(fname_part.lstrip())
-                indent = fname_part[:indent_len]
-                line = f"{indent}<redacted-secret-filename> | {rest}"
-        out_lines.append(line)
-    return "\n".join(out_lines)
+# (diff --check / --stat filename redaction moved to agentcam.scanner so
+# the export redaction pass can share it; the "Codex source-review
+# CRITICAL" note about raw diff --check markdown lives with it there.)
 
 
 def _render_exit_detail(d: ExitDetail | None) -> str:
@@ -689,7 +699,9 @@ def _render_rollback(manifest: RunManifest, state: GitState) -> str:
         if is_secret_like_filename(cf.path):
             visible_untracked.append("<redacted-secret-filename>")
         else:
-            visible_untracked.append(cf.path)
+            # Same injection surface as the tables: a newline in an
+            # agent-controlled filename must not start a new markdown block.
+            visible_untracked.append(_escape_md_cell(cf.path))
 
     if not visible_untracked:
         return (

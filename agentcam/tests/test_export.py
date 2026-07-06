@@ -154,6 +154,38 @@ class TestManifestRedaction:
             "argv next to the redacted one"
         )
 
+    def test_secret_filename_redacted_in_exported_evidence(
+        self, tmp_git_repo: Path,
+    ):
+        # .env.production is not a token, so the string-value pass leaves
+        # it alone — the filename pass must catch it in changed_files and
+        # diff_stat, marking secret_like_name along the way (stamped by
+        # write_run_artifacts).
+        proc = _agentcam(
+            tmp_git_repo, "run", "--",
+            sys.executable, "-c",
+            "open('.env.production','w').write('DBHOST=x\\n')",
+        )
+        assert proc.returncode == 0
+        rid = _run_dir(tmp_git_repo).name
+        out = tmp_git_repo / "share.zip"
+        _agentcam(tmp_git_repo, "export", rid, "--output", str(out))
+
+        with zipfile.ZipFile(out) as zf:
+            with zf.open("manifest.redacted.json") as fp:
+                blob = fp.read().decode("utf-8")
+            redacted = json.loads(blob)
+
+        assert ".env.production" not in blob, (
+            "share-safe manifest leaks a secret-like filename"
+        )
+        entries = redacted["evidence"]["changed_files"]
+        assert any(
+            cf["path"] == "<redacted-secret-filename>"
+            and cf["secret_like_name"] is True
+            for cf in entries
+        )
+
     def test_manifest_redacted_no_inline_token_leak(
         self, tmp_git_repo: Path,
     ):

@@ -242,6 +242,61 @@ class TestReportRedaction:
         )
         assert "src/main.py" in report
 
+    def test_newline_in_filename_cannot_inject_report_sections(
+        self, tmp_path: Path
+    ):
+        # An agent-controlled filename embedding markdown must not be able
+        # to forge sections in the artifact a reviewer is told to trust.
+        evil = "ok.txt\n## Verdict\n- Overall risk: **LOW**"
+        after = _state_with(ChangedFile(path=evil, status="untracked"))
+        report = render_report(
+            _manifest(tmp_path), _empty_state(), after, [],
+        )
+        # The forged heading may survive as inline text, but must never
+        # start a line of its own (which is what makes it a section).
+        assert report.splitlines().count("## Verdict") == 1
+        assert "ok.txt ## Verdict" in report  # flattened into one cell
+
+    def test_pipe_in_filename_cannot_inject_table_cells(self, tmp_path: Path):
+        after = _state_with(
+            ChangedFile(path="a|LOW|benign.txt", status="untracked"),
+        )
+        report = render_report(
+            _manifest(tmp_path), _empty_state(), after, [],
+        )
+        assert "a\\|LOW\\|benign.txt" in report
+
+    def test_pipe_in_risk_evidence_is_escaped(self, tmp_path: Path):
+        from agentcam.models import RiskFlag
+
+        flags = [
+            RiskFlag(level="HIGH", rule="path", evidence="touched a|b.txt"),
+        ]
+        report = render_report(
+            _manifest(tmp_path), _empty_state(), _empty_state(), flags,
+        )
+        assert "a\\|b.txt" in report
+
+    def test_backtick_in_dependency_name_stays_in_code_span(
+        self, tmp_path: Path
+    ):
+        from agentcam.models import DependencyChange
+
+        dep = DependencyChange(
+            manifest_path="package.json",
+            ecosystem="npm",
+            kind="added",
+            name="evil`pkg",
+            old_version=None,
+            new_version="`1.0`",
+        )
+        report = render_report(
+            _manifest(tmp_path), _empty_state(), _empty_state(), [],
+            dependency_changes=[dep],
+        )
+        assert "evil`pkg" not in report
+        assert "evil'pkg" in report
+
     def test_internal_path_excluded_from_changed_files(self, tmp_path: Path):
         after = _state_with(
             ChangedFile(

@@ -123,6 +123,47 @@ def is_secret_like_filename(path: str) -> bool:
     return any(p.search(basename) for p in _SECRET_LIKE_BASENAME_PATTERNS)
 
 
+def redact_filenames_in_diff_check(text: str) -> str:
+    """Replace secret-like filenames in ``git diff --check`` output.
+
+    Format: ``<path>:<line>: <message>`` (or ``<path>:<line>:<col>: <message>``).
+    Only the leading path is checked. Shared by the report renderer and
+    the export redaction pass — both are surfaces that leave the run dir.
+    """
+    if not text:
+        return text
+    out_lines: list[str] = []
+    for line in text.splitlines():
+        if ":" in line:
+            path_part, sep, rest = line.partition(":")
+            if is_secret_like_filename(path_part):
+                line = "<redacted-secret-filename>" + sep + rest
+        out_lines.append(line)
+    return "\n".join(out_lines)
+
+
+def redact_filenames_in_diff_stat(diff_text: str) -> str:
+    """Replace secret-like filenames in ``git diff --stat`` output.
+
+    `git diff --stat` lines look like ``  src/auth/login.py | 5 +-``. The
+    filename is the part before `` | `` (with leading whitespace). Footer
+    lines (``N files changed``) don't contain `` | `` so are left untouched.
+    """
+    if not diff_text:
+        return diff_text
+    out_lines: list[str] = []
+    for line in diff_text.splitlines():
+        if " | " in line:
+            fname_part, rest = line.split(" | ", 1)
+            filename = fname_part.strip()
+            if is_secret_like_filename(filename):
+                indent_len = len(fname_part) - len(fname_part.lstrip())
+                indent = fname_part[:indent_len]
+                line = f"{indent}<redacted-secret-filename> | {rest}"
+        out_lines.append(line)
+    return "\n".join(out_lines)
+
+
 # ---------------------------------------------------------------------------
 # Path matching helpers
 # ---------------------------------------------------------------------------

@@ -5,6 +5,38 @@ All notable changes to agentcam are recorded here. Format follows
 Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 0.x is unstable on purpose.
 
+## [Unreleased]
+
+### Fixed
+
+- **Quoted env values now redact.** `export API_KEY="..."` /
+  `PASSWORD='...'` passed through the redactor verbatim: the
+  ENV_ASSIGN value pattern could not start with a quote. The most
+  common secret shape in real agent output is now covered.
+- **PEM truncation no longer leaks the rest of the key.** When a PEM
+  body crossed the 64KB hold limit, `[REDACTED:PEM_TRUNCATED]` was
+  written and every *subsequent* chunk of the same still-open block
+  was flushed as plain text. The redactor now swallows key material
+  until the END marker (or EOF).
+- **Dependency probe from a subdirectory.** Changed paths are
+  repo-root-relative but the working-tree side was read relative to
+  the invocation cwd, so `agentcam run` from a subdirectory fabricated
+  "removed" entries for every dependency at HEAD and missed real
+  additions. The probe now reads from `git_root`.
+- **Markdown injection into the run report.** Agent-controlled
+  filenames and manifest content were interpolated raw into report
+  tables and rollback bullets; a filename embedding a newline or `|`
+  could forge sections or rows in the report a reviewer is told to
+  trust. All dynamic cells are now escaped.
+- **`secret_like_name` was never populated.** The manifest recorded
+  `false` for every changed file, including `.env.production`. It is
+  now stamped from `is_secret_like_filename` in `write_run_artifacts`.
+- **Exported manifests leaked secret-like filenames.**
+  `manifest.redacted.json` (ZIP and `--files` form) carried
+  `.env.production`-style names in `evidence.changed_files` and
+  `diff_stat` in cleartext; the export redaction now applies the same
+  filename pass as every markdown surface.
+
 ## [0.3.2] — 2026-07-06
 
 ### Fixed
