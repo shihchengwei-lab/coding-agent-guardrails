@@ -173,6 +173,12 @@ $end
 }
 
 $pythonWin = if ($PythonCommand) { $PythonCommand } else { Find-PythonCommand }
+# A bare interpreter path with spaces (user-supplied, or with its quotes eaten
+# at a process boundary) would split into two tokens in every baked command
+# line; wrap it. Launcher forms like `py -3` stay untouched.
+if ($pythonWin -notmatch '^"' -and $pythonWin -match '\s' -and $pythonWin -match '(?i)\.exe$') {
+  $pythonWin = '"' + $pythonWin + '"'
+}
 
 Write-Host "Slime Coding home : $SlimeHome"
 Write-Host "Target project    : $Project"
