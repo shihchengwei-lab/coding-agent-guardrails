@@ -290,9 +290,36 @@ def _run_pipe(
     finally:
         # Always join tee threads so raw logs flush. The threads exit
         # cleanly once their pipe sees EOF (which happens when the
-        # subprocess is reaped above).
-        stdout_thread.join(timeout=5)
-        stderr_thread.join(timeout=5)
+        # subprocess is reaped above). A thread still alive after the
+        # first join is either draining a backlog (raw file keeps
+        # growing — keep waiting) or parked on a pipe a grandchild
+        # holds open (no progress — warn instead of letting redaction
+        # and the risk scan silently miss the log tail).
+        for tee_thread, raw_path in (
+            (stdout_thread, stdout_raw_path),
+            (stderr_thread, stderr_raw_path),
+        ):
+            def _size() -> int:
+                try:
+                    return raw_path.stat().st_size
+                except OSError:
+                    return -1
+
+            last_size = _size()
+            tee_thread.join(timeout=5)
+            while tee_thread.is_alive():
+                size = _size()
+                if size == last_size:
+                    print(
+                        f"agentcam: warning: {raw_path.name} capture did "
+                        "not finish (a grandchild process may hold the "
+                        "pipe open); the log tail may be missing from the "
+                        "redacted log and risk scan",
+                        file=sys.stderr,
+                    )
+                    break
+                last_size = size
+                tee_thread.join(timeout=5)
 
     return RunResult(
         exit_detail=interpret_exit(proc.returncode),
@@ -371,6 +398,19 @@ def _run_pty_posix(
             close_fds=True,
             shell=resolved.use_shell,
         )
+    except BaseException:
+        # Popen failed after the parent terminal was switched to raw mode:
+        # restore it before propagating, or the user's shell is left with
+        # no echo and no line editing. (The normal restore lives in the
+        # read-loop finally below, which is never reached on this path.)
+        os.close(master_fd)
+        if saved_tty_attrs is not None:
+            stdin_fd, attrs = saved_tty_attrs
+            try:
+                termios.tcsetattr(stdin_fd, termios.TCSADRAIN, attrs)
+            except (OSError, termios.error):
+                pass
+        raise
     finally:
         # Parent never reads/writes the slave; close it so EOF propagates
         # when the child closes its end.
@@ -534,11 +574,22 @@ def _run_pty_windows(
         except Exception:
             saved_console_mode = None
 
-    pty = PtyProcess.spawn(
-        spawn_argv,
-        cwd=str(cwd),
-        dimensions=(rows, cols),
-    )
+    try:
+        pty = PtyProcess.spawn(
+            spawn_argv,
+            cwd=str(cwd),
+            dimensions=(rows, cols),
+        )
+    except BaseException:
+        # Spawn failed after the console was switched to raw-input mode:
+        # restore it before propagating (the normal restore lives in the
+        # read-loop finally below, which is never reached on this path).
+        if saved_console_mode is not None and stdin_handle is not None:
+            try:
+                kernel32.SetConsoleMode(stdin_handle, saved_console_mode)
+            except Exception:
+                pass
+        raise
 
     # stderr.log invariant: file always exists (empty under PTY merge).
     stderr_raw_path.write_bytes(b"")

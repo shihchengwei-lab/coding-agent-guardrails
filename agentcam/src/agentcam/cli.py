@@ -221,7 +221,20 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.cmd == "run":
-        return _run_command(args)
+        try:
+            return _run_command(args)
+        except Exception as e:  # noqa: BLE001
+            # Flight-recorder rule: never dump a traceback on the user's
+            # terminal. The main way to get here is the wrapped agent
+            # destroying the repo mid-run (rm -rf .git takes the run dir
+            # and its raw logs with it, since they live under .git/).
+            print(
+                f"agentcam: unexpected error: {type(e).__name__}: {e}. "
+                "Run artifacts may be incomplete or missing (did the "
+                "wrapped command delete or corrupt the repository?).",
+                file=sys.stderr,
+            )
+            return 1
 
     if args.cmd == "hook-session-start":
         from agentcam.hooks import cmd_hook_session_start
@@ -407,12 +420,30 @@ def _handoff_command(args) -> int:
     )
     risk = str(evidence.get("overall_risk") or "low").lower()
 
+    # The handoff is drafted to be pasted into a PR body: secret-like
+    # filenames must not leave the machine here any more than they do in
+    # the report or the redacted export.
+    from agentcam.scanner import is_secret_like_filename
+
+    def _display(path: str) -> str:
+        return (
+            "<redacted-secret-filename>"
+            if is_secret_like_filename(path)
+            else path
+        )
+
     print("Decision: <fill in: issue or decision link>")
-    print(f"Scope: {', '.join(paths)}")
-    print(f"Review first: {review_first}")
+    print(f"Scope: {', '.join(_display(p) for p in paths)}")
+    print(f"Review first: {_display(review_first)}")
     print(f"Verified: {_verified_line(evidence.get('verifications') or [])}")
     print(f"Risk: {risk}")
     return 0
+
+
+# An in-progress hook session older than this is treated as a crash
+# leftover by `verify --run latest` (SessionEnd normally removes the dir
+# within the session's lifetime; real Claude Code sessions do not span days).
+_SESSION_STALE_SECONDS = 24 * 3600
 
 
 def _latest_in_progress_session(git_dir: Path) -> Path | None:
@@ -420,9 +451,16 @@ def _latest_in_progress_session(git_dir: Path) -> Path | None:
 
     A session dir with a state_before.pickle is a Claude Code session
     that started but has not ended (SessionEnd removes the dir).
+    Sessions older than ``_SESSION_STALE_SECONDS`` are ignored: a crash
+    that skipped SessionEnd leaves the dir behind forever, and treating
+    it as in-progress would stash every later ``verify`` into a file
+    nothing will ever merge.
     """
+    import time
+
     sessions_root = git_dir / "agentcam" / "sessions"
     try:
+        now = time.time()
         candidates = [
             d
             for d in sessions_root.iterdir()
@@ -430,6 +468,10 @@ def _latest_in_progress_session(git_dir: Path) -> Path | None:
             # hooks.py); it no longer accepts checks.
             if not d.name.endswith(".ending")
             and (d / "state_before.pickle").is_file()
+            and (
+                now - (d / "state_before.pickle").stat().st_mtime
+                < _SESSION_STALE_SECONDS
+            )
         ]
         if not candidates:
             return None
@@ -724,11 +766,36 @@ def _run_command(args) -> int:
     _redact_log(Path(run_paths.stderr_raw), Path(run_paths.stderr_redacted))
 
     # 6) Collect post-run git state (is_after=True triggers diff --check).
-    state_after = collect_git_state(cwd, is_after=True)
+    # Guarded: the wrapped agent may have destroyed the repo (rm -rf .git
+    # is exactly the kind of event a flight recorder must land a report
+    # for), so a git failure here degrades to an empty after-state and a
+    # HIGH risk flag instead of a traceback with no artifacts.
+    from agentcam.models import GitState, RiskFlag
 
-    fingerprint_after = (
-        compute_diff_fingerprint(cwd) if not args.keep_empty else ""
-    )
+    post_git_error: str | None = None
+    try:
+        state_after = collect_git_state(cwd, is_after=True)
+        fingerprint_after = (
+            compute_diff_fingerprint(cwd) if not args.keep_empty else ""
+        )
+    except Exception as e:  # noqa: BLE001
+        post_git_error = f"{type(e).__name__}: {e}"
+        state_after = GitState(
+            head=None,
+            branch=None,
+            is_detached_head=False,
+            porcelain_raw=b"",
+            diff_stat="",
+            diff_stat_cached="",
+            diff_name_status="",
+            diff_name_status_cached="",
+        )
+        fingerprint_after = "post-run-git-state-unavailable"
+        print(
+            "agentcam: warning: could not read git state after the run "
+            f"({post_git_error}); the report records pre-run state only",
+            file=sys.stderr,
+        )
 
     # 7) Scan paths + raw output for risk flags. Output scan is
     # wrap-mode-only (hook mode has no transcript to scan).
@@ -743,6 +810,14 @@ def _run_command(args) -> int:
     )
     path_risk_flags = scan_paths(state_after.changed_files)
     risk_flags = path_risk_flags + output_risk_flags
+    if post_git_error is not None:
+        risk_flags.append(
+            RiskFlag(
+                level="HIGH",
+                rule="post-run git state unavailable",
+                evidence=post_git_error[:200],
+            )
+        )
 
     # 6.5) "No-diff = no report": if the run made no git-visible
     # changes AND succeeded AND no output risk evidence, delete the
@@ -755,7 +830,8 @@ def _run_command(args) -> int:
         empty_run_policy = "keep_empty_requested"
     else:
         no_git_change_raw = (
-            state_before.head == state_after.head
+            post_git_error is None
+            and state_before.head == state_after.head
             and state_before.porcelain_raw == state_after.porcelain_raw
             and fingerprint_before == fingerprint_after
         )
