@@ -20,14 +20,14 @@ agentcam run -- bash -lc "npm run build && npm test"
 
 After each run, you get an `AGENT_RUN_REPORT.md` answering four questions:
 
-1. **What did the agent change?** — exact file list, diff stat, staged vs.
+1. **What did the agent change?**: exact file list, diff stat, staged vs.
    unstaged vs. untracked, before/after HEAD.
-2. **Where should I look first?** — heuristic risk flags for auth paths,
+2. **Where should I look first?**: heuristic risk flags for auth paths,
    secrets, deletions, dangerous shell strings (`rm -rf /`, `git reset
    --hard`, conflict markers), dependency manifests.
-3. **How do I roll back if something's wrong?** — situation-aware rollback
+3. **How do I roll back if something's wrong?**: situation-aware rollback
    notes (no blanket `git reset --hard` suggestions).
-4. **What did agentcam actually observe (and not observe)?** — an explicit
+4. **What did agentcam actually observe (and not observe)?**: an explicit
    Capture Visibility table per run, so "no output-pattern flag" cannot be
    misread as "no risk happened". Hook-mode reports declare
    `stdout = not_available`; wrap-mode reports declare `stdout = captured`.
@@ -75,7 +75,7 @@ Verify:
 
 ```bash
 agentcam version
-# agentcam 0.3.2
+# agentcam 0.3.3
 ```
 
 ---
@@ -98,7 +98,7 @@ agentcam will:
    `.git/agentcam/runs/<run_id>/`
 6. exit with 0 if your command succeeded, 1 otherwise
 
-stdout and stderr stream live to your terminal — agentcam does not buffer
+stdout and stderr stream live to your terminal; agentcam does not buffer
 them.
 
 If the wrapped command produced **no git-visible changes** and exited
@@ -136,7 +136,7 @@ agentcam run -- pwsh -Command "Get-Process | Out-File procs.txt"
 agentcam run -- cmd /c "dir > files.txt"
 ```
 
-This is a deliberate constraint — see [`docs/design.md` § 4](docs/design.md).
+This is a deliberate constraint; see [`docs/design.md` § 4](docs/design.md).
 
 ### Backends (PTY vs PIPE)
 
@@ -168,7 +168,7 @@ See [`docs/design.md` § 32](docs/design.md) for the design rationale.
 ## Hook mode (Claude Code: no wrapper needed)
 
 If your agent is Claude Code, you can register agentcam as a hook so
-that every `claude` session is recorded automatically — no need to
+that every `claude` session is recorded automatically, with no need to
 remember a wrapper command. Add this to `~/.claude/settings.json` (or
 a per-project `.claude/settings.json`):
 
@@ -188,7 +188,7 @@ a per-project `.claude/settings.json`):
 That's the whole setup. Start a `claude` session in any git repo, make
 some changes, exit. agentcam writes the report under
 `.git/agentcam/runs/<run_id>/` automatically. Sessions that don't touch
-the working tree leave no trace — the no-diff cleanup applies the
+the working tree leave no trace. The no-diff cleanup applies the
 same way as in the wrapping path.
 
 Hook mode is Claude Code-specific (it uses Claude Code's settings.json
@@ -199,7 +199,7 @@ Both hook commands always exit 0; Claude Code is never blocked even
 if agentcam has an internal error.
 
 `agentcam verify` works mid-session: while a session is in progress it
-records the check against that session — not against a previous run —
+records the check against that session, not against a previous run,
 and the check is merged into the session's run when the session ends.
 A session that ends without a git-visible diff renders no run and
 drops its recorded checks with the rest of the session state.
@@ -209,7 +209,7 @@ not pipe its terminal output through hook subprocesses, so agentcam
 cannot capture it. The Logs section in a hook-mode report points to
 empty placeholder files; **output-pattern risk flags** (`rm -rf`,
 `git push --force`, etc.) are unavailable. **Path-based risk flags
-and the Dependency Changes section are unaffected** — both read
+and the Dependency Changes section are unaffected**: both read
 git state and working-tree files, not the transcript. If you need
 stdout/stderr captured, use the wrapping path
 (`agentcam run -- claude "..."`) for that specific session.
@@ -231,7 +231,7 @@ stdout/stderr captured, use the wrapping path
             └── stderr.redacted.log
 ```
 
-Output lives under `.git/` on purpose — git doesn't track its own
+Output lives under `.git/` on purpose: git doesn't track its own
 internals, so agent invocations of `git add .` cannot stage agentcam's
 output by accident.
 
@@ -265,7 +265,7 @@ the redacted logs, sha256 checksums, and an `EXPORT_NOTES.md`
 explaining what's inside. **Raw logs are excluded by default.** Pass
 `--include-raw` if you understand the risk (raw logs may carry
 secrets the redactor missed) and need them anyway. agentcam export
-does not upload anything — the zip is written locally; you decide
+does not upload anything; the zip is written locally, and you decide
 where it goes.
 
 ---
@@ -298,7 +298,7 @@ agentcam handoff
 `handoff` drafts the five-line review handoff from the recorded run:
 `Scope` from the files that actually changed, `Review first` from the
 highest-severity risk flag, `Risk` from the overall verdict, `Verified`
-from recorded passing checks. `Decision` always stays with you —
+from recorded passing checks. `Decision` always stays with you:
 agentcam records what changed, not why. Without a recorded check (or
 with only failing ones) `Verified` stays a fill-in too: red must not
 read as verified.
@@ -317,10 +317,10 @@ recorded evidence (display-only; it never affects the check).
 
 ## Risk flags (heuristics)
 
-Two levels: **HIGH** and **MEDIUM**. There is no LOW — filename-only
+Two levels: **HIGH** and **MEDIUM**. There is no LOW: filename-only
 heuristics for "trivial" changes are unreliable, and we don't pretend.
 
-**HIGH** — flagged for any of:
+**HIGH**: flagged for any of:
 
 - A tracked file was deleted.
 - File path contains a sensitive segment: `auth`, `login`, `oauth`,
@@ -334,7 +334,7 @@ heuristics for "trivial" changes are unreliable, and we don't pretend.
   PowerShell `Remove-Item -Recurse -Force ...`, `Invoke-Expression`,
   conflict markers, `git push --force`.
 
-**MEDIUM** — flagged for any of:
+**MEDIUM**: flagged for any of:
 
 - Dependency manifest changed: `package.json`, `pyproject.toml`,
   `requirements.txt`, `Dockerfile`, `docker-compose.*`, etc.
@@ -362,8 +362,8 @@ When a run touches `requirements.txt`, `pyproject.toml`, or
 grouped by `(ecosystem, manifest_path)`. Each row lists:
 
 - **Kind**: `added`, `removed`, or `version_changed`
-- **Name**: the package (non-main scopes are tagged in the name —
-  e.g. `pytest [optional.test]`, `jest [devDependencies]` — so a
+- **Name**: the package (non-main scopes are tagged in the name,
+  e.g. `pytest [optional.test]`, `jest [devDependencies]`, so a
   package in both main and a dev/extra group doesn't collide)
 - **Before / After**: the verbatim version specs
 
@@ -399,7 +399,7 @@ Patterns redacted in the redacted log:
 - `Bearer …` headers
 - env-style assignments where the key name looks like a secret
   (`OPENAI_API_KEY=…`, `*_TOKEN=…`, `*_PASSWORD=…`, `*_CREDENTIAL=…`)
-- PEM private key blocks — multi-line, including PKCS#8 / RSA / EC /
+- PEM private key blocks, multi-line, including PKCS#8 / RSA / EC /
   ED25519 / OPENSSH
 
 We **do not** promise to catch every secret. New token formats appear all
@@ -407,7 +407,7 @@ the time. The raw log on disk is the forensic backstop: if redaction
 missed something, you can find it there.
 
 `Command:` field, `Changed Files`, `Diff Stat`, and `Risk Flags evidence`
-in the markdown report also pass through redaction — a literal
+in the markdown report also pass through redaction; a literal
 `.env.production` in argv or in a diff stat shows up as
 `<redacted-secret-filename>`.
 
@@ -418,13 +418,13 @@ in the markdown report also pass through redaction — a literal
 agentcam reads your **local** git state (`git status`, `git diff` against
 the `.git/` directory on your machine). git is a local tool; GitHub is a
 separate hosting service that you push to. agentcam never talks to GitHub
-or any other remote service — pushing to a remote is an independent
+or any other remote service; pushing to a remote is an independent
 action that agentcam does not see, and reports are generated regardless
 of whether the repo has ever been pushed.
 
 agentcam itself makes no network calls and does not phone home. There is
-no account, no upload, no opt-in or opt-out toggle for telemetry —
-because there is no telemetry to toggle.
+no account, no upload, no opt-in or opt-out toggle for telemetry because
+there is no telemetry to toggle.
 
 This does **not** mean agentcam monitors the network activity of the
 wrapped agent or subprocess. If the wrapped command, an agent SDK, a
@@ -463,24 +463,14 @@ a bug; please file an issue.
   `git push --force`, etc.) is unavailable. Empty placeholder log
   files exist so the report template renders. Use the wrapping path
   if you need full output capture for a specific session.
-- **Interactive TUI agents must be invoked with a prompt arg, not bare.**
-  agentcam wraps subprocess stdout/stderr with `PIPE` (not a real TTY).
-  Agents like Claude Code that *refuse to open a TUI under non-TTY*
-  will error if invoked bare:
-  ```bash
-  agentcam run -- claude
-  # -> Error: Input must be provided either through stdin or as a prompt
-  #    argument when using --print
-  ```
-  Workarounds that DO work (claude switches to print mode when given a
-  prompt + no TTY):
-  ```bash
-  agentcam run -- claude "fix the failing tests"   # positional prompt
-  agentcam run -- claude -p "create hello.py"      # explicit -p
-  ```
-  For free-form interactive chat, invoke the agent directly (unwrapped).
-  True PTY-backed wrapping (Windows ConPTY / POSIX pty) so TUIs render
-  correctly under agentcam is on the roadmap.
+- **PTY wrapping is best-effort, not a full terminal emulator guarantee.**
+  The default `pty` backend is meant to let bare interactive TUI agents
+  (`claude`, `codex`) render and accept keyboard input under agentcam on
+  POSIX and Windows. Still, agentcam does not forward terminal resize
+  events, PTY mode merges stderr into stdout, and unusual TUI behavior can
+  still be agent- or platform-specific. If a specific interactive session
+  misbehaves, run that session directly or use `--backend pipe` with a
+  prompt/print-style command.
 - **No submodule traversal.** Running inside a submodule treats it as an
   independent repo. Superproject context is not analyzed.
 - **No sparse-checkout special handling.** Reports reflect what
@@ -531,7 +521,7 @@ src/agentcam/
                          # CaptureCapability, RulesetProvenance)
 ```
 
-Read [`docs/design.md`](docs/design.md) before changing anything — it
+Read [`docs/design.md`](docs/design.md) before changing anything; it
 records why each module is shaped the way it is, including the "we
 considered X and rejected it because Y" cases.
 
