@@ -7,6 +7,16 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Removed
+
+- **`known_manifest_basenames()` (dead code).** The public accessor in
+  `dependency_probe.py` had no caller anywhere in the repo; removed.
+- **`ROADMAP.md`.** The standalone pre-1.0 planning file is gone; the
+  handful of "see ROADMAP" pointers in `docs/design.md` and a
+  `git_state.py` comment are reworded to describe the planned work
+  inline. The `LICENSE` copyright holder is aligned to
+  `shihchengwei-lab` (was `shihchengwei`).
+
 ### Fixed
 
 - **PTY-mode reports get their Capture Visibility note back.** The

@@ -439,8 +439,3 @@ def scan_dependencies(
             ecosystem=ecosystem,
         ))
     return all_changes
-
-
-def known_manifest_basenames() -> frozenset[str]:
-    """Public accessor for the set of manifest basenames we recognize."""
-    return frozenset(_MANIFEST_REGISTRY.keys())

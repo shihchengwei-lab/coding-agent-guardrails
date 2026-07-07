@@ -470,7 +470,7 @@ Otherwise generate the normal report.
 
 **Why.** The product framing is "flight recorder" — recording should not
 require user discipline per invocation. Combined with the Hook-mode path
-on the roadmap (ROADMAP v0.2 #1), the model becomes "always record,
+on the roadmap (Hook-mode always-record), the model becomes "always record,
 throw away if nothing happened." Without this cleanup, every chat-only
 ("alignment thinking") session leaves a zero-value report under
 `.git/agentcam/runs/`, eventually degrading triage of the *interesting*
@@ -716,12 +716,12 @@ All three major platforms × both supported Python versions are green on
 real CI runners (not just local emulation).
 
 The Codex POSIX risks listed below remain valid as future-improvement
-items (see ROADMAP "POSIX hardening"). They're issues the test suite
+items (planned POSIX hardening). They're issues the test suite
 **doesn't cover** even when running on POSIX, not failures:
 
 The Codex cross-platform risk assessment identified 3 POSIX-specific
 concerns that the test suite does NOT exercise even when run on Linux
-(see ROADMAP v0.2 "POSIX hardening" entry):
+(planned POSIX hardening):
 
 1. `run_wrapped` SIGINT cleanup only kills the direct child, not the
    process group — `bash -lc` etc. can leave grandchildren. Fix needs
@@ -820,7 +820,7 @@ value, and would drown out direct-dep changes.
   diffed (vs HEAD) and reports "all removed"; the new name reports
   "all added". No cross-rename matching in v1.
 - Hook-mode probe failure leaving orphan run dirs: addressed in a
-  separate cleanup pass (broader than this probe — see ROADMAP).
+  separate cleanup pass (broader than this probe — planned future work).
 
 ---
 
