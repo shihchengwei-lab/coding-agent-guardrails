@@ -4,7 +4,7 @@ Plain dataclasses (no Pydantic) to keep dependencies to the standard library
 only. JSON serialization is done by ``report.py`` and the manifest writer, not
 by these classes.
 
-See ``docs/design.md`` (forthcoming) for the schema design rationale.
+See ``docs/design.md`` for the schema design rationale.
 """
 from __future__ import annotations
 
@@ -347,7 +347,7 @@ class ReportBundle:
     and dependency changes into a single value so multiple renderers
     (Markdown today; SARIF / PR-comment later) can consume the same
     object instead of each accepting a long arg list. See
-    ``docs/design.md`` decision 25 (forthcoming) for the rationale —
+    ``docs/design.md`` decision 26 for the rationale —
     we intentionally stopped short of a full event-stream layer
     because no current consumer needs streaming.
 

@@ -9,6 +9,14 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ### Fixed
 
+- **PTY-mode reports get their Capture Visibility note back.** The
+  report's notes table keyed the mode row on `wrap_pty`, but the
+  factories emit `wrap_pty_posix` / `wrap_pty_windows`, so reports
+  from the default PTY backend rendered an empty Notes cell for
+  `mode`. The table now carries the real keys (and drops the never
+  emitted `wrap_pty` / `ci` entries); the report's Verification
+  placeholder also stops promising "heuristic detection deferred to
+  v0.2" and points at `agentcam verify` instead.
 - **Repo destruction no longer kills the flight recorder.** If the
   wrapped agent corrupts the repo (`rm .git/HEAD`), the post-run git
   failure now degrades to an empty after-state plus a HIGH

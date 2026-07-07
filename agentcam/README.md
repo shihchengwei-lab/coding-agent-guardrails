@@ -36,6 +36,8 @@ After each run, you get an `AGENT_RUN_REPORT.md` answering four questions:
 
 See [`examples/risky-auth-change/expected-report.md`](examples/risky-auth-change/expected-report.md)
 for what a report looks like when the agent touches a sensitive area.
+(That sample is verbatim agentcam 0.1.0 output; current reports add the
+Capture Visibility and Scanner Ruleset sections described above.)
 
 ---
 

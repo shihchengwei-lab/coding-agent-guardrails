@@ -437,7 +437,7 @@ class PathMatchers:
     matcher kind can independently emit one flag per file, so a single
     file matching both a segment rule AND an extension rule still
     produces two flags. Folding into a single list would change that
-    dedup semantic — see ``docs/design.md`` (forthcoming) #26.
+    dedup semantic — see ``docs/design.md`` #27.
     """
 
     segments: tuple[tuple[str, str], ...] = ()

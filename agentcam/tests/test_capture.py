@@ -24,6 +24,8 @@ from agentcam.models import (
     RunPaths,
     capture_for_claude_hook,
     capture_for_wrap_pipe,
+    capture_for_wrap_pty_posix,
+    capture_for_wrap_pty_windows,
 )
 from agentcam.report import render_report, serialize_manifest, write_manifest
 
@@ -220,6 +222,32 @@ class TestRenderReport:
         )
         report = render_report(bundle)
         assert "## Capture Visibility" not in report
+
+    @pytest.mark.parametrize(
+        "factory",
+        [
+            capture_for_wrap_pipe,
+            capture_for_wrap_pty_posix,
+            capture_for_wrap_pty_windows,
+        ],
+    )
+    def test_mode_row_note_is_never_empty(self, tmp_path: Path, factory):
+        # Every factory-emitted mode must have a Notes entry in the
+        # rendered table — an empty cell reads as missing data.
+        c = factory(empty_run_policy="auto_delete_clean_no_diff")
+        m = _manifest(tmp_path, capture=c)
+        bundle = ReportBundle(
+            manifest=m,
+            state_before=_empty_state(),
+            state_after=_empty_state(),
+        )
+        report = render_report(bundle)
+        mode_row = next(
+            line for line in report.splitlines()
+            if line.startswith(f"| mode | `{c.mode}` |")
+        )
+        note = mode_row.rsplit("|", 2)[-2].strip()
+        assert note, f"empty Notes cell for mode {c.mode}"
 
     def test_capture_visibility_hook_mode_signals_no_output_scan(
         self, tmp_path: Path,

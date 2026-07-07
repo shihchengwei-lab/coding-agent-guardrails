@@ -388,12 +388,15 @@ def _render_header(m: RunManifest) -> str:
 
 
 _CAPTURE_NOTE: dict[str, str] = {
-    # mode
+    # mode — keys must match the mode strings the models.py factories
+    # emit, or the report's Notes cell renders empty.
     "wrap_pipe": "Subprocess wrapped via stdout/stderr PIPE; logs tee'd to disk.",
-    "wrap_pty": "Subprocess wrapped via PTY (Windows ConPTY / POSIX pty).",
+    "wrap_pty_posix": "Subprocess wrapped via POSIX pty; stdout and stderr "
+                      "merge into one stream.",
+    "wrap_pty_windows": "Subprocess wrapped via Windows ConPTY; stdout and "
+                        "stderr merge into one stream.",
     "claude_hook": "Recorded via Claude Code SessionStart / SessionEnd hooks; "
                    "no subprocess wrapping, no terminal output.",
-    "ci": "Recorded inside a CI runner.",
     # stdout / stderr
     "captured": "Streamed bytes preserved to raw log.",
     "not_available": "Not piped through agentcam in this mode.",
@@ -662,7 +665,8 @@ def _render_exit_detail(d: ExitDetail | None) -> str:
 def _render_verification_placeholder() -> str:
     return (
         "## Verification\n\n"
-        "- Tests observed: unknown (heuristic detection deferred to v0.2)\n"
+        "- Tests observed: unknown (this report does not detect checks; "
+        "`agentcam verify` records them into the manifest evidence)\n"
         "- Build observed: unknown\n"
         "- Lint observed: unknown"
     )
