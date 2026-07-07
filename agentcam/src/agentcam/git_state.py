@@ -177,7 +177,7 @@ def _untracked_content_hash(cwd: Path) -> bytes:
         fp.update(b"\x00")
         try:
             # surrogateescape preserves non-UTF8 byte paths on POSIX
-            # (see ROADMAP "POSIX hardening" — caveat 2).
+            # (planned POSIX hardening — caveat 2).
             path_str = path_bytes.decode("utf-8", errors="surrogateescape")
             content = (cwd / path_str).read_bytes()
             fp.update(hashlib.sha256(content).digest())
