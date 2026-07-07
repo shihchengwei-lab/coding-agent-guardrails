@@ -6,45 +6,24 @@ git repo, mirroring tests/test_e2e.py for parity.
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 import zipfile
 from pathlib import Path
 
-
-LIGHTWEIGHT_RUN_BACKEND = "pipe"
-
-
-def _agentcam(
-    cwd: Path,
-    *args: str,
-    run_backend: str | None = LIGHTWEIGHT_RUN_BACKEND,
-) -> subprocess.CompletedProcess:
-    argv = list(args)
-    if argv and argv[0] == "run" and run_backend and "--backend" not in argv:
-        argv[1:1] = ["--backend", run_backend]
-    return subprocess.run(
-        [sys.executable, "-m", "agentcam.cli", *argv],
-        cwd=cwd,
-        capture_output=True,
-        timeout=25,
-    )
-
-
-def _run_dir(repo: Path) -> Path:
-    return next((repo / ".git" / "agentcam" / "runs").iterdir())
+from cli_harness import _agentcam, _run_dir
+from cli_harness import _make_one_run as _make_plain_run
 
 
 def _make_one_run(repo: Path) -> str:
-    """Produce one diff-bearing run and return its run_id."""
-    proc = _agentcam(
-        repo, "run", "--",
-        sys.executable, "-c",
-        "open('produced.txt','w').write('hi'); "
-        "print('saw token sk-abcdefghijklmnopqrstuvwxyz1234567890')",
+    """One diff-bearing run whose log carries a leaked-looking token,
+    so the redaction assertions below have something to scrub."""
+    return _make_plain_run(
+        repo,
+        py_body=(
+            "open('produced.txt','w').write('hi'); "
+            "print('saw token sk-abcdefghijklmnopqrstuvwxyz1234567890')"
+        ),
     )
-    assert proc.returncode == 0, proc.stderr
-    return _run_dir(repo).name
 
 
 # ---------------------------------------------------------------------------

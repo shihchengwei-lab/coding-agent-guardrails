@@ -6,43 +6,10 @@ mirroring tests/test_export.py.
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
-
-LIGHTWEIGHT_RUN_BACKEND = "pipe"
-
-
-def _agentcam(
-    cwd: Path,
-    *args: str,
-    run_backend: str | None = LIGHTWEIGHT_RUN_BACKEND,
-) -> subprocess.CompletedProcess:
-    argv = list(args)
-    if argv and argv[0] == "run" and run_backend and "--backend" not in argv:
-        argv[1:1] = ["--backend", run_backend]
-    return subprocess.run(
-        [sys.executable, "-m", "agentcam.cli", *argv],
-        cwd=cwd,
-        capture_output=True,
-        timeout=25,
-    )
-
-
-def _run_dir(repo: Path) -> Path:
-    return next((repo / ".git" / "agentcam" / "runs").iterdir())
-
-
-def _make_one_run(repo: Path) -> str:
-    """Produce one diff-bearing run and return its run_id."""
-    proc = _agentcam(
-        repo, "run", "--",
-        sys.executable, "-c",
-        "open('produced.txt','w').write('hi')",
-    )
-    assert proc.returncode == 0, proc.stderr
-    return _run_dir(repo).name
+from cli_harness import _agentcam, _make_one_run, _run_dir
 
 
 # ---------------------------------------------------------------------------

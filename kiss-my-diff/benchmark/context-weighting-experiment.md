@@ -148,6 +148,8 @@ Stop when done.
 | contrast boundaries | 96.88 | 100.00 | 87.50 | 100.00 | 100.00 | 1.69 | 26.53 lines |
 | weighted + contrast | 93.75 | 100.00 | 100.00 | 100.00 | 75.00 | 1.47 | 22.66 lines |
 
+Raw run folders behind these numbers are gitignored (local-only); the tables are recorded measurements, not re-runnable artifacts.
+
 ## Reading The Result
 
 The strongest context weighting produced the smallest average patch for stronger
