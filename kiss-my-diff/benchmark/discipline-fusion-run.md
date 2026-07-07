@@ -32,7 +32,9 @@ from 78.94 to 86.42.
   once on a freshly re-prepared workspace; the retry finished in under 4
   minutes. No other run was retried.
 - Raw run folders are local only (`runs-fusion-20260705/`, gitignored),
-  like every other run root in this lab.
+  like every other run root in this lab. The machine-generated aggregate
+  of the discipline scores above is committed as
+  [`discipline-fusion-summary.md`](discipline-fusion-summary.md).
 
 ## Limits
 
