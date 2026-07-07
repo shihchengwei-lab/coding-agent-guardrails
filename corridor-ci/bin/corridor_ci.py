@@ -236,11 +236,16 @@ def extract_changed_files(repo: Path) -> list[str]:
     # core.quotepath=false: git's default C-quoting turns non-ASCII paths
     # into "src/caf\303\251.py", which can never match a declared Scope
     # pattern, so such files would always be flagged outside the corridor.
+    # encoding="utf-8": git emits UTF-8 path bytes; text=True alone decodes
+    # with the locale codepage (e.g. cp936 on Chinese Windows), which turns
+    # "caf\303\251" into mojibake and re-opens the same false-block.
     proc = subprocess.run(
         ["git", "-c", "core.quotepath=false", "diff", "--name-only", f"{base}...HEAD"],
         cwd=repo,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if proc.returncode != 0:
         raise SystemExit(f"failed to read changed files: {proc.stderr.strip()}")

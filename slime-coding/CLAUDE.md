@@ -11,8 +11,10 @@ Layout: `install.sh` (wires a target project), `hooks/hooks.template.json`
 When changing a hook executable in `bin/`, keep it dependency-free (stdlib
 Python 3 only), never crash the user's session (exit 0 silently on unexpected
 input), and remember: L2 gates may block on git facts only; L3 only reports.
-Run `python3 -c 'import ast; ast.parse(open("bin/patch-cost").read())'` to
-syntax-check after edits, and keep the `bin/` scripts executable (`chmod +x`).
+Run `python3 -c 'import ast; ast.parse(open("bin/patch-cost", encoding="utf-8").read())'`
+to syntax-check after edits (the explicit encoding matters: without it the
+check itself breaks on machines whose locale codepage is not UTF-8), and
+keep the `bin/` scripts executable (`chmod +x`).
 
 After changing `hooks/hooks.template.json` or `install.sh`, sanity-check the
 merge with `bash install.sh /tmp/throwaway-project` and confirm it is

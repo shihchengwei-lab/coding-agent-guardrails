@@ -99,8 +99,10 @@ actual changed files as the review boundary.
 
 `Review first` must be one of the changed files.
 
-Glob matching uses Python `fnmatch` semantics. `*` can cross `/`, so `pkg/*`
-also matches nested paths. `dir/**` means the directory and the whole subtree.
+Glob matching uses git-style semantics. `*` and `?` never cross `/`, so
+`pkg/*` matches `pkg/a.py` but not `pkg/sub/deep.py`. `**/` spans zero or
+more directories, so `pkg/**/*.py` covers both `pkg/top.py` and
+`pkg/sub/deep.py`. `dir/**` means the directory and the whole subtree.
 
 ## What It Checks
 

@@ -30,8 +30,9 @@ Headings, bold labels, and bullet labels are not fields. For example,
 ## Scope
 
 `Scope` is a comma-separated list of paths or glob patterns. Paths are normalized
-to forward slashes. Glob matching uses Python `fnmatch` semantics, where `*`
-also crosses `/`. `dir/**` means the directory and the whole subtree.
+to forward slashes. Glob matching uses git-style semantics: `*` and `?` never
+cross `/`, `**/` spans zero or more directories, and `dir/**` means the
+directory and the whole subtree.
 
 `Scope: auto` is also accepted. It uses the changed files as the declared review
 boundary.

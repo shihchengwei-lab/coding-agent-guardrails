@@ -13,6 +13,8 @@ cloning, so "versions" track the git history rather than published releases.
   reads the same file and clears the legacy "Slime Coding Codex" block on
   upgrade. Removed `templates/CLAUDE.slime.md`, `templates/AGENTS.slime.md`,
   and the per-tool `LICENSE` / git ignore files (the root copies apply).
+  The standalone CI workflow (`.github/workflows/ci.yml` below) became the
+  monorepo's `.github/workflows/slime-coding.yml`.
   This changelog is frozen from here on; further history lives in the
   monorepo git log.
 
