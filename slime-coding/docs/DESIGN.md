@@ -22,8 +22,9 @@ Slime Coding 的機制細節。理念與手動流程見 [`CONCEPT.md`](CONCEPT.m
 | L3 量測 | 模糊成本訊號 | report-only hook | 無（只回報） |
 
 ### L0 紀律
-`slime-navigate` skill 模板化：Goal Frontier、Start Frontier、Meeting
-Corridor、Semantic Delta、Non-goals、Pruned Paths、Stop Condition。把
+`slime-navigate` skill 模板化：Rigor、Goal Frontier、Start Frontier、Meeting
+Corridor、Semantic Delta、Non-goals、支持／反證 evidence、Pruned Paths、Stop
+Condition；high 再加入 Failure mode、Rollback、Independent check。把
 紀律文本由 monorepo 根安裝器寫進專案的 `CLAUDE.md` 與 `AGENTS.md`（單一來源是
 根目錄 `templates/DISCIPLINE.md`；`install-codex.ps1` 讀同一份）。走廊寫成
 `.slime/corridor.md`，供 L2、L3 讀。
@@ -66,6 +67,9 @@ Corridor、Semantic Delta、Non-goals、Pruned Paths、Stop Condition。把
   另放行 repo 元資料檔（`.gitignore`、`.gitattributes`、`.editorconfig`、
   `LICENSE`(`.md`/`.txt`)、`CHANGELOG.md`，basename 比對）——這些不是 product
   code，沒有 frontier 可算，硬擋只是摩擦。
+  未寫 `## Rigor` 的既有 artifact 維持 legacy 的 header／Paths 驗證；明確寫
+  `trivial`、`normal`、`high` 時，L2 只檢查可確定的 section／label 完整性，
+  不判斷內容品質。
   Stop 時若 product-code edit 落在 `## Paths` 外，預設 `block`：要求先縮回走廊，
   或更新 corridor 並寫出新 evidence。`.slime/` artifact 與 repo metadata 仍不擋。
   > 代價：這不是硬安全邊界——agent 可以先改 `corridor.md` 把走廊撐大再動別的
@@ -75,7 +79,9 @@ Corridor、Semantic Delta、Non-goals、Pruned Paths、Stop Condition。把
 ### L3 量測（成本訊號）
 `bin/patch-cost` 在 Stop 時當 `systemMessage` 回報模糊訊號：touched / new files
 計數、public API 變更（Dart `export` / `class` / …）、走廊外檔案（讀
-`corridor.md` 的 `## Paths` 判定）、**這輪是否動過 `corridor.md`**。
+`corridor.md` 的 `## Paths` 判定）、所選 Rigor、**這輪是否動過
+`corridor.md`**。Trivial 超過 1 個 product file、normal 超過 12 個，或非 high
+出現 API／dependency 訊號時，只回報 rigor mismatch 並建議升級。
 `systemMessage` 是給**使用者**看的（L3 的定位就是給人看的成本訊號）。其中
 走廊外 product-code edit 也會餵給 L2 Stop gate，預設 hard stop；其他成本訊號只回報。
 
@@ -141,8 +147,11 @@ repo-local skills 要在新 run 或重啟 Codex 後重新載入。
 
 ## artifact 格式
 
-`.slime/corridor.md` 需含 `# Corridor: <id>`、`## Semantic Delta`、`## Non-goals`
-與 `## Paths` 清單（glob）。
+`.slime/corridor.md` 一律需含 `# Corridor: <id>` 與 `## Paths` 清單（glob）。
+新 artifact 明確加入 `## Rigor`：trivial 另需 Scope、Stop Condition；normal 再需
+Semantic Delta、Non-goals、兩個 frontiers，以及含 `Supports:`／
+`Would falsify:` 的 Evidence；high 再需三個 High-risk Controls。舊 artifact
+不含 Rigor 時保持 legacy 相容。
 `.slime/PRUNED.md` 每筆以 `## [date] corridor:<id>` 開頭。範例見
 `templates/.slime/`。
 
@@ -171,9 +180,10 @@ slime-coding/
 
 ## 測試
 
-`tests/test.sh`（需要 python3 + git）跑 hook 的行為測試：走廊閘門、bootstrap
-放行、template 拒絕、`SLIME_PRUNE_RECENT` 異常值、Stop 的依賴 / 紅燈 / typecheck
-閘門、預設走廊外 product-code block，以及 `SLIME_STRICT_CORRIDOR=0` 的只回報降級。
+`tests/test.sh`（需要 python3 + git）跑 hook 的行為測試：走廊閘門、三級 Rigor
+結構與 legacy 相容、warning-only 低報訊號、bootstrap 放行、template 拒絕、
+`SLIME_PRUNE_RECENT` 異常值、Stop 的依賴 / 紅燈 / typecheck 閘門、預設走廊外
+product-code block，以及 `SLIME_STRICT_CORRIDOR=0` 的只回報降級。
 
 ```bash
 ./tests/test.sh
