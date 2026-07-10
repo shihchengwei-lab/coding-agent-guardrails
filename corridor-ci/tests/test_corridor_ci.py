@@ -758,6 +758,12 @@ class CorridorCiTest(unittest.TestCase):
     def _sample_evidence_manifest() -> dict:
         return {
             "schema_version": "0.1",
+            "capture": {
+                "mode": "wrap_pipe",
+                "stdout": "captured",
+                "stderr": "captured",
+                "output_risk_scan": "enabled",
+            },
             "evidence": {
                 "changed_files": [
                     {
@@ -786,6 +792,110 @@ class CorridorCiTest(unittest.TestCase):
                 ],
             },
         }
+
+    def test_read_agentcam_manifest_preserves_capture_and_compat_wrapper(self):
+        sample = self._sample_evidence_manifest()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "manifest.redacted.json"
+            path.write_text(json.dumps(sample), encoding="utf-8")
+            manifest, note = corridor_ci.read_agentcam_manifest(path)
+            evidence, compatibility_note = corridor_ci.read_agentcam_evidence(path)
+
+        self.assertIsNone(note)
+        self.assertEqual(manifest["capture"]["mode"], "wrap_pipe")
+        self.assertEqual(evidence, sample["evidence"])
+        self.assertIsNone(compatibility_note)
+
+    def test_verification_provenance_recorded_requires_matching_pass(self):
+        assessment = corridor_ci.classify_verification_provenance(
+            "pytest -q (exit 0) [recorded by agentcam]",
+            self._sample_evidence_manifest(),
+        )
+
+        self.assertEqual(assessment.status, "recorded")
+        self.assertFalse(assessment.partial)
+        self.assertEqual(assessment.warnings, [])
+
+    def test_verification_provenance_manual_without_matching_record(self):
+        assessment = corridor_ci.classify_verification_provenance(
+            "python -m unittest",
+            self._sample_evidence_manifest(),
+        )
+
+        self.assertEqual(assessment.status, "manual")
+        self.assertIn("does not match", "\n".join(assessment.warnings))
+
+    def test_verification_provenance_unverified_placeholders_and_fake_marker(self):
+        for value in (
+            "<fill in: agentcam did not observe a test run>",
+            "n/a",
+            "none",
+            "not run",
+            "unverified",
+            "ruff check . (exit 0) [recorded by agentcam]",
+        ):
+            with self.subTest(value=value):
+                assessment = corridor_ci.classify_verification_provenance(
+                    value,
+                    self._sample_evidence_manifest(),
+                )
+                self.assertEqual(assessment.status, "unverified")
+                self.assertTrue(assessment.warnings)
+
+    def test_verification_provenance_marks_hook_and_legacy_capture_partial(self):
+        hook = self._sample_evidence_manifest()
+        hook["capture"] = {
+            "mode": "claude_hook",
+            "stdout": "not_available",
+            "output_risk_scan": "disabled_no_output_stream",
+        }
+        hook_assessment = corridor_ci.classify_verification_provenance(
+            "pytest -q (exit 0) [recorded by agentcam]", hook
+        )
+        legacy = self._sample_evidence_manifest()
+        legacy.pop("capture")
+        legacy_assessment = corridor_ci.classify_verification_provenance(
+            "pytest -q (exit 0) [recorded by agentcam]", legacy
+        )
+
+        self.assertTrue(hook_assessment.partial)
+        self.assertTrue(legacy_assessment.partial)
+        self.assertIn("partial", "\n".join(hook_assessment.warnings))
+
+    def test_verification_provenance_tolerates_adversarial_manifest(self):
+        assessment = corridor_ci.classify_verification_provenance(
+            "manual browser check",
+            {"capture": ["bad"], "evidence": {"verifications": 42}},
+        )
+
+        self.assertEqual(assessment.status, "manual")
+        self.assertTrue(assessment.partial)
+
+    def test_provenance_warnings_never_change_verdict(self):
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                "frontend/tests/rating.spec.ts",
+            ],
+            corridor_text=VALID_HANDOFF,
+            allow_dependencies=False,
+            max_changed_files=12,
+            small_change_max_files=0,
+        )
+        before = corridor_ci.exit_code(report, mode="fail")
+        assessment = corridor_ci.classify_verification_provenance(
+            report.handoff["Verified"], None
+        )
+        rendered = corridor_ci.render_markdown(
+            report, verification_provenance=assessment
+        )
+
+        self.assertEqual(before, 0)
+        self.assertEqual(corridor_ci.exit_code(report, mode="fail"), 0)
+        self.assertIn("# Corridor CI: PASS", rendered)
+        self.assertIn("## Verification Provenance", rendered)
+        self.assertIn("status: manual", rendered)
+        self.assertIn("## Warnings", rendered)
 
     def test_read_agentcam_evidence_missing_file_is_silent(self):
         with tempfile.TemporaryDirectory() as tmp:

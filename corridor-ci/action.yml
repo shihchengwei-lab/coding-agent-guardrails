@@ -29,8 +29,8 @@ inputs:
     description: >-
       Checkout-relative path of a committed agentcam manifest.redacted.json
       (written by `agentcam export --files`). When present, its recorded
-      evidence is appended to the report. Display-only; never affects
-      pass/fail.
+      evidence and capture coverage are appended to the report. Verification
+      provenance may warn, but never affects pass/fail.
     required: false
     default: ".agentcam/manifest.redacted.json"
 

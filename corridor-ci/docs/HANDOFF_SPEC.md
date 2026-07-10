@@ -27,6 +27,18 @@ Risk: low
 Headings, bold labels, and bullet labels are not fields. For example,
 `### Decision`, `**Decision:** #123`, and `- Decision: #123` are invalid.
 
+## Verification Provenance
+
+`Verified` is required handoff context, not proof by itself. A manual command or
+check is accepted and labeled `manual`. When an agentcam manifest is committed,
+Corridor CI labels it `recorded` only if the handoff contains
+`[recorded by agentcam]` and an exact `command (exit 0)` match from that
+manifest. Placeholders, `n/a`, and unmatched recorded claims are `unverified`.
+Legacy or hook capture can additionally be labeled `partial`.
+
+These labels produce warnings only. They never change the pass conditions or
+the action exit code.
+
 ## Scope
 
 `Scope` is a comma-separated list of paths or glob patterns. Paths are normalized
