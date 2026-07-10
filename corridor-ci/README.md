@@ -99,6 +99,12 @@ actual changed files as the review boundary.
 
 `Review first` must be one of the changed files.
 
+`Verified` may describe a manual check. When a committed agentcam manifest is
+available, Corridor CI labels the line `recorded` only when its exact command
+and exit-0 result match the manifest. Otherwise it reports `manual` or
+`unverified`; hook-mode or legacy capture is also marked `partial`. These are
+provenance warnings, never additional pass/fail conditions.
+
 Glob matching uses git-style semantics. `*` and `?` never cross `/`, so
 `pkg/*` matches `pkg/a.py` but not `pkg/sub/deep.py`. `**/` spans zero or
 more directories, so `pkg/**/*.py` covers both `pkg/top.py` and
@@ -161,7 +167,7 @@ jobs:
 | `max_changed_files` | `12` | Optional changed-file limit. `0` disables it. |
 | `allow_dependencies` | `false` | Allow dependency manifest changes. |
 | `comment` | `false` | Upsert the report as a sticky PR comment. |
-| `agentcam_evidence` | `.agentcam/manifest.redacted.json` | Committed agentcam manifest (from `agentcam export --files`); its recorded evidence is appended to the report. Display-only, never affects pass/fail. |
+| `agentcam_evidence` | `.agentcam/manifest.redacted.json` | Committed agentcam manifest (from `agentcam export --files`); its evidence, verification provenance, and capture coverage are appended. Provenance warnings never affect pass/fail. |
 
 ## Philosophy
 

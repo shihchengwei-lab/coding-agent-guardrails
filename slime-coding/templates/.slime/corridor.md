@@ -4,6 +4,9 @@
 One or two lines describing the minimal change. Replace this whole file when
 you start a real task (or generate it with /slime-corridor).
 
+## Rigor
+normal
+
 ## Semantic Delta
 - This task changes: the smallest observable behaviour that must move.
 - This task preserves: existing APIs, data flow, architecture, naming, and
@@ -24,6 +27,11 @@ you start a real task (or generate it with /slime-corridor).
 ## Start Frontier
 - lib/feature/example/example_service.dart:ExampleService — the seam the
   change attaches to.
+
+## Evidence
+- Supports: the acceptance test reaches ExampleService through the existing
+  caller.
+- Would falsify: runtime tracing shows another component owns this behavior.
 
 ## Stop Condition
 - `dart test test/feature/example/` is green.

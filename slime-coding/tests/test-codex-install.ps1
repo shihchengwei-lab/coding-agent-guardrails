@@ -62,9 +62,15 @@ try {
   }
   if (Test-Path -LiteralPath $Skill) { Ok "4  installs repo-local Codex skill" } else { Bad "4  installs repo-local Codex skill" "missing" }
   if ((Test-Path -LiteralPath $Corridor) -and (Test-Path -LiteralPath $Pruned)) { Ok "5  seeds .slime artifacts" } else { Bad "5  seeds .slime artifacts" "missing" }
+  $corridorText = Get-Content -LiteralPath $Corridor -Raw
+  if ($corridorText -match "(?ms)^## Rigor\s+normal\s*$") {
+    Ok "5b seeds a normal-rigor corridor"
+  } else {
+    Bad "5b seeds a normal-rigor corridor" $corridorText
+  }
 
   $agentsText = Get-Content -LiteralPath $Agents -Raw
-  if ($agentsText -match "coding-agent-guardrails:discipline:start" -and $agentsText -match "minimal semantic displacement" -and $agentsText -match "Keep this\.") {
+  if ($agentsText -match "coding-agent-guardrails:discipline:start" -and $agentsText -match "smallest sufficient semantic displacement" -and $agentsText -match "Keep this\.") {
     Ok "6  installs the root discipline block without dropping existing text"
   } else {
     Bad "6  installs the root discipline block without dropping existing text" $agentsText
@@ -76,11 +82,17 @@ try {
   }
   if (Test-Path -LiteralPath $GitHook) { Ok "7  wires prepare-commit-msg hook" } else { Bad "7  wires prepare-commit-msg hook" "missing" }
 
+  Add-Content -LiteralPath $Corridor -Value "`n<!-- keep-existing-corridor -->"
   & powershell -NoProfile -ExecutionPolicy Bypass -File $Install -Project $Project | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "second install-codex.ps1 failed with $LASTEXITCODE" }
   $agentsText2 = Get-Content -LiteralPath $Agents -Raw
   $count = ([regex]::Matches($agentsText2, "coding-agent-guardrails:discipline:start")).Count
   if ($count -eq 1) { Ok "8  install is idempotent for AGENTS.md block" } else { Bad "8  install is idempotent for AGENTS.md block" "count=$count" }
+  if ((Get-Content -LiteralPath $Corridor -Raw) -match "keep-existing-corridor") {
+    Ok "8b reinstall preserves the existing corridor"
+  } else {
+    Bad "8b reinstall preserves the existing corridor" "marker missing"
+  }
 
   $hookText2 = Get-Content -LiteralPath $Hooks -Raw
   $hookJson2 = $hookText2 | ConvertFrom-Json

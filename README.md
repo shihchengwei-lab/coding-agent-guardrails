@@ -19,10 +19,17 @@ to "human presses merge". Each tool covers one stage:
 
 | Stage | Tool | What it adds |
 |---|---|---|
-| Before the agent starts | [kiss-my-diff](kiss-my-diff/) × [slime-coding](slime-coding/) rules | One unified discipline block in your `CLAUDE.md` / `AGENTS.md` ([templates/DISCIPLINE.md](templates/DISCIPLINE.md)): smallest readable change, minimal semantic drift, stop when done. |
+| Before the agent starts | [kiss-my-diff](kiss-my-diff/) × [slime-coding](slime-coding/) rules | One unified discipline block in your `CLAUDE.md` / `AGENTS.md` ([templates/DISCIPLINE.md](templates/DISCIPLINE.md)): smallest sufficient readable change, minimal semantic drift, stop when done. |
 | While the agent works | [slime-coding](slime-coding/) hooks | Automatic gates that hold the agent inside the corridor it declared before editing. |
 | After the agent claims done | [agentcam](agentcam/) | Records what actually changed: files, risk flags, diff stat, then drafts the PR handoff from that record. |
 | Before a human reviews | [corridor-ci](corridor-ci/) | Validates the five-line handoff against the actual diff and appends the recorded evidence to the PR report. |
+
+The collaboration discipline is one ordered loop, not four interchangeable
+slogans: reduce the request to observable necessities (first principles), let
+repo evidence support or falsify candidate routes (slime), choose the smallest
+sufficient change rather than merely the shortest diff (Occam), then label
+manual claims separately from recorded behavior. Read broadly, edit narrowly;
+stop when the observable condition is met.
 
 ## Why a Vibe-Built Tool Needs Guardrails
 
@@ -78,8 +85,9 @@ together:
    the PR.
 5. **Gate**: corridor-ci on the PR validates the handoff against the
    actual diff and appends the recorded evidence (risk flags, recorded
-   checks, diff stat) to its report. Evidence is display-only: it informs
-   the reviewer, it never flips the check.
+   checks, diff stat) to its report. It labels verification as recorded,
+   manual, or unverified, and marks partial observation. These provenance
+   warnings inform the reviewer; they never flip the check.
 
 Every tool also works standalone; each subdirectory has its own README.
 

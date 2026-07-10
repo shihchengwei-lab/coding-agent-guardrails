@@ -6,8 +6,9 @@
 > [`templates/DISCIPLINE.md`](../templates/DISCIPLINE.md). The numbers
 > below were measured on [`AGENT.md`](AGENT.md) used standalone; the file
 > is kept here verbatim as the measured specimen. The fused installer
-> block has its own same-day two-arm run — 24.8% smaller patches, 9.8%
-> fewer files touched, correctness unchanged on `gpt-5.5` — recorded in
+> block has a historical measured snapshot from a same-day two-arm run —
+> 24.8% smaller patches, 9.8% fewer files touched, correctness unchanged
+> on `gpt-5.5`. The result is bound to its immutable prompt fixture in
 > [`benchmark/discipline-fusion-run.md`](benchmark/discipline-fusion-run.md).
 
 Agents usually finish the task. The question is whether you want to kiss the diff afterward.

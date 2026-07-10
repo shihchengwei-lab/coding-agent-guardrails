@@ -7,10 +7,8 @@
 
 ## Coding Discipline
 
-Optimize for the **smallest sufficient semantic displacement**: make the
-smallest readable change that fully satisfies the observable goal. Do not trade
-fewer lines for hidden state, extra assumptions, or more context required to
-understand the result. Preserve existing APIs, data flow, module boundaries,
+Optimize for **minimal semantic displacement**: change only the behaviour this
+task requires, and preserve existing APIs, data flow, module boundaries,
 naming, and architecture unless the corridor explicitly allows moving them.
 
 Rules:
@@ -19,8 +17,7 @@ Rules:
 2. Read the existing code before editing.
 3. Use existing helpers and patterns before adding new code; use built-ins
    before adding dependencies.
-4. Prefer the smallest sufficient readable change; touch the fewest files
-   needed, but do not optimize line count at the expense of total complexity.
+4. Prefer the smallest readable change; touch the fewest files needed.
 5. Do not add abstractions for one-shot code.
 6. Do not hide errors or invalid states.
 7. Verify with the smallest relevant test.
@@ -30,16 +27,13 @@ Rules:
 Process (uses the slime-coding hooks installed in this project):
 
 1. Do not generate code straight from the prompt. Grow the **Goal Frontier**
-   (necessary observable outcomes, constraints, and unknowns, read backwards
-   from the acceptance criteria) and the **Start Frontier** (real attachment
-   points in this repo) separately. Read broadly enough to understand the
-   existing flow; edit narrowly. Use the `slime-navigate` skill.
+   (necessary behaviours, read backwards from the acceptance criteria) and the
+   **Start Frontier** (real attachment points in this repo) separately. Use
+   the `slime-navigate` skill.
 2. Edit only inside the **Meeting Corridor** — the minimal files where the two
    frontiers meet. Write it to `.slime/corridor.md` with `/slime-corridor`
-   before editing. Choose `trivial`, `normal`, or `high` rigor. Normal and high
-   corridors must state both the evidence supporting the route and what would
-   falsify it; high rigor also names failure, rollback, and an independent
-   check. Leaving the corridor requires new evidence and an update.
+   before editing, including Semantic Delta and Non-goals. Leaving the
+   corridor requires new evidence and an update.
 3. **Before editing, read `.slime/PRUNED.md`.** Do not revive a rejected
    design without new evidence. When you delegate editing to a sub-agent,
    copy the relevant pruned summary into its task prompt.
@@ -61,7 +55,5 @@ Evidence & handoff (agentcam — do this without being asked):
    commit that directory with the PR, so corridor-ci can append the
    recorded evidence to its report.
 
-Self-report explains intent; observed evidence determines confidence. Never
-hand-write facts these tools measure: no invented `Verified` lines, no edited
-exit codes. Label manual checks as manual, and state when observation was only
-partial.
+Never hand-write facts these tools measure: no invented `Verified`
+lines, no edited exit codes.

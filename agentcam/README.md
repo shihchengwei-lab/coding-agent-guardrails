@@ -313,7 +313,10 @@ agentcam export latest --files .agentcam/
 
 `export --files` writes the redacted run record in committable form.
 Commit it with the PR and corridor-ci appends it to its report as
-recorded evidence (display-only; it never affects the check).
+recorded evidence. Corridor CI cross-checks the handoff command against
+passing recorded checks and labels verification `recorded`, `manual`, or
+`unverified`; limited capture is marked `partial`. These provenance warnings
+are display-only and never affect the check.
 
 ---
 

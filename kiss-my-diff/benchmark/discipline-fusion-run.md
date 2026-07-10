@@ -1,9 +1,13 @@
 # Fused Discipline Block (2026-07-05 Run)
 
-This benchmark variant uses the monorepo's fused discipline block —
-[`templates/DISCIPLINE.md`](../../templates/DISCIPLINE.md), the text the
-one-command installer actually ships — copied verbatim into the agent
-workspace through the same `AGENT.md` channel as the `kiss` variant.
+This benchmark variant used the toolkit discipline text as it existed on
+2026-07-05. That historical measured fixture is committed verbatim as
+[`fixtures/discipline-fusion-20260705.md`](fixtures/discipline-fusion-20260705.md)
+so later edits to the live [`templates/DISCIPLINE.md`](../../templates/DISCIPLINE.md)
+cannot silently inherit these results.
+
+Measured discipline SHA-256:
+`sha256:e218bba510a9cf078cf55e6eff8e96171d2483c3144b4cad742618947dfc3f2b`.
 
 Two arms, run the same day on the same model snapshot: `gpt-5.5` via the
 Codex CLI, 8 tasks × 2 repetitions per arm (32 runs). The historical
@@ -23,7 +27,8 @@ from 78.94 to 86.42.
 
 ## Method Notes
 
-- The block is measured as shipped: it references slime-coding hooks and
+- The historical measured fixture was the shipped block at run time. It
+  references slime-coding hooks and
   agentcam commands that do not exist in the benchmark workspace, so this
   measures the text as plain prompt pressure — the same condition every
   other variant is measured under — not the full hook system.
