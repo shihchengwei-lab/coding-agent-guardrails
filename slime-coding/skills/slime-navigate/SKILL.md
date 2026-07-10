@@ -18,8 +18,17 @@ and do discovery first — Slime Coding has nothing to constrain yet.
 
 ## The five outputs
 
-Produce these, in order, before editing. Keep them short — this is a map, not
-a spec.
+Choose a rigor level, then produce the required outputs before editing. Keep
+them short — this is a map, not a spec.
+
+- **trivial** — one local product file, no dependency or public/API boundary
+  change: Scope, Paths, and Stop Condition only.
+- **normal** — the default: the full frontiers, semantic delta, non-goals, and
+  evidence below.
+- **high** — normal plus a failure mode, rollback, and independent check.
+
+Existing corridors without a Rigor section remain legacy-compatible. New
+corridors must state `trivial`, `normal`, or `high` explicitly.
 
 1. **Goal Frontier** — work *backwards* from the acceptance criteria. What
    behaviours are strictly necessary for the criteria to pass? List them. Each
@@ -30,26 +39,33 @@ a spec.
    real attachment points (file + symbol), not hypothetical ones.
 
 3. **Meeting Corridor** — where the two frontiers touch: the *minimal* set of
-   files/edits that connects an attachment point to a required behaviour.
+   files/edits that sufficiently connects an attachment point to every required
+   behaviour.
    This is the only place you are allowed to write. Anything outside it needs
    new evidence. Minimize semantic displacement, not just LOC: name the
    behaviour/concept that moves and the existing API, data flow, ownership,
    naming, or architecture boundary that must stay still.
 
-4. **Pruned Paths** — the designs you considered and rejected, each with the
+4. **Evidence and falsifier** — cite what supports the chosen attachment point
+   and state the cheapest observation that would prove this route wrong. Seek
+   disconfirming evidence before committing to the patch.
+
+5. **Pruned Paths** — the designs you considered and rejected, each with the
    reason (more deps, wider blast radius, no attachment point, speculative
    generality). Append these to `.slime/PRUNED.md` so the next round can't
    silently revive them. Use `/slime-prune`.
 
-5. **Stop Condition** — the observable signal that says "done": the check,
+6. **Stop Condition** — the observable signal that says "done": the check,
    test, or behaviour that, once green, means stop. No gold-plating past it.
 
 ## Write the corridor down
 
-Persist outputs 1–3 and 5 to `.slime/corridor.md` (use `/slime-corridor`) so
-the L2 corridor gate and the L3 out-of-corridor measurement can read it. The
-file must include a `# Corridor: <id>` line, `## Semantic Delta`, `## Non-goals`,
-and a `## Paths` list of the allowed globs.
+Persist the outputs required by the selected rigor to `.slime/corridor.md`
+(use `/slime-corridor`) so the L2 corridor gate and the L3 out-of-corridor
+measurement can read them. Normal and high corridors include `## Evidence`
+with `Supports:` and `Would falsify:` items. High additionally includes
+`## High-risk Controls` with `Failure mode:`, `Rollback:`, and
+`Independent check:` items.
 
 ## Before editing
 
@@ -57,10 +73,10 @@ and a `## Paths` list of the allowed globs.
   evidence; if you delegate editing to a sub-agent, copy the relevant pruned
   summary into its task prompt — sub-agents have their own context and do not
   see the main session's injected state.
-- Stay inside the corridor. If you find you must leave it, that is new
+- Read broadly; edit narrowly. Stay inside the corridor. If you find you must leave it, that is new
   evidence: update the corridor (and say why) rather than quietly widening it.
 
 ## The discipline in one line
 
-No code without a corridor; no corridor without two frontiers meeting; no
-pruned path without a recorded reason.
+No code without a sufficient corridor; no normal/high corridor without support
+and a falsifier; no pruned path without a recorded reason.

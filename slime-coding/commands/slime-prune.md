@@ -21,8 +21,8 @@ Steps:
    ```markdown
    ## [YYYY-MM-DD] corridor:<id>
    **Pruned:** <the rejected design, one line>
-   **Reason:** <why it has no evidence / why it loses>
-   **Revive only if:** <the new evidence that would change the verdict>
+   **Reason:** <the observed counter-evidence / why this route loses>
+   **Revive only if:** <the new evidence that would falsify this pruning decision>
    ```
 
    Use today's date. The `corridor:<id>` tag matters — the injection hook uses

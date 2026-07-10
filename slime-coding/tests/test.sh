@@ -425,5 +425,218 @@ case "$out" in
   *) bad "32 4-space pubspec + new dep -> block (names it)" "$out" ;;
 esac
 
+# === Rigor-aware corridor validation =======================================
+
+# 33: a legacy corridor has no Rigor section and must remain valid.
+R3="$(mkrepo)"
+mkdir -p "$R3/.slime"
+printf '# Corridor: legacy\n## Paths\n- lib/**\n' > "$R3/.slime/corridor.md"
+out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
+[ -z "$out" ] && ok "33 legacy corridor remains valid" || bad "33 legacy corridor remains valid" "$out"
+
+printf '# Corridor: legacy-labeled\n## Paths (allowed files)\n- lib/**\n' > "$R3/.slime/corridor.md"
+out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
+[ -z "$out" ] && ok "33b legacy decorated Paths heading remains valid" || bad "33b legacy decorated Paths heading remains valid" "$out"
+
+# 34: an explicit but unknown rigor is an unambiguous format error.
+cat > "$R3/.slime/corridor.md" <<'EOF'
+# Corridor: bad-rigor
+## Rigor
+extreme
+## Paths
+- lib/**
+EOF
+out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
+case "$out" in
+  *'"deny"'*"unknown rigor"*) ok "34 unknown rigor -> deny" ;;
+  *) bad "34 unknown rigor -> deny" "$out" ;;
+esac
+
+cat > "$R3/.slime/corridor.md" <<'EOF'
+# Corridor: empty-rigor
+## Rigor
+## Paths
+- lib/**
+EOF
+out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
+case "$out" in
+  *'"deny"'*"empty Rigor"*) ok "34b empty explicit rigor -> deny" ;;
+  *) bad "34b empty explicit rigor -> deny" "$out" ;;
+esac
+
+# 35: trivial requires only Scope, Paths, and Stop Condition.
+cat > "$R3/.slime/corridor.md" <<'EOF'
+# Corridor: tiny-fix
+## Rigor
+trivial
+## Scope
+Correct one local typo.
+## Paths
+- lib/x.py
+## Stop Condition
+- The focused check passes.
+EOF
+out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
+[ -z "$out" ] && ok "35 complete trivial corridor -> allow" || bad "35 complete trivial corridor -> allow" "$out"
+
+# 36: explicit rigor activates structural validation.
+sed '/## Stop Condition/,$d' "$R3/.slime/corridor.md" > "$R3/.slime/corridor.tmp"
+mv "$R3/.slime/corridor.tmp" "$R3/.slime/corridor.md"
+out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
+case "$out" in
+  *'"deny"'*"Stop Condition"*) ok "36 trivial missing Stop Condition -> deny" ;;
+  *) bad "36 trivial missing Stop Condition -> deny" "$out" ;;
+esac
+
+# 37: normal requires both supporting and falsifying evidence.
+cat > "$R3/.slime/corridor.md" <<'EOF'
+# Corridor: normal-fix
+## Rigor
+normal
+## Scope
+Change one observable behavior.
+## Semantic Delta
+- This task changes: the requested behavior.
+- This task preserves: existing APIs.
+## Non-goals
+- No unrelated refactor.
+## Paths
+- lib/**
+## Goal Frontier
+- The acceptance criterion passes.
+## Start Frontier
+- lib/x.py:run
+## Evidence
+- Supports: the failing test reaches lib/x.py:run.
+- Would falsify: the stack trace points to another owner.
+## Stop Condition
+- The focused test passes.
+EOF
+out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
+[ -z "$out" ] && ok "37 complete normal corridor -> allow" || bad "37 complete normal corridor -> allow" "$out"
+
+sed '/Supports:/d' "$R3/.slime/corridor.md" > "$R3/.slime/corridor.tmp"
+mv "$R3/.slime/corridor.tmp" "$R3/.slime/corridor.md"
+out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
+case "$out" in
+  *'"deny"'*"Supports:"*) ok "38 normal missing Supports evidence -> deny" ;;
+  *) bad "38 normal missing Supports evidence -> deny" "$out" ;;
+esac
+
+sed 's/- Would falsify:/- Supports: replacement\n- Missing falsifier:/' "$R3/.slime/corridor.md" > "$R3/.slime/corridor.tmp"
+mv "$R3/.slime/corridor.tmp" "$R3/.slime/corridor.md"
+out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
+case "$out" in
+  *'"deny"'*"Would falsify:"*) ok "39 normal missing falsifier -> deny" ;;
+  *) bad "39 normal missing falsifier -> deny" "$out" ;;
+esac
+
+# 40: high adds explicit failure, rollback, and independent-check controls.
+cat > "$R3/.slime/corridor.md" <<'EOF'
+# Corridor: risky-change
+## Rigor
+high
+## Scope
+Change a high-risk behavior.
+## Semantic Delta
+- This task changes: the requested behavior.
+- This task preserves: existing ownership.
+## Non-goals
+- No unrelated migration.
+## Paths
+- lib/**
+## Goal Frontier
+- The acceptance criterion passes.
+## Start Frontier
+- lib/x.py:run
+## Evidence
+- Supports: the runtime trace reaches lib/x.py:run.
+- Would falsify: the trace bypasses that seam.
+## Stop Condition
+- The focused and full checks pass.
+## High-risk Controls
+- Failure mode: requests may be rejected.
+- Rollback: revert the feature flag.
+- Independent check: run the integration suite.
+EOF
+out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
+[ -z "$out" ] && ok "40 complete high corridor -> allow" || bad "40 complete high corridor -> allow" "$out"
+
+for field in 'Failure mode:' 'Rollback:' 'Independent check:'; do
+  grep -v -- "$field" "$R3/.slime/corridor.md" > "$R3/.slime/corridor.tmp"
+  mv "$R3/.slime/corridor.tmp" "$R3/.slime/corridor.missing.md"
+  mv "$R3/.slime/corridor.md" "$R3/.slime/corridor.full.md"
+  mv "$R3/.slime/corridor.missing.md" "$R3/.slime/corridor.md"
+  out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
+  case "$out" in
+    *'"deny"'*"$field"*) ok "41 high missing $field -> deny" ;;
+    *) bad "41 high missing $field -> deny" "$out" ;;
+  esac
+  mv "$R3/.slime/corridor.md" "$R3/.slime/corridor.missing.md"
+  mv "$R3/.slime/corridor.full.md" "$R3/.slime/corridor.md"
+done
+
+# 42: rigor mismatch signals are report-only and do not create a Stop block.
+TIER="$(mkrepo)"
+mkdir -p "$TIER/.slime" "$TIER/lib"
+cat > "$TIER/.slime/corridor.md" <<'EOF'
+# Corridor: under-scoped
+## Rigor
+trivial
+## Scope
+One local change.
+## Paths
+- lib/**
+## Stop Condition
+- Focused check passes.
+EOF
+printf 'old\n' > "$TIER/lib/a.py"
+printf 'old\n' > "$TIER/lib/b.py"
+git -C "$TIER" add -A && git -C "$TIER" commit -qm init
+printf 'class A:\n    pass\n' > "$TIER/lib/a.py"
+printf 'new\n' > "$TIER/lib/b.py"
+out=$(stop "$TIER" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "42 trivial mismatch stays warning-only" "$out" ;;
+  *"rigor mismatch"*"consider normal/high"*) ok "42 trivial mismatch stays warning-only" ;;
+  *) bad "42 trivial mismatch stays warning-only" "$out" ;;
+esac
+
+# 43: normal above the existing 12-file review default suggests high, not block.
+NORM="$(mkrepo)"
+mkdir -p "$NORM/.slime" "$NORM/lib"
+cat > "$NORM/.slime/corridor.md" <<'EOF'
+# Corridor: broad-normal
+## Rigor
+normal
+## Scope
+Update a broad generated surface.
+## Semantic Delta
+- This task changes: generated values.
+- This task preserves: public APIs.
+## Non-goals
+- No architecture change.
+## Paths
+- lib/**
+## Goal Frontier
+- Generated values are current.
+## Start Frontier
+- lib/:generated files
+## Evidence
+- Supports: the generator owns these files.
+- Would falsify: a hand-owned file appears.
+## Stop Condition
+- Generated output check passes.
+EOF
+for i in $(seq 1 13); do printf 'old\n' > "$NORM/lib/$i.txt"; done
+git -C "$NORM" add -A && git -C "$NORM" commit -qm init
+for i in $(seq 1 13); do printf 'new\n' > "$NORM/lib/$i.txt"; done
+out=$(stop "$NORM" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "43 broad normal mismatch stays warning-only" "$out" ;;
+  *"rigor mismatch"*"consider high"*) ok "43 broad normal mismatch stays warning-only" ;;
+  *) bad "43 broad normal mismatch stays warning-only" "$out" ;;
+esac
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

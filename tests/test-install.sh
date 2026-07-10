@@ -31,7 +31,7 @@ for doc in CLAUDE.md AGENTS.md; do
     echo "FAIL: $doc discipline block count=$count (expected exactly 1)" >&2
     exit 1
   fi
-  grep -q "minimal semantic displacement" "$doc"
+  grep -q "smallest sufficient semantic displacement" "$doc"
   grep -q "agentcam verify" "$doc"   # the block must teach the handoff loop
 done
 
@@ -51,6 +51,8 @@ assert any("hook-session-end" in c for c in cmds), cmds
 PY
 
 test -f .github/workflows/corridor.yml
+grep -q '^## Rigor$' .slime/corridor.md
+grep -A1 '^## Rigor$' .slime/corridor.md | grep -q '^normal$'
 
 # agentcam must have been installed into the venv (not just hinted at),
 # and it must be this checkout's version — `verify` exists.

@@ -103,6 +103,31 @@ def is_git(cwd):
 # --------------------------------------------------------------------------
 TEMPLATE_ID = "example-feature"
 TEMPLATE_GLOBS = {"lib/feature/example/**", "test/feature/example/**"}
+RIGOR_LEVELS = {"trivial", "normal", "high"}
+RIGOR_REQUIRED_SECTIONS = {
+    "trivial": ("scope", "paths", "stop condition"),
+    "normal": (
+        "scope",
+        "semantic delta",
+        "non-goals",
+        "paths",
+        "goal frontier",
+        "start frontier",
+        "evidence",
+        "stop condition",
+    ),
+    "high": (
+        "scope",
+        "semantic delta",
+        "non-goals",
+        "paths",
+        "goal frontier",
+        "start frontier",
+        "evidence",
+        "stop condition",
+        "high-risk controls",
+    ),
+}
 
 
 def corridor_id(cwd):
@@ -116,6 +141,54 @@ def corridor_id(cwd):
     except OSError:
         return None
     return None
+
+
+def corridor_sections(cwd):
+    """Parse ``##`` sections once for rigor validation and path matching.
+
+    Values are stripped, non-empty source lines.  Section names are normalized
+    to lower case because the Markdown is author-written, while the required
+    shape remains deterministic enough for the L2 gate.
+    """
+    path = os.path.join(cwd, ".slime", "corridor.md")
+    sections = {}
+    current = None
+    try:
+        with open(path, encoding="utf-8") as f:
+            for raw in f:
+                stripped = raw.strip()
+                heading = re.match(r"##\s+(.+?)\s*$", stripped)
+                if heading:
+                    current = " ".join(heading.group(1).lower().split())
+                    sections.setdefault(current, [])
+                    continue
+                if current is not None and stripped:
+                    sections[current].append(stripped)
+    except OSError:
+        return {}
+    return sections
+
+
+def corridor_rigor(cwd, sections=None):
+    """Return explicit rigor, ``legacy``, or an invalid raw value."""
+    sections = corridor_sections(cwd) if sections is None else sections
+    if "rigor" not in sections:
+        return "legacy"
+    values = [
+        line
+        for line in sections.get("rigor", [])
+        if not line.startswith("<!--")
+    ]
+    if not values:
+        return "<empty>"
+    if len(values) != 1:
+        return "<multiple values>"
+    return values[0].strip().lower()
+
+
+def section_has_labeled_item(sections, section, label):
+    pattern = re.compile(r"-\s*" + re.escape(label) + r"\s*\S", re.IGNORECASE)
+    return any(pattern.match(line) for line in sections.get(section, []))
 
 
 def corridor_problem(cwd):
@@ -137,6 +210,43 @@ def corridor_problem(cwd):
         return ".slime/corridor.md has an empty '## Paths' list"
     if any(g in TEMPLATE_GLOBS for g in globs):
         return ".slime/corridor.md still lists the template example paths"
+
+    sections = corridor_sections(cwd)
+    rigor = corridor_rigor(cwd, sections)
+    if rigor == "legacy":
+        # Compatibility contract: an existing corridor with no explicit Rigor
+        # keeps the pre-rigor validation shape (header + non-template Paths).
+        return None
+    if rigor not in RIGOR_LEVELS:
+        if rigor == "<empty>":
+            return ".slime/corridor.md has an empty Rigor section"
+        return (
+            ".slime/corridor.md has unknown rigor "
+            + repr(rigor)
+            + "; expected trivial, normal, or high"
+        )
+
+    for required in RIGOR_REQUIRED_SECTIONS[rigor]:
+        if not sections.get(required):
+            display = " ".join(word.capitalize() for word in required.split())
+            return f".slime/corridor.md rigor {rigor} requires a non-empty '## {display}' section"
+
+    if rigor in {"normal", "high"}:
+        if not section_has_labeled_item(sections, "evidence", "Supports:"):
+            return ".slime/corridor.md Evidence requires a non-empty 'Supports:' item"
+        if not section_has_labeled_item(sections, "evidence", "Would falsify:"):
+            return ".slime/corridor.md Evidence requires a non-empty 'Would falsify:' item"
+
+    if rigor == "high":
+        for label in ("Failure mode:", "Rollback:", "Independent check:"):
+            if not section_has_labeled_item(
+                sections, "high-risk controls", label
+            ):
+                return (
+                    ".slime/corridor.md High-risk Controls requires a non-empty '"
+                    + label
+                    + "' item"
+                )
     return None
 
 
@@ -331,24 +441,33 @@ def run_typecheck(cwd):
 # L3 — Stop: cost report
 # --------------------------------------------------------------------------
 def corridor_globs(cwd):
-    path = os.path.join(cwd, ".slime", "corridor.md")
     globs = []
-    try:
-        with open(path, encoding="utf-8") as f:
-            in_paths = False
-            for line in f:
-                s = line.strip()
-                if s.lower().startswith("## paths"):
-                    in_paths = True
-                    continue
-                if in_paths:
-                    if s.startswith("##"):
-                        break
-                    m = re.match(r"-\s+(.+)", s)
-                    if m:
-                        globs.append(m.group(1).strip())
-    except OSError:
-        return []
+    sections = corridor_sections(cwd)
+    if "rigor" not in sections:
+        # This is the pre-rigor parser kept verbatim for compatibility.
+        path = os.path.join(cwd, ".slime", "corridor.md")
+        try:
+            with open(path, encoding="utf-8") as f:
+                in_paths = False
+                for raw in f:
+                    line = raw.strip()
+                    if line.lower().startswith("## paths"):
+                        in_paths = True
+                        continue
+                    if in_paths:
+                        if line.startswith("##"):
+                            break
+                        match = re.match(r"-\s+(.+)", line)
+                        if match:
+                            globs.append(match.group(1).strip())
+        except OSError:
+            return []
+        return globs
+
+    for line in sections.get("paths", []):
+        match = re.match(r"-\s+(.+)", line)
+        if match:
+            globs.append(match.group(1).strip())
     return globs
 
 
@@ -434,9 +553,20 @@ def l3_report(cwd):
 
     globs = corridor_globs(cwd)
     out_corr = out_of_corridor_files(cwd)
+    rigor = corridor_rigor(cwd)
+    product = sorted(
+        {
+            path
+            for path in touched + new_files
+            if not path.startswith(".slime/")
+            and os.path.basename(path) not in META_BASENAMES
+        }
+    )
+    dependency_signal = bool(new_dependencies(cwd))
 
     lines = [
         "Slime Coding — cost report:",
+        f"  corridor rigor: {rigor}",
         f"  touched files: {len(touched)}",
         f"  new files: {len(new_files)}",
         f"  public-API additions (Dart export/class/enum/mixin/typedef): {api}",
@@ -453,6 +583,33 @@ def l3_report(cwd):
         git(cwd, "status", "--porcelain", "--", ".slime/corridor.md").strip()
     )
     lines.append(f"  corridor changed this session: {'yes' if corridor_changed else 'no'}")
+    mismatch_reasons = []
+    if rigor == "trivial":
+        if len(product) > 1:
+            mismatch_reasons.append(f"{len(product)} product files changed")
+        if api:
+            mismatch_reasons.append(f"{api} public-API addition(s) detected")
+        if dependency_signal:
+            mismatch_reasons.append("a dependency change was detected")
+        if mismatch_reasons:
+            lines.append(
+                "  rigor mismatch: trivial evidence suggests consider normal/high ("
+                + "; ".join(mismatch_reasons)
+                + ")"
+            )
+    elif rigor == "normal":
+        if len(product) > 12:
+            mismatch_reasons.append(f"{len(product)} product files changed")
+        if api:
+            mismatch_reasons.append(f"{api} public-API addition(s) detected")
+        if dependency_signal:
+            mismatch_reasons.append("a dependency change was detected")
+        if mismatch_reasons:
+            lines.append(
+                "  rigor mismatch: normal evidence suggests consider high ("
+                + "; ".join(mismatch_reasons)
+                + ")"
+            )
     return "\n".join(lines)
 
 
