@@ -33,6 +33,11 @@ Risk: low
 Thirty seconds for the author. It hands the maintainer the boundary instead
 of hiding it in the diff.
 
+The author's words explain intent. Recorded behavior determines confidence:
+manual checks stay labeled manual, and a check is called recorded only when
+the committed observation matches it. Missing or partial observation stays
+visible instead of being promoted into proof.
+
 An author who cannot fill in these five lines, no matter who they are, is
 not ready to ask for review.
 

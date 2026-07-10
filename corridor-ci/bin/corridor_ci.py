@@ -63,6 +63,13 @@ class Report:
     warnings: list[str]
 
 
+@dataclass(frozen=True)
+class VerificationProvenance:
+    status: str
+    partial: bool
+    warnings: list[str]
+
+
 def normalize_path(path: str) -> str:
     cleaned = path.strip().replace("\\", "/")
     while cleaned.startswith("./"):
@@ -428,10 +435,10 @@ def evaluate(
 AGENTCAM_EVIDENCE_DEFAULT = ".agentcam/manifest.redacted.json"
 
 
-def read_agentcam_evidence(path: Path) -> tuple[dict | None, str | None]:
-    """Best-effort read of a committed agentcam evidence manifest.
+def read_agentcam_manifest(path: Path) -> tuple[dict | None, str | None]:
+    """Best-effort read of a committed agentcam manifest.
 
-    Returns ``(evidence, note)``. Recorded evidence is display-only and
+    Returns ``(manifest, note)``. Recorded evidence is display-only and
     must never affect pass/fail, so this never raises: a missing file
     yields ``(None, None)`` (no section), an unreadable or evidence-less
     manifest yields ``(None, one-line note)``.
@@ -447,7 +454,93 @@ def read_agentcam_evidence(path: Path) -> tuple[dict | None, str | None]:
             f"agentcam manifest at `{path.name}` has no evidence section "
             "(recorded by an older agentcam)."
         )
-    return data["evidence"], None
+    return data, None
+
+
+def read_agentcam_evidence(path: Path) -> tuple[dict | None, str | None]:
+    """Compatibility wrapper returning only the manifest evidence block."""
+    manifest, note = read_agentcam_manifest(path)
+    if manifest is None:
+        return None, note
+    return manifest["evidence"], None
+
+
+UNVERIFIED_VALUES = {"n/a", "none", "not run", "unverified"}
+RECORDED_MARKER = "[recorded by agentcam]"
+
+
+def classify_verification_provenance(
+    verified: str | None,
+    manifest: dict | None,
+) -> VerificationProvenance:
+    """Classify handoff verification without changing the corridor verdict.
+
+    Both the PR body and committed manifest are author-controlled.  A handoff
+    earns ``recorded`` only when its stable marker and exact ``command (exit
+    0)`` fragment agree with a passed check in the manifest.  Everything else
+    degrades to a warning-only manual or unverified status.
+    """
+    value = verified.strip() if isinstance(verified, str) else ""
+    normalized = value.lower()
+    marker_present = RECORDED_MARKER in normalized
+    evidence = manifest.get("evidence") if isinstance(manifest, dict) else None
+    checks = evidence.get("verifications") if isinstance(evidence, dict) else None
+    passing_commands = []
+    for check in checks if isinstance(checks, list) else []:
+        if not isinstance(check, dict) or check.get("exit_code") != 0:
+            continue
+        command = check.get("command")
+        if isinstance(command, str) and command.strip():
+            passing_commands.append(command.strip())
+
+    matched = marker_present and any(
+        f"{command} (exit 0)" in value for command in passing_commands
+    )
+    warnings = []
+    placeholder = normalized.startswith("<fill in") or normalized in UNVERIFIED_VALUES
+    if matched:
+        status = "recorded"
+    elif marker_present:
+        status = "unverified"
+        warnings.append(
+            "Verified claims `[recorded by agentcam]`, but no matching passed "
+            "recorded check was found"
+        )
+    elif not value or placeholder:
+        status = "unverified"
+        warnings.append("Verified has no completed check; verification is unverified")
+    else:
+        status = "manual"
+        if passing_commands:
+            warnings.append(
+                "Verified does not match a passed recorded check; treating it as manual"
+            )
+        else:
+            warnings.append(
+                "Verified is author-supplied; no matching passed agentcam check was found"
+            )
+
+    partial = False
+    if isinstance(manifest, dict):
+        capture = manifest.get("capture")
+        if not isinstance(capture, dict):
+            partial = True
+        else:
+            partial = (
+                capture.get("mode") == "claude_hook"
+                or capture.get("stdout") == "not_available"
+                or capture.get("output_risk_scan") != "enabled"
+            )
+    if partial:
+        warnings.append(
+            "agentcam observation coverage is partial; terminal-output evidence may be unavailable"
+        )
+
+    return VerificationProvenance(
+        status=status,
+        partial=partial,
+        warnings=warnings,
+    )
 
 
 def compact_markdown(value: str) -> list[str]:
@@ -513,10 +606,22 @@ def render_agentcam_section(
     return lines
 
 
+def render_verification_provenance(
+    provenance: VerificationProvenance | None,
+) -> list[str]:
+    if provenance is None:
+        return []
+    lines = ["", "## Verification Provenance", f"- status: {provenance.status}"]
+    if provenance.partial:
+        lines.append("- observation coverage: partial")
+    return lines
+
+
 def render_markdown(
     report: Report,
     agentcam_evidence: dict | None = None,
     agentcam_note: str | None = None,
+    verification_provenance: VerificationProvenance | None = None,
 ) -> str:
     status = "PASS" if report.ok else "FAIL"
     lines = [
@@ -558,6 +663,7 @@ def render_markdown(
         lines.extend(f"- `{p}`" for p in report.dependency_files)
 
     lines.extend(render_agentcam_section(agentcam_evidence, agentcam_note))
+    lines.extend(render_verification_provenance(verification_provenance))
 
     if report.issues:
         lines.append("")
@@ -570,10 +676,13 @@ def render_markdown(
         lines.append("```md")
         lines.extend(COPYABLE_REVIEW_HANDOFF.splitlines())
         lines.append("```")
-    if report.warnings:
+    warnings = list(report.warnings)
+    if verification_provenance is not None:
+        warnings.extend(verification_provenance.warnings)
+    if warnings:
         lines.append("")
         lines.append("## Warnings")
-        lines.extend(f"- {warning}" for warning in report.warnings)
+        lines.extend(f"- {warning}" for warning in warnings)
     return "\n".join(lines) + "\n"
 
 
@@ -689,11 +798,20 @@ def main(argv: list[str] | None = None) -> int:
         max_changed_files=args.max_changed_files,
         small_change_max_files=args.small_change_max_files,
     )
-    evidence, evidence_note = read_agentcam_evidence(
+    manifest, evidence_note = read_agentcam_manifest(
         repo / args.agentcam_evidence
     )
+    evidence = manifest.get("evidence") if isinstance(manifest, dict) else None
+    provenance = None
+    if any(report.handoff.values()) or manifest is not None or evidence_note is not None:
+        provenance = classify_verification_provenance(
+            report.handoff.get("Verified"), manifest
+        )
     markdown = render_markdown(
-        report, agentcam_evidence=evidence, agentcam_note=evidence_note
+        report,
+        agentcam_evidence=evidence,
+        agentcam_note=evidence_note,
+        verification_provenance=provenance,
     )
     print(markdown)
     write_step_summary(markdown)
