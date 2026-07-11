@@ -879,7 +879,15 @@ class CorridorCiTest(unittest.TestCase):
             (workflows / "agentcam.yml").read_text(encoding="utf-8"),
         )
         self.assertIn(
+            "working-directory: .",
+            (workflows / "agentcam.yml").read_text(encoding="utf-8"),
+        )
+        self.assertIn(
             "name: Slime tests",
+            (workflows / "slime-coding.yml").read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            "working-directory: .",
             (workflows / "slime-coding.yml").read_text(encoding="utf-8"),
         )
         self.assertIn(
