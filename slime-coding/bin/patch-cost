@@ -9,7 +9,6 @@ product file. PRUNED.md records rejected routes; it never waives a red gate.
 
 Trusted checks are loaded from <git-dir>/guardrails/config.json and executed
 as argv with shell=False. SLIME_TEST_TIMEOUT may lower their timeout ceiling.
-Legacy SLIME_TYPECHECK_CMD and SLIME_TEST_CMD values are migration errors.
   SLIME_PUBSPEC        alternate pubspec path (default pubspec.yaml).
 """
 import json
@@ -119,10 +118,10 @@ def corridor_sections(cwd):
 
 
 def corridor_rigor(cwd, sections=None):
-    """Return explicit rigor, ``legacy``, or an invalid raw value."""
+    """Return explicit rigor or an invalid sentinel/raw value."""
     sections = corridor_sections(cwd) if sections is None else sections
     if "rigor" not in sections:
-        return "legacy"
+        return "<missing>"
     values = [
         line
         for line in sections.get("rigor", [])
@@ -140,7 +139,7 @@ def section_has_labeled_item(sections, section, label):
     return any(pattern.match(line) for line in sections.get(section, []))
 
 
-def corridor_problem(cwd, require_migrated=False):
+def corridor_problem(cwd):
     """Return a reason string if the corridor is missing/invalid, else None.
 
     Only unambiguous signals block: missing file, missing header, the template
@@ -171,13 +170,11 @@ def corridor_problem(cwd, require_migrated=False):
 
     sections = corridor_sections(cwd)
     rigor = corridor_rigor(cwd, sections)
-    if rigor == "legacy":
-        if require_migrated:
-            return (
-                ".slime/corridor.md requires an explicit Rigor migration before "
-                "product work can continue"
-            )
-        return None
+    if rigor == "<missing>":
+        return (
+            ".slime/corridor.md requires an explicit Rigor migration before "
+            "product work can continue"
+        )
     if rigor not in RIGOR_LEVELS:
         if rigor == "<empty>":
             return ".slime/corridor.md has an empty Rigor section"
@@ -206,13 +203,6 @@ def corridor_problem(cwd, require_migrated=False):
                     + label
                     + "' item"
                 )
-    for lines in sections.values():
-        if any(re.match(r"-\s*(?:Independent check )?Command:", line, re.IGNORECASE) for line in lines):
-            return (
-                "inline Command fields are disabled; migration requires Check IDs "
-                "from <git-dir>/guardrails/config.json"
-            )
-
     primary = stop_check_ids(cwd)
     manual = stop_manual(cwd)
     if not primary and not manual:
@@ -645,27 +635,6 @@ def run_trusted_check(cwd, check, check_id):
 def corridor_globs(cwd):
     globs = []
     sections = corridor_sections(cwd)
-    if "rigor" not in sections:
-        # This is the pre-rigor parser kept verbatim for compatibility.
-        path = os.path.join(cwd, ".slime", "corridor.md")
-        try:
-            with open(path, encoding="utf-8") as f:
-                in_paths = False
-                for raw in f:
-                    line = raw.strip()
-                    if line.lower().startswith("## paths"):
-                        in_paths = True
-                        continue
-                    if in_paths:
-                        if line.startswith("##"):
-                            break
-                        match = re.match(r"-\s+(.+)", line)
-                        if match:
-                            globs.append(match.group(1).strip())
-        except OSError:
-            return []
-        return globs
-
     for line in sections.get("paths", []):
         match = re.match(r"-\s+(.+)", line)
         if match:
@@ -687,28 +656,47 @@ def current_head(cwd):
     return git(cwd, "rev-parse", "HEAD").strip() or None
 
 
-def file_signature(cwd, path):
+def _stream_sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        while chunk := f.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def index_signatures(cwd):
+    """Read the full index once and map repo-relative paths to stage records."""
+    result = {}
+    for record in git(cwd, "ls-files", "--stage", "-z").split("\0"):
+        if not record or "\t" not in record:
+            continue
+        metadata, path = record.split("\t", 1)
+        result[path] = metadata
+    return result
+
+
+def file_signature(cwd, path, index=None):
     absolute = os.path.join(cwd, path)
     if os.path.islink(absolute):
         worktree = "symlink:" + os.readlink(absolute)
     elif os.path.isfile(absolute):
         try:
-            with open(absolute, "rb") as f:
-                worktree = "file:" + hashlib.sha256(f.read()).hexdigest()
+            worktree = "file:" + _stream_sha256(absolute)
         except OSError as exc:
             worktree = "unreadable:" + type(exc).__name__
     elif os.path.exists(absolute):
         worktree = "other"
     else:
         worktree = "missing"
-    index = git(cwd, "ls-files", "--stage", "--", path).strip()
-    return {"worktree": worktree, "index": index}
+    index = index_signatures(cwd) if index is None else index
+    return {"worktree": worktree, "index": index.get(path, "")}
 
 
 def dirty_signatures(cwd):
     touched, new_files = head_changed_paths(cwd)
+    index = index_signatures(cwd)
     return {
-        path: file_signature(cwd, path)
+        path: file_signature(cwd, path, index)
         for path in sorted(set(touched + new_files))
     }
 
@@ -955,18 +943,7 @@ def product_paths(cwd, baseline=None):
 def stop_blocks(cwd, baseline=None):
     blocks = []
     products = product_paths(cwd, baseline)
-    problem = corridor_problem(cwd, require_migrated=bool(products))
-    legacy_env = [
-        name for name in ("SLIME_TEST_CMD", "SLIME_TYPECHECK_CMD")
-        if os.environ.get(name)
-    ]
-    if legacy_env and products:
-        blocks.append(
-            "Legacy command environment migration required: "
-            + ", ".join(legacy_env)
-            + " is no longer executed; define trusted Check IDs in "
-            "<git-dir>/guardrails/config.json."
-        )
+    problem = corridor_problem(cwd)
     if problem and products:
         blocks.append(
             "Product code changed but "
@@ -989,7 +966,7 @@ def stop_blocks(cwd, baseline=None):
             ".slime/corridor.md Evidence."
         )
 
-    if not problem and not legacy_env:
+    if not problem:
         checks, config_error = load_trusted_checks(cwd)
         primary_ids = stop_check_ids(cwd)
         independent_id = (
@@ -1085,7 +1062,7 @@ def post_tool(data):
     baseline = load_baseline(cwd, data)
     outside = out_of_corridor_files(cwd, baseline)
     products = product_paths(cwd, baseline)
-    problem = corridor_problem(cwd, require_migrated=bool(products))
+    problem = corridor_problem(cwd)
     reasons = []
     if problem and products:
         reasons.append(

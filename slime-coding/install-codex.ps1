@@ -59,32 +59,6 @@ function Copy-DirectoryFresh {
   Copy-Item -LiteralPath $Source -Destination $Destination -Recurse
 }
 
-function Install-ManagedBlock {
-  param(
-    [string]$Path,
-    [string]$Block,
-    [string]$Start,
-    [string]$End
-  )
-  $managed = "$Start`n$Block`n$End"
-  $content = ""
-  if (Test-Path -LiteralPath $Path) {
-    $content = Get-Content -LiteralPath $Path -Raw
-  }
-  $pattern = "(?s)" + [regex]::Escape($Start) + ".*?" + [regex]::Escape($End) + "\s*"
-  $content = [regex]::Replace($content, $pattern, "")
-  # Pre-fusion installs wrote a "Slime Coding Codex" block; clear it so an
-  # upgrade does not leave two overlapping discipline texts behind.
-  $legacy = "(?s)" + [regex]::Escape("<!-- >>> Slime Coding Codex -->") + ".*?" + [regex]::Escape("<!-- <<< Slime Coding Codex -->") + "\s*"
-  $content = [regex]::Replace($content, $legacy, "").TrimEnd()
-  if ($content.Length -gt 0) {
-    $content = "$content`n`n$managed`n"
-  } else {
-    $content = "$managed`n"
-  }
-  Set-Content -LiteralPath $Path -Value $content -Encoding utf8
-}
-
 function Resolve-PythonInvocation {
   param([string]$Command)
   if ($Command -match '^"([^"]+)"(?:\s+(.*))?$') {
@@ -115,12 +89,10 @@ function Merge-Hooks {
 
   $settings = [ordered]@{ hooks = [ordered]@{} }
   if (Test-Path -LiteralPath $SettingsPath) {
-    Copy-Item -LiteralPath $SettingsPath -Destination ($SettingsPath + ".bak-" + (Get-Date -Format "yyyyMMddHHmmss")) -Force
     try {
       $settings = ConvertFrom-JsonCompat (Get-Content -LiteralPath $SettingsPath -Raw)
     } catch {
-      Write-Host "  warning: existing $SettingsPath is not valid JSON; starting fresh (backup kept next to it)"
-      $settings = [ordered]@{ hooks = [ordered]@{} }
+      throw "Existing $SettingsPath is not valid JSON; no project files were changed."
     }
   }
   if (-not $settings.Contains("hooks") -or $null -eq $settings["hooks"]) {
@@ -190,7 +162,7 @@ try {
 Write-Host "Slime Coding home : $SlimeHome"
 Write-Host "Target project    : $Project"
 
-$managedPaths = @(".codex", ".agents/skills/slime-navigate", ".slime", "AGENTS.md")
+$managedPaths = @(".codex", ".agents/skills/slime-navigate", ".slime")
 $journal = Join-Path ([System.IO.Path]::GetTempPath()) ("slime-journal-" + [guid]::NewGuid())
 $backupRoot = Join-Path $journal "backup"
 New-Item -ItemType Directory -Force -Path $backupRoot | Out-Null
@@ -227,15 +199,6 @@ if (-not (Test-Path -LiteralPath (Join-Path $slimeDir "corridor.md"))) {
   Write-Host "  .slime/ already present - left untouched"
 }
 
-# The discipline text is the toolkit-wide single source: the root
-# templates/DISCIPLINE.md, written with the same markers the root
-# installer uses, so running either installer leaves exactly one block.
-$disciplineFile = Join-Path (Split-Path -Parent $SlimeHome) "templates/DISCIPLINE.md"
-$agentsBlock = Get-Content -LiteralPath $disciplineFile -Raw
-Install-ManagedBlock -Path (Join-Path $Project "AGENTS.md") -Block $agentsBlock.Trim() `
-  -Start "<!-- coding-agent-guardrails:discipline:start -->" `
-  -End "<!-- coding-agent-guardrails:discipline:end -->"
-Write-Host "  installed discipline block (root templates/DISCIPLINE.md) -> $(Join-Path $Project 'AGENTS.md')"
 } catch {
   foreach ($relative in $managedPaths) {
     $target = Join-Path $Project $relative
@@ -252,5 +215,5 @@ Write-Host "  installed discipline block (root templates/DISCIPLINE.md) -> $(Joi
 }
 
 Write-Host ""
-Write-Host "Done. Restart Codex or start a new Codex run in the target repo so AGENTS.md and hooks are reloaded."
+Write-Host "Done. Restart Codex or start a new Codex run in the target repo so hooks are reloaded."
 Write-Host "Review and trust project hooks with /hooks if Codex marks them as untrusted."

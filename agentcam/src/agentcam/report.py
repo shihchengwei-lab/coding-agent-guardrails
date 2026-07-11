@@ -108,9 +108,6 @@ def write_run_artifacts(
     - Scan raw subprocess logs for output-pattern flags and combine
       into ``risk_flags`` before calling (hook mode has no logs, so
       passes a path-scan-only list).
-    - Write any placeholder log files needed by the report's "Logs"
-      section before calling (hook mode does this; wrap mode's tee
-      threads already wrote real logs).
     - Wrap this call in try/except/finally if the call site has
       cleanup obligations (e.g. hook mode's orphan run-dir cleanup).
     """
@@ -367,7 +364,6 @@ _CAPTURE_NOTE: dict[str, str] = {
     # stdout / stderr
     "captured": "Streamed bytes preserved to raw log.",
     "not_available": "Not piped through agentcam in this mode.",
-    "placeholder": "Empty file written so the report template renders.",
     # scans
     "enabled": "Scanner produced flags for this run.",
     "disabled_no_output_stream": "No output stream to scan in this mode.",
@@ -698,6 +694,12 @@ def _render_rollback(manifest: RunManifest, state: GitState) -> str:
 
 
 def _render_logs(m: RunManifest) -> str:
+    if m.capture.stdout == "not_available" and m.capture.stderr == "not_available":
+        return (
+            "## Logs\n\n"
+            "- stdout: unavailable in hook mode\n"
+            "- stderr: unavailable in hook mode"
+        )
     stdout_path = _relative_to_git_root(m.paths.stdout_redacted, m.git_root)
     stderr_path = _relative_to_git_root(m.paths.stderr_redacted, m.git_root)
     return (

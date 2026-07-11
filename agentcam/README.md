@@ -211,8 +211,8 @@ drops its recorded checks with the rest of the session state.
 
 **Hook-mode reports do not include stdout/stderr.** Claude Code does
 not pipe its terminal output through hook subprocesses, so agentcam
-cannot capture it. The Logs section in a hook-mode report points to
-empty placeholder files; **output-pattern risk flags** (`rm -rf`,
+cannot capture it. The report marks both streams unavailable and creates no
+log files; **output-pattern risk flags** (`rm -rf`,
 `git push --force`, etc.) are unavailable. **Path-based risk flags
 and the Dependency Changes section are unaffected**: both read
 git state and working-tree files, not the transcript. If you need
@@ -471,8 +471,8 @@ a bug; please file an issue.
 - **Hook mode captures no stdout/stderr.** Claude Code does not pipe
   its terminal output through hook subprocesses, so a hook-mode report
   shows path-based risk flags only; output-pattern scanning (`rm -rf`,
-  `git push --force`, etc.) is unavailable. Empty placeholder log
-  files exist so the report template renders. Use the wrapping path
+  `git push --force`, etc.) is unavailable. No stdout/stderr log files are
+  created in hook mode. Use the wrapping path
   if you need full output capture for a specific session.
 - **PTY wrapping is best-effort, not a full terminal emulator guarantee.**
   The default `pty` backend is meant to let bare interactive TUI agents

@@ -1022,6 +1022,11 @@ class CorridorCiTest(unittest.TestCase):
 
         self.assertEqual(assessment.status, "unverified")
 
+    def test_legacy_recorded_marker_parser_is_pruned(self):
+        source = Path(corridor_ci.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("LEGACY_RECORDED_MARKER", source)
+        self.assertNotIn("legacy_marker_present", source)
+
     def test_risk_enum_and_manifest_floor_are_enforced(self):
         invalid = corridor_ci.apply_manifest_policy(
             corridor_ci.evaluate(

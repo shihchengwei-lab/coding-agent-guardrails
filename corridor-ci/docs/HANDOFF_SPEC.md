@@ -37,7 +37,7 @@ check is accepted and labeled `manual`. When an agentcam manifest is committed,
 Corridor CI labels it `local-recorded` only if the handoff contains
 `[locally recorded by agentcam]`, exact fixed grammar, an integer exit code 0,
 matching verification state, and a product fingerprint equal to the current
-PR. The legacy `[recorded by agentcam]` marker is rejected.
+PR. Any other recorded-looking marker is an unmatched claim.
 Placeholders, `n/a`, and unmatched recorded claims are `unverified`
 and fail the corridor. Manual checks remain valid and labeled `manual`. Legacy
 or hook capture can additionally be labeled `partial` without changing the
@@ -60,9 +60,8 @@ reason.
 ## Pass Conditions
 
 A report passes when all required fields are present, `Review first` is one of
-the changed files, every changed file is covered by the declared scope, the
-changed-file limit is not exceeded, and dependency manifest changes are allowed
-or absent.
+the changed files, every changed file is covered by the declared scope, and
+dependency manifest changes are approved or absent.
 
 All changes require all five fields. File count is not a proxy for semantic
 risk: a one-file policy, authentication, migration, or workflow change still

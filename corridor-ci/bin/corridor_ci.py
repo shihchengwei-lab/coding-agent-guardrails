@@ -620,7 +620,6 @@ def read_agentcam_manifest(path: Path) -> tuple[dict | None, str | None]:
 
 UNVERIFIED_VALUES = {"n/a", "none", "not run", "unverified"}
 LOCAL_RECORDED_MARKER = "[locally recorded by agentcam]"
-LEGACY_RECORDED_MARKER = "[recorded by agentcam]"
 
 
 def classify_verification_provenance(
@@ -640,8 +639,8 @@ def classify_verification_provenance(
     value = verified.strip() if isinstance(verified, str) else ""
     normalized = value.lower()
     local_marker_present = LOCAL_RECORDED_MARKER in normalized
-    legacy_marker_present = LEGACY_RECORDED_MARKER in normalized
-    marker_present = local_marker_present or legacy_marker_present
+    recorded_claim_present = "recorded by agentcam" in normalized
+    marker_present = local_marker_present or recorded_claim_present
     evidence = manifest.get("evidence") if isinstance(manifest, dict) else None
     checks = evidence.get("verifications") if isinstance(evidence, dict) else None
     final_state = manifest.get("final_state_fingerprint") if isinstance(manifest, dict) else None
@@ -674,7 +673,6 @@ def classify_verification_provenance(
     )
     matched = (
         local_marker_present
-        and not legacy_marker_present
         and bool(claimed)
         and len(claimed) == len(set(claimed))
         and all(fragment in expected for fragment in claimed)
@@ -690,9 +688,7 @@ def classify_verification_provenance(
         status = "local-recorded"
     elif marker_present:
         status = "unverified"
-        if legacy_marker_present:
-            warnings.append("legacy `[recorded by agentcam]` marker is no longer accepted")
-        elif not product_matches:
+        if local_marker_present and not product_matches:
             warnings.append("locally recorded verification is stale for the current PR product")
         else:
             warnings.append(

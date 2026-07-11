@@ -20,7 +20,7 @@ to "human presses merge". Each tool covers one stage:
 | Stage | Tool | What it adds |
 |---|---|---|
 | Before the agent starts | [kiss-my-diff](kiss-my-diff/) × [slime-coding](slime-coding/) rules | One unified discipline block in your `CLAUDE.md` / `AGENTS.md` ([templates/DISCIPLINE.md](templates/DISCIPLINE.md)): smallest sufficient readable change, minimal semantic drift, stop when done. |
-| While the agent works | [slime-coding](slime-coding/) hooks | Turn-scoped gates: direct edits are checked before writing; shell writes are checked immediately afterward and again at Stop. |
+| While the agent works | [slime-coding](slime-coding/) hooks | Turn-scoped gates: direct edits are checked before writing; shell writes are checked immediately afterward and again at Stop. An OS sandbox, not a hook, is the filesystem security boundary. |
 | After the agent claims done | [agentcam](agentcam/) | Records what actually changed: files, risk flags, diff stat, then drafts the PR handoff from that record. |
 | Before a human reviews | [corridor-ci](corridor-ci/) | Validates the five-line handoff against the actual diff and appends the recorded evidence to the PR report. |
 
@@ -108,12 +108,13 @@ together:
 5. **Gate**: corridor-ci on the PR validates the handoff against the
    actual diff and appends the recorded evidence (risk flags, recorded
    checks, diff stat) to its report. It labels author-controlled matching
-   evidence as `local-recorded`, otherwise `manual` or `unverified`,
-   manual, or unverified, and marks partial observation. Manual and partial
+   evidence as `local-recorded`, otherwise `manual` or `unverified`, and marks
+   partial observation. Manual and partial
    provenance stay visible; a placeholder or false recorded claim fails the
    corridor.
 
 Every tool also works standalone; each subdirectory has its own README.
+Breaking upgrades are listed in [the migration guide](docs/MIGRATION.md).
 
 A workflow file is not a merge gate by itself. Repository administrators must
 make Corridor and the relevant test jobs required checks in branch protection

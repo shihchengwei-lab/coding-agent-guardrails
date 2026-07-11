@@ -397,7 +397,7 @@ class TestOrphanCleanupOnFailure:
     """If anything between create_run_dir and write_manifest raises,
     the hook must:
     1. always exit 0 (never block Claude Code)
-    2. remove the half-built run dir (no orphan placeholder logs)
+    2. remove the half-built run dir (no orphan partial artifacts)
     3. remove the session dir (so repeated failures don't accumulate)
     """
 
@@ -439,10 +439,10 @@ class TestOrphanCleanupOnFailure:
         )
 
         # Run dir either never created or already removed -- no
-        # orphan placeholder logs.
+        # orphan partial artifacts.
         runs = _runs_dir(tmp_git_repo)
         assert not runs.exists() or not any(runs.iterdir()), (
-            "run dir must not be left as orphan with placeholder logs"
+            "run dir must not be left as an orphan partial artifact"
         )
 
 
@@ -489,6 +489,14 @@ class TestCaptureVisibilityHookMode:
         assert "## Capture Visibility" in report
         assert "claude_hook" in report
         assert "disabled_no_output_stream" in report
+
+        run_dir = next(_runs_dir(tmp_git_repo).iterdir())
+        for name in (
+            "stdout.log", "stderr.log", "stdout.redacted.log", "stderr.redacted.log",
+        ):
+            assert not (run_dir / name).exists(), name
+        assert "stdout: unavailable in hook mode" in report
+        assert "stderr: unavailable in hook mode" in report
 
     def test_hook_mode_without_transcript_path_marks_unknown(
         self, tmp_git_repo: Path,
