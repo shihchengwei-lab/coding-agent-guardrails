@@ -101,8 +101,8 @@ the diff instead of declaring where the change was meant to stop.
 available, Corridor CI labels the line `local-recorded` only when its exact
 grammar, integer exit-0 result, verification state fingerprint, and product
 fingerprint match the current PR and the handoff uses
-`[locally recorded by agentcam]`. The old marker is rejected. Otherwise it reports `manual` or
-`unverified`; hook-mode or legacy capture is also marked `partial`. Manual
+`[locally recorded by agentcam]`. Any unmatched recorded-looking claim is
+`unverified`; hook-mode or incomplete capture is also marked `partial`. Manual
 verification remains valid and visibly weaker. A placeholder or false recorded
 claim is `unverified` and fails the corridor.
 

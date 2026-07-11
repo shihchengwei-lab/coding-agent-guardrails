@@ -382,20 +382,11 @@ def _do_session_end(
     # try/except swallows it and returns 0. The try/except/finally
     # below guarantees:
     #   - any failure: the half-built run dir is removed (no
-    #     orphan placeholder logs without a report)
+    #     orphan partial artifacts without a report)
     #   - all paths: session dir is removed (it served its purpose
     #     once we have state_after, regardless of report success)
     #   - failures still re-raise so the outer catch can stderr-log.
     try:
-        # No stdout/stderr in hook mode — the hook can't access Claude
-        # Code's transcript. Write empty placeholder log files so the
-        # report's Logs section has paths to point to.
-        for log_path_str in (
-            run_paths.stdout_raw, run_paths.stderr_raw,
-            run_paths.stdout_redacted, run_paths.stderr_redacted,
-        ):
-            Path(log_path_str).write_bytes(b"")
-
         # Path-based risk scan only — output-pattern scan needs logs
         # we don't have in hook mode.
         risk_flags = scan_paths(state_after.changed_files)
@@ -446,7 +437,7 @@ def _do_session_end(
         sync_manifest(Path(run_paths.run_dir))
     except Exception:
         # Half-written run dir is worse than no run dir — it confuses
-        # the user (placeholder logs, no report, unclear what
+        # the user (partial artifacts, no report, unclear what
         # happened). Best-effort remove; re-raise so the outer catch
         # can stderr-log.
         shutil.rmtree(run_paths.run_dir, ignore_errors=True)

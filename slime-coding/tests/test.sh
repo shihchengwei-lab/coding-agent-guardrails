@@ -69,7 +69,7 @@ case "$out" in
   *) bad "3  template corridor + edit code -> deny" "$out" ;;
 esac
 
-printf '# Corridor: real\n## Paths\n- lib/**\n' > "$D/.slime/corridor.md"
+printf '# Corridor: real\n## Rigor\ntrivial\n## Outcome\nEdit lib only.\n## Paths\n- lib/**\n## Stop Condition\n- Manual: inspected\n' > "$D/.slime/corridor.md"
 out=$(pre "$D" "$D/lib/x.dart" | python3 "$PATCH")
 [ -z "$out" ] && ok "4  valid corridor + edit allowed file -> allow" || bad "4  valid corridor + edit allowed file -> allow" "$out"
 
@@ -164,7 +164,7 @@ esac
 # A3: valid corridor + edit a file OUTSIDE the corridor -> deny before writing.
 G="$(mkrepo)"
 mkdir -p "$G/.slime"
-printf '# Corridor: real\n## Paths\n- lib/**\n' > "$G/.slime/corridor.md"
+printf '# Corridor: real\n## Rigor\ntrivial\n## Outcome\nEdit lib only.\n## Paths\n- lib/**\n## Stop Condition\n- Manual: inspected\n' > "$G/.slime/corridor.md"
 git -C "$G" add -A && git -C "$G" commit -qm init
 out=$(pre "$G" "$G/other/y.py" | python3 "$PATCH")
 case "$out" in
@@ -347,10 +347,10 @@ mkdir -p "$P5/.slime"; printf '# Corridor: real\n## Paths\n- lib/**\n' > "$P5/.s
 git -C "$P5" add -A && git -C "$P5" commit -qm init
 printf 'name: d\ndependencies:\n  flutter:\n    sdk: flutter\n  http: ^1\n' > "$P5/pubspec.yaml"
 out=$(stop "$P5" | SLIME_TYPECHECK_CMD='sh -c "exit 1"' python3 "$PATCH")
-if grep -q 'migration required' <<<"$out" && grep -q 'New dependency' <<<"$out" && grep -q http <<<"$out"; then
-  ok "23 legacy env migration + dependency both block"
+if grep -q 'New dependency' <<<"$out" && grep -q http <<<"$out" && ! grep -q 'SLIME_TYPECHECK_CMD' <<<"$out"; then
+  ok "23 retired env is ignored while dependency still blocks"
 else
-  bad "23 legacy env migration + dependency both block" "$out"
+  bad "23 retired env is ignored while dependency still blocks" "$out"
 fi
 
 # AC6: a second Stop re-runs the gate; red does not become green by retrying Stop.
@@ -520,7 +520,7 @@ else
   bad "32d Cargo and Go new deps -> block" "$out"
 fi
 
-# 32e: an explicit Stop Condition command runs without extra environment setup.
+# 32e: an inline Stop Condition command is inert and cannot satisfy the grammar.
 AUTOCHK="$(mkrepo)"
 mkdir -p "$AUTOCHK/.slime"
 cat > "$AUTOCHK/.slime/corridor.md" <<'EOF'
@@ -537,22 +537,28 @@ EOF
 mkdir -p "$AUTOCHK/lib" && printf 'delta\n' > "$AUTOCHK/lib/x.py"
 out=$(stop "$AUTOCHK" | python3 "$PATCH")
 case "$out" in
-  *'"block"'*"inline Command"*) ok "32e inline Stop command requires migration and is not run" ;;
-  *) bad "32e inline Stop command requires migration and is not run" "$out" ;;
+  *'"block"'*"Check: or Manual:"*) ok "32e inline Stop command is inert and does not satisfy the gate" ;;
+  *) bad "32e inline Stop command is inert and does not satisfy the gate" "$out" ;;
 esac
 
 # === Rigor-aware corridor validation =======================================
 
-# 33: a legacy corridor has no Rigor section and must remain valid.
+# 33: a corridor without Rigor is rejected instead of silently downgraded.
 R3="$(mkrepo)"
 mkdir -p "$R3/.slime"
 printf '# Corridor: legacy\n## Paths\n- lib/**\n' > "$R3/.slime/corridor.md"
 out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
-[ -z "$out" ] && ok "33 legacy corridor remains valid" || bad "33 legacy corridor remains valid" "$out"
+case "$out" in
+  *'"deny"'*"explicit Rigor"*) ok "33 corridor without Rigor is rejected" ;;
+  *) bad "33 corridor without Rigor is rejected" "$out" ;;
+esac
 
 printf '# Corridor: legacy-labeled\n## Paths (allowed files)\n- lib/**\n' > "$R3/.slime/corridor.md"
 out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
-[ -z "$out" ] && ok "33b legacy decorated Paths heading remains valid" || bad "33b legacy decorated Paths heading remains valid" "$out"
+case "$out" in
+  *'"deny"'*) ok "33b decorated legacy Paths heading is rejected" ;;
+  *) bad "33b decorated legacy Paths heading is rejected" "$out" ;;
+esac
 
 # 34: an explicit but unknown rigor is an unambiguous format error.
 cat > "$R3/.slime/corridor.md" <<'EOF'

@@ -10,7 +10,7 @@
 #   ./install.sh [/path/to/target/project]
 #
 # Re-running is safe (idempotent): existing Slime Coding hooks are replaced,
-# not duplicated, and a timestamped backup of settings.json is kept.
+# not duplicated, and the transaction restores project files on failure.
 set -euo pipefail
 
 SLIME_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -87,7 +87,7 @@ SETTINGS="$PROJECT/.claude/settings.json"
 #    install does not depend on the clone keeping its executable bit).
 SLIME_HOME="$SLIME_HOME" SETTINGS="$SETTINGS" TEMPLATE="$SLIME_HOME/hooks/hooks.template.json" \
 "$PY" - <<'PY'
-import json, os, re, shutil, time
+import json, os, re
 
 home = os.environ["SLIME_HOME"]
 settings_path = os.environ["SETTINGS"]
@@ -108,12 +108,8 @@ template = fill(template)
 
 settings = {}
 if os.path.exists(settings_path):
-    try:
-        with open(settings_path, encoding="utf-8") as f:
-            settings = json.load(f)
-    except (OSError, ValueError):
-        settings = {}
-    shutil.copy2(settings_path, settings_path + ".bak-" + time.strftime("%Y%m%d%H%M%S"))
+    with open(settings_path, encoding="utf-8") as f:
+        settings = json.load(f)
 
 hooks = settings.setdefault("hooks", {})
 SLIME = re.compile(r"/bin/(prune-inject|patch-cost)")
@@ -160,6 +156,6 @@ Done. The L0 discipline block comes from the toolkit's root installer
 (templates/DISCIPLINE.md -> CLAUDE.md + AGENTS.md).
 
 Trusted checks: <git-dir>/guardrails/config.json. SLIME_TEST_TIMEOUT may lower
-the timeout ceiling. SLIME_TEST_CMD and SLIME_TYPECHECK_CMD are not executed.
+the timeout ceiling. See the migration guide for retired command settings.
 See $SLIME_HOME/README.md.
 EOF

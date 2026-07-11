@@ -93,18 +93,18 @@ class TrustedChecksTest(unittest.TestCase):
         self.assertEqual(code, 124)
         self.assertIn("timed out", message)
 
-    def test_inline_command_and_legacy_env_are_never_executed(self):
+    def test_inline_command_and_legacy_env_are_ignored(self):
         marker = self.repo / "should-not-exist"
         self.write_corridor(f"- Command: {sys.executable} -c \"open(r'{marker}','w').write('bad')\"")
         (self.repo / "product.txt").write_text("delta", encoding="utf-8")
         blocks = slime.stop_blocks(self.repo)
-        self.assertTrue(any("migration" in block.lower() for block in blocks))
+        self.assertTrue(any("Check: or Manual:" in block for block in blocks))
         self.assertFalse(marker.exists())
 
         self.write_corridor("- Manual: inspected generated output")
         with mock.patch.dict(os.environ, {"SLIME_TEST_CMD": "echo forbidden"}):
             blocks = slime.stop_blocks(self.repo)
-        self.assertTrue(any("SLIME_TEST_CMD" in block for block in blocks))
+        self.assertEqual(blocks, [])
 
     def test_unknown_check_and_high_duplicate_argv_block(self):
         self.write_config({
@@ -129,6 +129,39 @@ class TrustedChecksTest(unittest.TestCase):
         blocks = slime.stop_blocks(self.repo)
 
         self.assertTrue(any("Rigor" in block and "migration" in block for block in blocks))
+
+    def test_no_rigor_is_invalid_without_needing_a_product_delta(self):
+        target = self.repo / ".slime" / "corridor.md"
+        target.parent.mkdir()
+        target.write_text(
+            "# Corridor: old\n\n## Paths\n- product.txt\n\n"
+            "## Stop Condition\n- Manual: checked\n",
+            encoding="utf-8",
+        )
+
+        self.assertIn("explicit Rigor", slime.corridor_problem(self.repo))
+
+    def test_dirty_signature_batch_reads_index_once_for_200_files(self):
+        for index in range(200):
+            (self.repo / f"file-{index:03}.txt").write_text("before", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=self.repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "many files"], cwd=self.repo, check=True)
+        for index in range(200):
+            (self.repo / f"file-{index:03}.txt").write_text("after", encoding="utf-8")
+
+        real_git = slime.git
+        calls = []
+
+        def counted_git(cwd, *args):
+            calls.append(args)
+            return real_git(cwd, *args)
+
+        with mock.patch.object(slime, "git", side_effect=counted_git):
+            signatures = slime.dirty_signatures(self.repo)
+
+        self.assertEqual(len(signatures), 200)
+        index_calls = [args for args in calls if args[:2] == ("ls-files", "--stage")]
+        self.assertEqual(index_calls, [("ls-files", "--stage", "-z")])
 
     def test_bash_feedback_reports_missing_corridor_after_write(self):
         (self.repo / "product.txt").write_text("shell delta", encoding="utf-8")

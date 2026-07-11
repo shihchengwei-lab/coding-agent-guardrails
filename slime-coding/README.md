@@ -81,10 +81,9 @@ Codex 安裝會做幾件事：
 
 - 把自動關卡接進 `.codex/hooks.json`。
 - 把 `slime-navigate` skill 複製到 `.agents/skills/slime-navigate`。
-- 把 Slime Coding 指引插入 `AGENTS.md` 的 managed block。
 - 建立 `.slime/corridor.md` 和 `.slime/PRUNED.md` 範本。
 
-需要 `python3` 和 `git`（解析 `pyproject.toml`／`Cargo.toml` 需要 Python 3.11+ 的 `tomllib`）。新安裝的 corridor 預設為 `normal`。安裝可以重跑，會備份既有設定，也不會覆蓋已存在的 corridor。
+需要 `python3` 和 `git`（解析 `pyproject.toml`／`Cargo.toml` 需要 Python 3.11+ 的 `tomllib`）。新安裝的 corridor 預設為 `normal`。安裝可以重跑，不會備份既有設定，也不會覆蓋已存在的 corridor；失敗時只用 transaction journal 還原本次變動。`AGENTS.md` 的紀律區塊只由根安裝器管理，standalone Slime installer 不會改它。
 
 可執行檢查放在 Git 外的 `<git-dir>/guardrails/config.json`，例如：
 
@@ -102,7 +101,7 @@ Codex 安裝會做幾件事：
 
 Corridor 只寫 `- Check: primary`。check ID 限小寫英數、`-`、`_`，長度 1–64；
 `argv` 必須是非空字串陣列，timeout 合法範圍是 1–3600 秒。舊的 inline
-`Command:`、`SLIME_TEST_CMD`、`SLIME_TYPECHECK_CMD` 不再執行。
+舊的 inline command 與 command 環境變數完全不參與 runtime；請依[遷移指南](../docs/MIGRATION.md)改用 trusted check ID。
 
 紀律文本（含本套規則的用法）由根安裝器寫進 `CLAUDE.md` 與 `AGENTS.md`，單一來源是根目錄的 [`templates/DISCIPLINE.md`](../templates/DISCIPLINE.md)，不需要手動貼模板。
 Codex 版一樣自動更新 `AGENTS.md`；下次啟動 Codex 或開新 run 後生效。若 Codex 提示 project hooks 尚未 trust，進 `/hooks` 檢查後信任。

@@ -73,15 +73,15 @@ try {
   }
 
   $agentsText = Get-Content -LiteralPath $Agents -Raw
-  if ($agentsText -match "coding-agent-guardrails:discipline:start" -and $agentsText -match "smallest sufficient semantic displacement" -and $agentsText -match "Keep this\.") {
-    Ok "6  installs the root discipline block without dropping existing text"
+  if ($agentsText.Trim() -eq $seed.Trim()) {
+    Ok "6  standalone installer leaves AGENTS.md untouched"
   } else {
-    Bad "6  installs the root discipline block without dropping existing text" $agentsText
+    Bad "6  standalone installer leaves AGENTS.md untouched" $agentsText
   }
-  if ($agentsText -notmatch ">>> Slime Coding Codex") {
-    Ok "6b removes the legacy Slime Coding Codex block"
+  if ($agentsText -match ">>> Slime Coding Codex") {
+    Ok "6b standalone installer does not rewrite legacy user text"
   } else {
-    Bad "6b removes the legacy Slime Coding Codex block" $agentsText
+    Bad "6b standalone installer does not rewrite legacy user text" $agentsText
   }
   if (-not (Test-Path -LiteralPath $GitHook)) { Ok "7  does not add redundant commit-message evidence" } else { Bad "7  does not add redundant commit-message evidence" "unexpected hook" }
 
@@ -89,8 +89,7 @@ try {
   & powershell -NoProfile -ExecutionPolicy Bypass -File $Install -Project $Project | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "second install-codex.ps1 failed with $LASTEXITCODE" }
   $agentsText2 = Get-Content -LiteralPath $Agents -Raw
-  $count = ([regex]::Matches($agentsText2, "coding-agent-guardrails:discipline:start")).Count
-  if ($count -eq 1) { Ok "8  install is idempotent for AGENTS.md block" } else { Bad "8  install is idempotent for AGENTS.md block" "count=$count" }
+  if ($agentsText2.Trim() -eq $seed.Trim()) { Ok "8  reinstall still leaves AGENTS.md untouched" } else { Bad "8  reinstall still leaves AGENTS.md untouched" $agentsText2 }
   if ((Get-Content -LiteralPath $Corridor -Raw) -match "keep-existing-corridor") {
     Ok "8b reinstall preserves the existing corridor"
   } else {
