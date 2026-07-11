@@ -9,6 +9,20 @@ trusted checks at Stop, records the final state, and writes one review artifact:
 `.guardrails/review.json`. You do not edit a corridor, choose a risk tier, run
 Agentcam commands, or paste a fixed PR handoff.
 
+## Why a Vibe-Built Tool Needs Guardrails
+
+This project is mostly implemented by coding agents. I am not a software
+engineer, I do not write code, and I cannot judge a diff line by line. In
+practice, I usually do not inspect much: if the benchmark looks good, the tool
+runs, or the game moves, I tend to let it move forward.
+
+That is the starting point. I use these tools loosely, and I may not even use
+this whole toolkit consistently myself. The contradiction is the point: I vibed
+together a tool for limiting vibe coding. The problem is also real. When coding
+agents produce a lot of code quickly, the risk often lands in the handoff: what
+changed, whether checks really ran, and whether the next person can take over.
+Every tool here does one job: turn "trust me" into a recorded fact.
+
 For ordinary changes the daily flow is:
 
 ```text

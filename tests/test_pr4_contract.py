@@ -74,3 +74,16 @@ def test_user_docs_do_not_restore_removed_daily_steps():
     assert "agentcam verify --" not in root
     assert "agentcam handoff" not in root
     assert "agentcam export latest" not in root
+
+
+def test_root_docs_keep_the_author_disclosure_visible():
+    root = read("README.md")
+    root_zh = read("README.zh-TW.md")
+    root_words = " ".join(root.split())
+
+    assert "## Why a Vibe-Built Tool Needs Guardrails" in root
+    assert "I am not a software engineer" in root_words
+    assert "I vibed together a tool for limiting vibe coding" in root_words
+    assert "## \u70ba\u4ec0\u9ebc\u6703\u6709\u4e00\u5957\u9650\u5236 vibe \u7684\u5de5\u5177" in root_zh
+    assert "\u6211\u4e0d\u662f\u8edf\u9ad4\u5de5\u7a0b\u5e2b" in root_zh
+    assert "vibe \u51fa\u4e86\u4e00\u5957\u9650\u5236 vibe \u7684\u5de5\u5177" in root_zh
