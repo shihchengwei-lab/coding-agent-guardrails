@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['install.sh', 'install.ps1', 'templates/**', 'tests/**']
+    paths: ['install.sh', 'install.ps1', 'installer/**', 'templates/**', 'tests/**']
   pull_request:
     branches: [main]
 

@@ -45,14 +45,27 @@ git clone https://github.com/shihchengwei-lab/coding-agent-guardrails $HOME\guar
 & $HOME\guardrails\install.ps1 -Project C:\path\to\your\project
 ```
 
-重跑安全。安裝器會把紀律區塊（規則＋agentcam 交接循環）接進
-`CLAUDE.md` 與 `AGENTS.md`（Claude Code 讀前者、Codex 等讀後者）、
-裝好 slime-coding 的 hooks、放一份受管理的 corridor-ci-v12 workflow（完全符合
-官方 v11 範本時自動升級；自訂 workflow 保留並警告）、把 agentcam 從這份
-checkout 直接 pip 裝進你目前的
-  Python（需 3.11 以上），並接好 agentcam 自動錄製：shell 安裝路徑錄 Claude Code
-  session，PowerShell 安裝路徑錄 Codex 每一回合。Codex 專案 hooks 需先用 `/hooks`
-  檢視並信任一次。
+兩個入口都呼叫同一份 Python 3.11+ 安裝核心。它會在
+`<git-dir>/guardrails/` 建立版本化 runtime 與虛擬環境，再以 transaction
+原子更新 Claude Code 與 Codex 的絕對路徑 hooks；安裝完成後，原 toolkit checkout
+可以搬走或刪除。重跑具冪等性：使用者 hooks 會保留，`.slime/corridor.md` 與
+`PRUNED.md` 分別採 create-if-absent；workflow 只有在 managed marker 與官方 hash
+都吻合時才升級，自訂內容只警告、不覆寫。
+
+安裝後會在 repo 根目錄建立 `guardrails` 與 `guardrails.cmd`。可用它設定不經 shell
+解析的 trusted check、檢查安裝狀態，或預覽安全移除：
+
+```bash
+./guardrails check set primary -- python -m pytest -q
+./guardrails doctor
+./guardrails doctor --remote  # 另透過 gh 檢查 GitHub required contexts
+./guardrails uninstall --dry-run
+./guardrails uninstall
+```
+
+移除時只處理 `<git-dir>/guardrails/install.json` 能證明由工具管理的內容；預設保留
+`.slime/`、trusted check 設定與錄製歷史。只有明確加上 `--purge-state` 才會刪除
+這些狀態。Codex 專案 hooks 仍需先用 `/hooks` 檢視並信任一次。
 
 ## 閉環
 
@@ -81,12 +94,12 @@ checkout 直接 pip 裝進你目前的
 
 只有 workflow 檔案不等於 merge gate。Repo 管理者仍須在 branch protection 或
 ruleset 把 Corridor 與測試工作設為 required checks；本 repo 對 `main` 要求全部
-13 個穩定名稱的 checks。
+7 個穩定 aggregate checks：Policy Gate、Corridor，以及 5 個產品測試 aggregate。
 
 ## 版本規則
 
-一個 repo、四個工具，release tag 以工具名為前綴：`agentcam-v0.4.0`、
-`corridor-ci-v12.0.0` 與 floating `corridor-ci-v12`。更早的版本
+一個 repo、四個工具，release tag 以工具名為前綴：`agentcam-v0.5.0`、
+`corridor-ci-v13.0.0` 與 floating `corridor-ci-v13`。更早的版本
 （`v0.2.0`、`v10`⋯⋯）留在各工具原本的
 repo 裡。
 

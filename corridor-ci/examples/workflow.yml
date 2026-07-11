@@ -5,8 +5,12 @@ on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
 
+permissions:
+  contents: read
+
 jobs:
   corridor:
+    name: Corridor
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

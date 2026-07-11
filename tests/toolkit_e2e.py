@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -138,10 +139,18 @@ def main() -> int:
         temp = Path(temp_text)
         repo = temp / "project with spaces"
         venv = temp / "venv with spaces"
+        toolkit = temp / "toolkit clone with spaces"
+        shutil.copytree(
+            ROOT,
+            toolkit,
+            ignore=shutil.ignore_patterns(
+                ".git", ".pytest_cache", "__pycache__", "*.pyc", "dist", "build"
+            ),
+        )
         repo.mkdir()
         run([sys.executable, "-m", "venv", str(venv)], cwd=temp)
-        python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
-        bindir = python.parent
+        bootstrap_python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        bindir = bootstrap_python.parent
         env = os.environ.copy()
         env["PATH"] = str(bindir) + os.pathsep + env.get("PATH", "")
 
@@ -152,7 +161,7 @@ def main() -> int:
         (repo / "src" / "app.py").write_text("original = True\n", encoding="utf-8")
 
         if args.platform == "posix":
-            run(["bash", str(ROOT / "install.sh"), str(repo)], cwd=ROOT, env=env)
+            run(["bash", str(toolkit / "install.sh"), str(repo)], cwd=toolkit, env=env)
             hooks_path = repo / ".claude" / "settings.json"
             command_key = "command"
             id_field = "session_id"
@@ -161,16 +170,25 @@ def main() -> int:
             run(
                 [
                     "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                    "-File", str(ROOT / "install.ps1"),
-                    "-Project", str(repo), "-Python", str(python),
+                    "-File", str(toolkit / "install.ps1"),
+                    "-Project", str(repo), "-Python", str(bootstrap_python),
                 ],
-                cwd=ROOT,
+                cwd=toolkit,
                 env=env,
             )
             hooks_path = repo / ".codex" / "hooks.json"
             command_key = "commandWindows"
             id_field = "turn_id"
             start_event, end_event = "UserPromptSubmit", "Stop"
+
+        git_dir = Path(git(repo, "rev-parse", "--absolute-git-dir").stdout.strip())
+        manifest = json.loads(
+            (git_dir / "guardrails" / "install.json").read_text(encoding="utf-8")
+        )
+        python = Path(manifest["python"])
+        assert python.is_file(), manifest
+        assert str(toolkit) not in hooks_path.read_text(encoding="utf-8-sig")
+        shutil.rmtree(toolkit)
 
         hooks = json.loads(hooks_path.read_text(encoding="utf-8-sig"))["hooks"]
         write_corridor(repo, python)
