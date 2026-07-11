@@ -362,22 +362,35 @@ def _pick_review_first(paths: list[str], flags: list[dict]) -> str:
     return paths[0]
 
 
-def _verified_line(verifications: list) -> str:
+def _verified_line(verifications: list, state_fingerprint: str = "") -> str:
     """Draft the handoff Verified line from recorded checks.
 
     Only checks agentcam itself ran (exit code observed, not claimed)
     fill the line; with no passing check it stays a fill-in — the
     claim belongs to the author, and red must not read as verified.
     """
-    recorded = [v for v in verifications if isinstance(v, dict)]
-    passing = [v for v in recorded if v.get("exit_code") == 0]
+    recorded = [
+        value
+        for value in verifications
+        if isinstance(value, dict)
+        and (
+            not state_fingerprint
+            or value.get("state_fingerprint") == state_fingerprint
+        )
+    ]
+    latest_by_command: dict[str, dict] = {}
+    for record in recorded:
+        command = str(record.get("command") or "?")
+        latest_by_command[command] = record
+    latest = list(latest_by_command.values())
+    passing = [v for v in latest if type(v.get("exit_code")) is int and v["exit_code"] == 0]
     if passing:
         checks = "; ".join(
             f"{v.get('command', '?')} (exit 0)" for v in passing
         )
         return f"{checks} [locally recorded by agentcam]"
-    if recorded:
-        last = recorded[-1]
+    if latest:
+        last = latest[-1]
         return (
             "<fill in: recorded check failed: "
             f"{last.get('command', '?')} (exit {last.get('exit_code')})>"
@@ -387,7 +400,12 @@ def _verified_line(verifications: list) -> str:
 
 def _handoff_command(args) -> int:
     from agentcam.export import ExportError, resolve_run_dir
-    from agentcam.git_state import NotAGitRepoError, resolve_git_dir
+    from agentcam.git_state import (
+        NotAGitRepoError,
+        compute_final_state_fingerprint,
+        resolve_git_dir,
+    )
+    from agentcam.verification import read_records
 
     cwd = Path.cwd()
     try:
@@ -429,6 +447,27 @@ def _handoff_command(args) -> int:
         )
         return 2
 
+    final_state_fingerprint = data.get("final_state_fingerprint")
+    if not isinstance(final_state_fingerprint, str) or not final_state_fingerprint:
+        print(
+            f"agentcam: run {run_dir.name} is legacy-unbound; re-record it "
+            "before generating a handoff.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        current_state_fingerprint = compute_final_state_fingerprint(cwd)
+    except Exception as e:  # noqa: BLE001
+        print(f"agentcam: could not fingerprint current state: {e}", file=sys.stderr)
+        return 2
+    if current_state_fingerprint != final_state_fingerprint:
+        print(
+            "agentcam: state changed after the recorded run; create a new run "
+            "before generating a handoff.",
+            file=sys.stderr,
+        )
+        return 2
+
     changed = evidence.get("changed_files") or []
     if not changed:
         print(
@@ -439,6 +478,20 @@ def _handoff_command(args) -> int:
         return 2
 
     paths = [cf["path"] for cf in changed]
+    untracked_secret_paths = [
+        cf.get("path")
+        for cf in changed
+        if isinstance(cf, dict)
+        and cf.get("status") == "untracked"
+        and cf.get("secret_like_name") is True
+    ]
+    if untracked_secret_paths:
+        print(
+            "agentcam: untracked secret-like filename cannot be drafted into "
+            "a PR handoff; remove it or intentionally track the filename first.",
+            file=sys.stderr,
+        )
+        return 2
     review_first = _pick_review_first(
         paths, evidence.get("risk_flags") or []
     )
@@ -454,22 +507,17 @@ def _handoff_command(args) -> int:
         )
         risk = "none-detected" if full_capture else "unknown"
 
-    # The handoff is drafted to be pasted into a PR body: secret-like
-    # filenames must not leave the machine here any more than they do in
-    # the report or the redacted export.
-    from agentcam.scanner import is_secret_like_filename
-
-    def _display(path: str) -> str:
-        return (
-            "<redacted-secret-filename>"
-            if is_secret_like_filename(path)
-            else path
-        )
-
+    declared_scope = data.get("declared_scope")
+    scope = [value for value in declared_scope if isinstance(value, str)] if isinstance(declared_scope, list) else []
+    scope_line = ", ".join(scope) if scope else "<fill in: declare intended paths or globs>"
+    verifications = read_records(
+        run_dir,
+        evidence.get("verifications") if isinstance(evidence.get("verifications"), list) else [],
+    )
     print("Decision: <fill in: issue or decision link>")
-    print(f"Scope: {', '.join(_display(p) for p in paths)}")
-    print(f"Review first: {_display(review_first)}")
-    print(f"Verified: {_verified_line(evidence.get('verifications') or [])}")
+    print(f"Scope: {scope_line}")
+    print(f"Review first: {review_first}")
+    print(f"Verified: {_verified_line(verifications, final_state_fingerprint)}")
     print(f"Risk: {risk}")
     return 0
 
@@ -509,6 +557,10 @@ def _latest_in_progress_session(git_dir: Path) -> Path | None:
         ]
         if not candidates:
             return None
+        if len(candidates) > 1:
+            raise RuntimeError(
+                "multiple active sessions; pass an explicit --run/--session target"
+            )
         return max(
             candidates,
             key=lambda d: (d / "state_before.pickle").stat().st_mtime,
@@ -522,8 +574,13 @@ def _verify_command(args) -> int:
     import subprocess
 
     from agentcam.export import ExportError, resolve_run_dir
-    from agentcam.git_state import NotAGitRepoError, resolve_git_dir
+    from agentcam.git_state import (
+        NotAGitRepoError,
+        compute_final_state_fingerprint,
+        resolve_git_dir,
+    )
     from agentcam.redaction import redact_argv
+    from agentcam.verification import new_record_id, sync_manifest, write_record
 
     check_argv = _strip_leading_dashdash(args.argv or [])
     if not check_argv:
@@ -556,7 +613,11 @@ def _verify_command(args) -> int:
     # targets runs/.
     session_dir = None
     if args.run == "latest":
-        session_dir = _latest_in_progress_session(git_dir)
+        try:
+            session_dir = _latest_in_progress_session(git_dir)
+        except RuntimeError as e:
+            print(f"agentcam: {e}", file=sys.stderr)
+            return 2
 
     if session_dir is None:
         try:
@@ -593,6 +654,21 @@ def _verify_command(args) -> int:
                 file=sys.stderr,
             )
             return 2
+        final_state_fingerprint = data.get("final_state_fingerprint")
+        if not isinstance(final_state_fingerprint, str) or not final_state_fingerprint:
+            print(
+                f"agentcam: run {run_dir.name} is legacy-unbound; re-record it "
+                "before recording checks.",
+                file=sys.stderr,
+            )
+            return 2
+        if compute_final_state_fingerprint(cwd) != final_state_fingerprint:
+            print(
+                "agentcam: state changed after the recorded run; create a new "
+                "run before recording checks.",
+                file=sys.stderr,
+            )
+            return 2
 
     # Resolve via PATH like the run backend (runner.py) so PATHEXT-only
     # runners (`npm`, `pytest.cmd`) work without a shell; the recorded
@@ -619,18 +695,17 @@ def _verify_command(args) -> int:
     ).total_seconds()
 
     record = {
+        "record_id": new_record_id(),
         "command": " ".join(redact_argv(list(check_argv))),
         "exit_code": proc.returncode,
         "duration_seconds": round(duration, 3),
         "recorded_at": started_at.isoformat(),
+        "state_fingerprint": compute_final_state_fingerprint(cwd),
     }
 
     if session_dir is not None:
         try:
-            with (session_dir / "verifications.jsonl").open(
-                "a", encoding="utf-8"
-            ) as f:
-                f.write(json.dumps(record) + "\n")
+            write_record(session_dir, record)
         except OSError as e:
             print(
                 f"agentcam: check finished (exit {proc.returncode}) but "
@@ -647,38 +722,16 @@ def _verify_command(args) -> int:
         )
         return proc.returncode
 
-    # Re-read before writing: the check itself (or a concurrent verify)
-    # may have modified the manifest while it ran, and appending to the
-    # pre-check copy would clobber those records.
     try:
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as e:
+        write_record(run_dir, record)
+        sync_manifest(run_dir)
+    except (OSError, ValueError, TimeoutError, json.JSONDecodeError) as e:
         print(
             f"agentcam: check finished (exit {proc.returncode}) but "
-            f"{manifest_path} could not be re-read: {e}; nothing was "
-            "recorded.",
+            f"the verification record could not be committed: {e}",
             file=sys.stderr,
         )
         return 2
-    evidence = data.get("evidence")
-    if not isinstance(evidence, dict) or not isinstance(
-        evidence.get("verifications", []), list
-    ):
-        print(
-            f"agentcam: check finished (exit {proc.returncode}) but the "
-            "manifest evidence is malformed; nothing was recorded.",
-            file=sys.stderr,
-        )
-        return 2
-
-    # The check ran as agentcam's direct child, so command / exit code /
-    # duration are observed facts, not the wrapped agent's claims. The
-    # command line is stored redacted because it rides into the
-    # committable manifest.redacted.json via `export --files`.
-    evidence.setdefault("verifications", []).append(record)
-    manifest_path.write_text(
-        json.dumps(data, indent=2), encoding="utf-8"
-    )
     print(
         f"agentcam: recorded check (exit {proc.returncode}) "
         f"in run {run_dir.name}",
@@ -697,7 +750,10 @@ def _run_command(args) -> int:
         NotAGitRepoError,
         collect_git_state,
         compute_diff_fingerprint,
+        compute_final_state_fingerprint,
+        derive_turn_delta,
         is_working_tree_dirty,
+        read_declared_scope,
         resolve_git_dir,
         resolve_git_root,
     )
@@ -749,6 +805,7 @@ def _run_command(args) -> int:
         )
         return 2
     pre_run_dirty = is_working_tree_dirty(state_before)
+    declared_scope = read_declared_scope(git_root)
 
     # Diff fingerprint for the no-diff cleanup decision (step 6.5).
     # Computed only when cleanup might fire — `--keep-empty` skips the
@@ -805,6 +862,7 @@ def _run_command(args) -> int:
     post_git_error: str | None = None
     try:
         state_after = collect_git_state(cwd, is_after=True)
+        state_after = derive_turn_delta(git_root, state_before, state_after)
         fingerprint_after = (
             compute_diff_fingerprint(cwd) if not args.keep_empty else ""
         )
@@ -954,6 +1012,12 @@ def _run_command(args) -> int:
         platform_label=platform.system().lower(),
         capture=capture,
         ruleset=provenance_for_builtin_ruleset(),
+        declared_scope=declared_scope,
+        final_state_fingerprint=(
+            compute_final_state_fingerprint(git_root)
+            if post_git_error is None
+            else ""
+        ),
     )
 
     # 10) Tell the user where to find the report (stderr so it doesn't pollute

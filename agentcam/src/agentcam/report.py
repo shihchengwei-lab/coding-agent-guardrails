@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 from agentcam import __version__
+from agentcam.git_state import compute_product_fingerprint
 from agentcam.models import (
     CaptureCapability,
     ChangedFile,
@@ -77,6 +78,8 @@ def write_run_artifacts(
     platform_label: str,
     capture: CaptureCapability,
     ruleset: RulesetProvenance,
+    declared_scope: list[str] | None = None,
+    final_state_fingerprint: str = "",
 ) -> ReportBundle:
     """Build manifest + Bundle, render report, write both artifacts.
 
@@ -156,6 +159,8 @@ def write_run_artifacts(
         paths=run_paths,
         capture=capture,
         ruleset=ruleset,
+        declared_scope=list(declared_scope or []),
+        final_state_fingerprint=final_state_fingerprint,
     )
 
     bundle = ReportBundle(
@@ -173,7 +178,13 @@ def write_run_artifacts(
     write_manifest(
         manifest,
         Path(run_paths.manifest_json),
-        evidence=serialize_evidence(state_after, list(risk_flags)),
+        evidence=serialize_evidence(
+            state_after,
+            list(risk_flags),
+            product_fingerprint=compute_product_fingerprint(
+                git_root, state_after.changed_files
+            ),
+        ),
     )
 
     return bundle
@@ -222,6 +233,8 @@ def serialize_manifest(m: RunManifest) -> dict:
         "terminal_forward_degraded": m.terminal_forward_degraded,
         "platform": m.platform,
         "agentcam_version": m.agentcam_version,
+        "declared_scope": list(m.declared_scope),
+        "final_state_fingerprint": m.final_state_fingerprint,
         "paths": paths_dict,
     }
     out["capture"] = _serialize_capture(m.capture)
@@ -264,7 +277,10 @@ def overall_risk_level(flags: list[RiskFlag]) -> str:
 
 
 def serialize_evidence(
-    state_after: GitState, risk_flags: list[RiskFlag]
+    state_after: GitState,
+    risk_flags: list[RiskFlag],
+    *,
+    product_fingerprint: str = "",
 ) -> dict:
     """Machine-readable run evidence for the manifest "evidence" block.
 
@@ -287,6 +303,7 @@ def serialize_evidence(
         "overall_risk": overall_risk_level(risk_flags),
         "diff_stat": state_after.diff_stat,
         "diff_stat_cached": state_after.diff_stat_cached,
+        "product_fingerprint": product_fingerprint,
     }
 
 

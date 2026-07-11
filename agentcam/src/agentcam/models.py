@@ -23,6 +23,9 @@ ChangeStatus = Literal[
     "untracked",
     "renamed",
     "unmerged",
+    "committed",
+    "committed_deleted",
+    "restored",
 ]
 
 # Source of the exit interpretation in manifest.exit_detail.
@@ -124,6 +127,7 @@ class GitState:
     diff_check_cached: str = ""
     pre_existing_op: str | None = None  # 'merge' | 'rebase' | 'cherry-pick' | ...
     changed_files: list[ChangedFile] = field(default_factory=list)
+    path_signatures: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -330,6 +334,8 @@ class RunManifest:
     paths: RunPaths
     capture: CaptureCapability
     ruleset: RulesetProvenance
+    declared_scope: list[str] = field(default_factory=list)
+    final_state_fingerprint: str = ""
 
 
 @dataclass(frozen=True)

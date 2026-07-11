@@ -148,10 +148,10 @@ class TestVerify:
     ):
         """A PATHEXT-only runner on PATH (the `npm` shape: npm.cmd)
         must work by bare name — `verify` resolves via shutil.which."""
-        _make_one_run(tmp_git_repo)
         (tmp_git_repo / "okcheck.cmd").write_text(
             "@exit /b 0\r\n", encoding="ascii"
         )
+        _make_one_run(tmp_git_repo)
         env = {
             **os.environ,
             "PATH": f"{tmp_git_repo}{os.pathsep}"
@@ -192,8 +192,25 @@ class TestVerifiedLineInHandoff:
 
     def test_newer_failure_overrides_older_pass(self, tmp_git_repo: Path):
         _make_one_run(tmp_git_repo)
-        assert _agentcam(tmp_git_repo, "verify", "--", *PASS_CMD).returncode == 0
-        assert _agentcam(tmp_git_repo, "verify", "--", *FAIL_CMD).returncode == 3
+        same_command = (
+            sys.executable,
+            "-c",
+            "import os; raise SystemExit(int(os.environ['VERIFY_EXIT']))",
+        )
+        assert _agentcam(
+            tmp_git_repo,
+            "verify",
+            "--",
+            *same_command,
+            env={**os.environ, "VERIFY_EXIT": "0"},
+        ).returncode == 0
+        assert _agentcam(
+            tmp_git_repo,
+            "verify",
+            "--",
+            *same_command,
+            env={**os.environ, "VERIFY_EXIT": "3"},
+        ).returncode == 3
 
         proc = _agentcam(tmp_git_repo, "handoff")
 
