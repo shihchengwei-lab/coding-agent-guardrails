@@ -159,6 +159,7 @@ cat <<EOF
 Done. The L0 discipline block comes from the toolkit's root installer
 (templates/DISCIPLINE.md -> CLAUDE.md + AGENTS.md).
 
-Optional config (env): SLIME_TEST_CMD, SLIME_PRUNE_RECENT, SLIME_TEST_TIMEOUT,
-SLIME_PUBSPEC. See $SLIME_HOME/README.md.
+Trusted checks: <git-dir>/guardrails/config.json. SLIME_TEST_TIMEOUT may lower
+the timeout ceiling. SLIME_TEST_CMD and SLIME_TYPECHECK_CMD are not executed.
+See $SLIME_HOME/README.md.
 EOF

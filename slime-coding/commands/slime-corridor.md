@@ -38,7 +38,7 @@ Steps:
    - Dependency: <package> — <why the outcome requires it>  # only when adding one
 
    ## Stop Condition
-   - Command: <the command that must exit 0>
+   - Check: <trusted check ID from .git/guardrails/config.json>
    # or: - Manual: <the observable behavior to inspect>
    ```
 
@@ -49,7 +49,7 @@ Steps:
    ## High-risk Controls
    - Failure mode: <what can go wrong>
    - Rollback: <how to contain or reverse it>
-   - Independent check command: <an executable command different from the Stop command>
+   - Independent check: <a secondary trusted check ID>
    ```
 
 6. Keep it terse — a map, not a spec. Create the `.slime/` directory if needed.

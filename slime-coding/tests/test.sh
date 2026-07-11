@@ -42,6 +42,12 @@ stop()   { printf '{"hook_event_name":"Stop","cwd":"%s"}' "$(hostpath "$1")"; }
 turn_start() { printf '{"hook_event_name":"UserPromptSubmit","turn_id":"%s","session_id":"session-test","cwd":"%s"}' "$2" "$(hostpath "$1")"; }
 turn_stop() { printf '{"hook_event_name":"Stop","turn_id":"%s","session_id":"session-test","cwd":"%s"}' "$2" "$(hostpath "$1")"; }
 post_bash() { printf '{"hook_event_name":"PostToolUse","turn_id":"%s","session_id":"session-test","tool_name":"Bash","tool_input":{"command":"%s"},"cwd":"%s"}' "$2" "$3" "$(hostpath "$1")"; }
+write_checks() {
+  local gitdir
+  gitdir="$(git -C "$1" rev-parse --absolute-git-dir)"
+  mkdir -p "$gitdir/guardrails"
+  printf '%s' "$2" > "$gitdir/guardrails/config.json"
+}
 
 # --- PreToolUse corridor gate ----------------------------------------------
 D="$(mkrepo)"
@@ -96,8 +102,8 @@ git -C "$D" add -A && git -C "$D" commit -qm init   # PRUNED.md now clean vs HEA
 
 out=$(stop "$D" | SLIME_TEST_CMD='exit 1' python3 "$PATCH")
 case "$out" in
-  *'"block"'*) ok "7  failing check + clean PRUNED.md -> block" ;;
-  *) bad "7  failing check + clean PRUNED.md -> block" "$out" ;;
+  *systemMessage*) ok "7  legacy env without product delta is not executed" ;;
+  *) bad "7  legacy env without product delta is not executed" "$out" ;;
 esac
 
 # bonus: new-dependency gate
@@ -194,7 +200,7 @@ case "$out" in
 esac
 G3="$(mkrepo)"
 mkdir -p "$G3/.slime"
-printf '# Corridor: real\n## Paths\n- lib/**/*.dart\n' > "$G3/.slime/corridor.md"
+printf '# Corridor: real\n## Rigor\ntrivial\n## Outcome\nmatch top level\n## Paths\n- lib/**/*.dart\n## Stop Condition\n- Manual: path checked\n' > "$G3/.slime/corridor.md"
 git -C "$G3" add -A && git -C "$G3" commit -qm init
 mkdir -p "$G3/lib"; printf 'x\n' > "$G3/lib/top.dart"
 out=$(stop "$G3" | python3 "$PATCH")
@@ -208,7 +214,7 @@ esac
 #      can never match a corridor glob.
 G4="$(mkrepo)"
 mkdir -p "$G4/.slime"
-printf '# Corridor: real\n## Paths\n- lib/**\n' > "$G4/.slime/corridor.md"
+printf '# Corridor: real\n## Rigor\ntrivial\n## Outcome\nUTF-8 path works\n## Paths\n- lib/**\n## Stop Condition\n- Manual: path checked\n' > "$G4/.slime/corridor.md"
 git -C "$G4" add -A && git -C "$G4" commit -qm init
 mkdir -p "$G4/lib"; printf 'x\n' > "$G4/lib/café.dart"
 out=$(stop "$G4" | python3 "$PATCH")
@@ -225,7 +231,7 @@ esac
 #      the "lib/" prefix survives the mis-decode).
 G5="$(mkrepo)"
 mkdir -p "$G5/.slime"
-printf '# Corridor: real\n## Paths\n- lib/café.dart\n' > "$G5/.slime/corridor.md"
+printf '# Corridor: real\n## Rigor\ntrivial\n## Outcome\nUTF-8 exact path works\n## Paths\n- lib/café.dart\n## Stop Condition\n- Manual: path checked\n' > "$G5/.slime/corridor.md"
 git -C "$G5" add -A && git -C "$G5" commit -qm init
 mkdir -p "$G5/lib"; printf 'x\n' > "$G5/lib/café.dart"
 out=$(stop "$G5" | python3 "$PATCH")
@@ -250,8 +256,8 @@ esac
 # A5: a configured check timing out is not verification and must block.
 out=$(stop "$H" | SLIME_TEST_CMD='sleep 5' SLIME_TEST_TIMEOUT=1 python3 "$PATCH")
 case "$out" in
-  *'"block"'*"timed out"*) ok "15 SLIME_TEST_CMD timeout -> block" ;;
-  *) bad "15 SLIME_TEST_CMD timeout -> block" "$out" ;;
+  *systemMessage*) ok "15 SLIME_TEST_CMD is not executed without product delta" ;;
+  *) bad "15 SLIME_TEST_CMD is not executed without product delta" "$out" ;;
 esac
 
 # A6: multiple PRUNED records -> inject only matching-corridor + recent N
@@ -323,15 +329,15 @@ esac
 # AC3: exit 1 -> block, reason carries the remedy text
 out=$(stop "$M" | SLIME_TYPECHECK_CMD='sh -c "exit 1"' python3 "$PATCH")
 case "$out" in
-  *'"block"'*Typecheck*hallucinated*) ok "21 SLIME_TYPECHECK_CMD exit 1 -> block (remedy text)" ;;
-  *) bad "21 SLIME_TYPECHECK_CMD exit 1 -> block (remedy text)" "$out" ;;
+  *systemMessage*) ok "21 legacy typecheck is not executed" ;;
+  *) bad "21 legacy typecheck is not executed" "$out" ;;
 esac
 
 # AC4: a configured command that cannot run is a broken gate and must block.
 out=$(stop "$M" | SLIME_TYPECHECK_CMD='this-cmd-does-not-exist-xyz' python3 "$PATCH")
 case "$out" in
-  *'"block"'*Typecheck*"could not run"*) ok "22 missing typecheck cmd -> block" ;;
-  *) bad "22 missing typecheck cmd -> block" "$out" ;;
+  *systemMessage*) ok "22 missing legacy typecheck is not executed" ;;
+  *) bad "22 missing legacy typecheck is not executed" "$out" ;;
 esac
 
 # AC5: typecheck fail + new dependency -> both blocks present
@@ -341,17 +347,17 @@ mkdir -p "$P5/.slime"; printf '# Corridor: real\n## Paths\n- lib/**\n' > "$P5/.s
 git -C "$P5" add -A && git -C "$P5" commit -qm init
 printf 'name: d\ndependencies:\n  flutter:\n    sdk: flutter\n  http: ^1\n' > "$P5/pubspec.yaml"
 out=$(stop "$P5" | SLIME_TYPECHECK_CMD='sh -c "exit 1"' python3 "$PATCH")
-if grep -q Typecheck <<<"$out" && grep -q 'New dependency' <<<"$out" && grep -q http <<<"$out"; then
-  ok "23 typecheck + dependency -> both blocks in reason"
+if grep -q 'migration required' <<<"$out" && grep -q 'New dependency' <<<"$out" && grep -q http <<<"$out"; then
+  ok "23 legacy env migration + dependency both block"
 else
-  bad "23 typecheck + dependency -> both blocks in reason" "$out"
+  bad "23 legacy env migration + dependency both block" "$out"
 fi
 
 # AC6: a second Stop re-runs the gate; red does not become green by retrying Stop.
 out=$(printf '{"hook_event_name":"Stop","stop_hook_active":true,"cwd":"%s"}' "$(hostpath "$M")" | SLIME_TYPECHECK_CMD='sh -c "exit 1"' python3 "$PATCH")
 case "$out" in
-  *'"block"'*Typecheck*) ok "24 stop_hook_active + typecheck fail -> still block" ;;
-  *) bad "24 stop_hook_active + typecheck fail -> still block" "$out" ;;
+  *systemMessage*) ok "24 stop retry does not execute legacy typecheck" ;;
+  *) bad "24 stop retry does not execute legacy typecheck" "$out" ;;
 esac
 
 # === Repo-meta files exempt from corridor gate ==============================
@@ -401,16 +407,16 @@ git -C "$Q" add -A && git -C "$Q" commit -qm init
 cp "$ROOT/templates/.slime/PRUNED.md" "$Q/.slime/PRUNED.md"   # untracked, as installed
 out=$(stop "$Q" | SLIME_TEST_CMD='exit 1' python3 "$PATCH")
 case "$out" in
-  *'"block"'*"failing check"*) ok "30 untracked template PRUNED.md does not disarm red-check gate" ;;
-  *) bad "30 untracked template PRUNED.md does not disarm red-check gate" "$out" ;;
+  *systemMessage*) ok "30 PRUNED does not cause legacy env execution" ;;
+  *) bad "30 PRUNED does not cause legacy env execution" "$out" ;;
 esac
 
 # 30b: recording a pruned route does not turn a failing check into completion.
 printf '\n## [2026-07-06] corridor:real\n**Pruned:** the abandoned design\n' >> "$Q/.slime/PRUNED.md"
 out=$(stop "$Q" | SLIME_TEST_CMD='exit 1' python3 "$PATCH")
 case "$out" in
-  *'"block"'*"failing check"*) ok "30b PRUNED record does not waive red check" ;;
-  *) bad "30b PRUNED record does not waive red check" "$out" ;;
+  *systemMessage*) ok "30b PRUNED record does not restore legacy env execution" ;;
+  *) bad "30b PRUNED record does not restore legacy env execution" "$out" ;;
 esac
 
 # 31: emptying corridor.md after editing product code must not launder the
@@ -526,12 +532,13 @@ The focused behavior is correct.
 ## Paths
 - lib/x.py
 ## Stop Condition
-- Command: sh -c "exit 1"
+- Command: python3 -c "raise SystemExit(1)"
 EOF
+mkdir -p "$AUTOCHK/lib" && printf 'delta\n' > "$AUTOCHK/lib/x.py"
 out=$(stop "$AUTOCHK" | python3 "$PATCH")
 case "$out" in
-  *'"block"'*"failing check"*) ok "32e Stop Condition command is enforced" ;;
-  *) bad "32e Stop Condition command is enforced" "$out" ;;
+  *'"block"'*"inline Command"*) ok "32e inline Stop command requires migration and is not run" ;;
+  *) bad "32e inline Stop command requires migration and is not run" "$out" ;;
 esac
 
 # === Rigor-aware corridor validation =======================================
@@ -583,7 +590,7 @@ The typo is corrected without changing behavior.
 ## Paths
 - lib/x.py
 ## Stop Condition
-- The focused check passes.
+- Manual: the focused check passes.
 EOF
 out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
 [ -z "$out" ] && ok "35 complete trivial corridor -> allow" || bad "35 complete trivial corridor -> allow" "$out"
@@ -610,7 +617,7 @@ The requested observable behavior changes while existing APIs remain stable.
 - Supports: the failing test reaches lib/x.py:run.
 - Would falsify: the stack trace points to another owner.
 ## Stop Condition
-- The focused test passes.
+- Manual: the focused test passes.
 EOF
 out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
 [ -z "$out" ] && ok "37 complete normal corridor -> allow" || bad "37 complete normal corridor -> allow" "$out"
@@ -644,16 +651,17 @@ The high-risk behavior changes while existing ownership remains stable.
 - Supports: the runtime trace reaches lib/x.py:run.
 - Would falsify: the trace bypasses that seam.
 ## Stop Condition
-- The focused and full checks pass.
+- Check: primary
 ## High-risk Controls
 - Failure mode: requests may be rejected.
 - Rollback: revert the feature flag.
-- Independent check command: sh -c "exit 0"
+- Independent check: integration
 EOF
+write_checks "$R3" '{"schema":1,"checks":{"primary":{"argv":["python3","-c","raise SystemExit(0)"]},"integration":{"argv":["python3","-c","raise SystemExit(0+0)"]}}}'
 out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
 [ -z "$out" ] && ok "40 complete high corridor -> allow" || bad "40 complete high corridor -> allow" "$out"
 
-for field in 'Failure mode:' 'Rollback:' 'Independent check command:'; do
+for field in 'Failure mode:' 'Rollback:' 'Independent check:'; do
   grep -v -- "$field" "$R3/.slime/corridor.md" > "$R3/.slime/corridor.tmp"
   mv "$R3/.slime/corridor.tmp" "$R3/.slime/corridor.missing.md"
   mv "$R3/.slime/corridor.md" "$R3/.slime/corridor.full.md"
@@ -668,8 +676,7 @@ for field in 'Failure mode:' 'Rollback:' 'Independent check command:'; do
 done
 
 # 41b: high independent check is an actual gate, not a prose placeholder.
-sed 's/Independent check command: sh -c "exit 0"/Independent check command: sh -c "exit 1"/' "$R3/.slime/corridor.md" > "$R3/.slime/corridor.tmp"
-mv "$R3/.slime/corridor.tmp" "$R3/.slime/corridor.md"
+write_checks "$R3" '{"schema":1,"checks":{"primary":{"argv":["python3","-c","raise SystemExit(0)"]},"integration":{"argv":["python3","-c","raise SystemExit(1)"]}}}'
 mkdir -p "$R3/lib"
 printf 'changed\n' > "$R3/lib/x.py"
 out=$(stop "$R3" | python3 "$PATCH")
@@ -679,14 +686,11 @@ case "$out" in
 esac
 
 # 41c: the independent command cannot merely duplicate the Stop command.
-sed 's/Independent check command: sh -c "exit 1"/Independent check command: sh -c "exit 0"/' "$R3/.slime/corridor.md" > "$R3/.slime/corridor.tmp"
-mv "$R3/.slime/corridor.tmp" "$R3/.slime/corridor.md"
-sed '/## Stop Condition/,+1c\## Stop Condition\n- Command: sh -c "exit 0"' "$R3/.slime/corridor.md" > "$R3/.slime/corridor.tmp"
-mv "$R3/.slime/corridor.tmp" "$R3/.slime/corridor.md"
+write_checks "$R3" '{"schema":1,"checks":{"primary":{"argv":["python3","-c","raise SystemExit(0)"]},"integration":{"argv":["python3","-c","raise SystemExit(0)"]}}}'
 out=$(stop "$R3" | python3 "$PATCH")
 case "$out" in
-  *'"block"'*"must differ"*) ok "41c duplicate independent command -> block" ;;
-  *) bad "41c duplicate independent command -> block" "$out" ;;
+  *'"block"'*"same argv"*) ok "41c duplicate independent argv -> block" ;;
+  *) bad "41c duplicate independent argv -> block" "$out" ;;
 esac
 
 # 42: trivial is an enforceable one-product-file tier.
@@ -701,7 +705,7 @@ One local change.
 ## Paths
 - lib/**
 ## Stop Condition
-- Focused check passes.
+- Manual: focused check passes.
 EOF
 printf 'old\n' > "$TIER/lib/a.py"
 printf 'old\n' > "$TIER/lib/b.py"
@@ -728,7 +732,7 @@ One file changes.
 ## Paths
 - lib/**
 ## Stop Condition
-- Focused check passes.
+- Manual: focused check passes.
 EOF
 printf 'old\n' > "$TURN/lib/a.py"
 printf 'old\n' > "$TURN/other/user.py"
@@ -799,7 +803,7 @@ One product file changes.
 ## Paths
 - lib/**
 ## Stop Condition
-- Focused check passes.
+- Manual: focused check passes.
 EOF
 printf '{"dependencies":{"base":"1"}}\n' > "$DELTAS/package.json"
 printf 'old\n' > "$DELTAS/lib/a.py"
@@ -891,12 +895,13 @@ The risky path is checked independently.
 - Supports: the focused trace reaches this path.
 - Would falsify: the trace bypasses this path.
 ## Stop Condition
-- Focused check passes.
+- Check: primary
 ## High-risk Controls
 - Failure mode: requests fail.
 - Rollback: revert the commit.
-- Independent check command: python3 -c "import time; time.sleep(5)"
+- Independent check: integration
 EOF
+write_checks "$HIGH_TIMEOUT" '{"schema":1,"checks":{"primary":{"argv":["python3","-c","raise SystemExit(0)"]},"integration":{"argv":["python3","-c","import time; time.sleep(5)"],"timeout_seconds":600}}}'
 printf 'old\n' > "$HIGH_TIMEOUT/lib/a.py"
 git -C "$HIGH_TIMEOUT" add -A && git -C "$HIGH_TIMEOUT" commit -qm init
 printf 'new\n' > "$HIGH_TIMEOUT/lib/a.py"
@@ -921,7 +926,7 @@ Generated values are current while public APIs remain stable.
 - Supports: the generator owns these files.
 - Would falsify: a hand-owned file appears.
 ## Stop Condition
-- Generated output check passes.
+- Manual: generated output check passes.
 EOF
 for i in $(seq 1 13); do printf 'old\n' > "$NORM/lib/$i.txt"; done
 git -C "$NORM" add -A && git -C "$NORM" commit -qm init

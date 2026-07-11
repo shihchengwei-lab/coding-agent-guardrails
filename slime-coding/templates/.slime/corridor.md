@@ -18,4 +18,4 @@ behavior or boundary that must remain unchanged.
 - Dependency: <package> — <why this outcome cannot use the existing stack>.
 
 ## Stop Condition
-- Command: dart test test/feature/example/
+- Check: primary

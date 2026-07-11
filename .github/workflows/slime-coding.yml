@@ -55,6 +55,9 @@ jobs:
       - name: Run hook tests
         run: ./tests/test.sh
 
+      - name: Run trusted check tests
+        run: python3 -m unittest tests/test_trusted_checks.py
+
       - name: Run removed --with-cg regression tests
         run: bash tests/test-cg-install.sh
 
@@ -78,6 +81,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Run trusted check tests
+        run: python -m unittest tests/test_trusted_checks.py
 
       # Windows PowerShell 5.1 on purpose: it is what plain `powershell`
       # resolves to for users, and it lacks ConvertFrom-Json -AsHashtable,

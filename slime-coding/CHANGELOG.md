@@ -4,6 +4,16 @@ All notable changes to Slime Coding are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); this project is installed by
 cloning, so "versions" track the git history rather than published releases.
 
+## Unreleased
+
+- Stop checks now reference trusted check IDs from
+  `<git-dir>/guardrails/config.json`; argv runs with `shell=False`.
+- Inline `Command:`, `Independent check command:`, `SLIME_TEST_CMD`, and
+  `SLIME_TYPECHECK_CMD` are migration errors when product files changed.
+- High rigor uses `Independent check:` and rejects duplicate IDs or argv.
+- Corridors without explicit `Rigor` must migrate before a product delta can
+  complete.
+
 ## [Unreleased]
 
 ### Changed

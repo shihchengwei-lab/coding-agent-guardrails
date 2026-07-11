@@ -754,6 +754,14 @@ class CorridorCiTest(unittest.TestCase):
         self.assertIn("\n  comment:", action)
         self.assertIn("INPUT_COMMENT: ${{ inputs.comment }}", action)
         self.assertIn("GITHUB_TOKEN: ${{ github.token }}", action)
+        self.assertNotIn("allow_dependencies", action)
+
+    def test_readme_has_no_dependency_bypass_input(self):
+        repo = Path(__file__).resolve().parents[1]
+        readme = (repo / "README.md").read_text(encoding="utf-8")
+
+        self.assertNotIn("allow_dependencies", readme)
+        self.assertIn("Guardrails-Dependency-Approval", readme)
 
     def test_pull_request_body_edits_rerun_corridor(self):
         repo = Path(__file__).resolve().parents[1]
@@ -783,13 +791,13 @@ class CorridorCiTest(unittest.TestCase):
         repo = Path(__file__).resolve().parents[1]
         readme = (repo / "README.md").read_text(encoding="utf-8")
         workflow = (repo / "examples" / "workflow.yml").read_text(encoding="utf-8")
-        readme_tag = re.search(r"corridor-ci@(corridor-ci-v\d+)", readme)
-        workflow_tag = re.search(r"corridor-ci@(corridor-ci-v\d+)", workflow)
+        readme_tag = re.search(r"corridor-ci@(corridor-ci-v\d+\.\d+\.\d+)", readme)
+        workflow_tag = re.search(r"corridor-ci@(corridor-ci-v\d+\.\d+\.\d+)", workflow)
 
         self.assertIsNotNone(readme_tag)
         self.assertIsNotNone(workflow_tag)
         self.assertEqual(readme_tag.group(1), workflow_tag.group(1))
-        self.assertEqual(readme_tag.group(1), "corridor-ci-v12")
+        self.assertEqual(readme_tag.group(1), "corridor-ci-v13.0.0")
 
     # -- base-branch policy gate --------------------------------------
 

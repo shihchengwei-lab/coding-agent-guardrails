@@ -17,8 +17,9 @@ inputs:
     description: >-
       Checkout-relative path of a committed agentcam manifest.redacted.json
       (written by `agentcam export --files`). When present, its locally recorded
-      evidence and capture coverage are appended to the report. Blank,
-      placeholder, or false recorded verification claims fail the corridor.
+      evidence and capture coverage are appended to the report. Recorded
+      verification must be state-bound and match the current PR product;
+      blank, stale, or false claims fail the corridor.
     required: false
     default: ".agentcam/manifest.redacted.json"
 

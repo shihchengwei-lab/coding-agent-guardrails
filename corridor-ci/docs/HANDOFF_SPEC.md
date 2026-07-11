@@ -35,9 +35,9 @@ Headings, bold labels, and bullet labels are not fields. For example,
 `Verified` is required handoff context, not proof by itself. A manual command or
 check is accepted and labeled `manual`. When an agentcam manifest is committed,
 Corridor CI labels it `local-recorded` only if the handoff contains
-`[locally recorded by agentcam]` and an exact `command (exit 0)` match from
-that author-controlled manifest. The legacy `[recorded by agentcam]` marker is
-accepted with a warning and has the same `local-recorded` trust level.
+`[locally recorded by agentcam]`, exact fixed grammar, an integer exit code 0,
+matching verification state, and a product fingerprint equal to the current
+PR. The legacy `[recorded by agentcam]` marker is rejected.
 Placeholders, `n/a`, and unmatched recorded claims are `unverified`
 and fail the corridor. Manual checks remain valid and labeled `manual`. Legacy
 or hook capture can additionally be labeled `partial` without changing the

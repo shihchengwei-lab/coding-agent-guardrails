@@ -10,7 +10,7 @@ from agentcam import __version__
 
 
 def test_release_version_matches_product_closure_release():
-    assert __version__ == "0.4.0"
+    assert __version__ == "0.5.0"
 from agentcam.models import (
     ExitDetail,
     GitState,
