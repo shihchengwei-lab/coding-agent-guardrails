@@ -58,8 +58,9 @@ git clone https://github.com/shihchengwei-lab/coding-agent-guardrails $HOME\guar
 四個工具會接成一個流程。這就是打包的意義：
 
 1. **實錄**：`agentcam run -- <agent 指令>`（或使用安裝器接好的 Claude Code
-   session／Codex turn 掛鉤）。agent 改的一切
-   記錄在 `.git/agentcam/runs/`。取捨先講明：hook 模式的證據比較薄，
+   session／Codex turn 掛鉤）。Agentcam 會把前後 Git 狀態、變更檔案清單與
+   diff 統計記錄在 `.git/agentcam/runs/`；wrap 模式另會保留終端輸出。
+   取捨先講明：hook 模式的證據比較薄，
    lifecycle 掛鉤看不到終端輸出，所以輸出樣式型的風險旗標
    （`rm -rf` 之類）抓不到；要最完整的實錄，用 `agentcam run` 包著跑。
 2. **驗證**：`agentcam verify -- pytest -q`。由 agentcam 親自執行測試，
