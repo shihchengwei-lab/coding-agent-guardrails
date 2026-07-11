@@ -1,30 +1,25 @@
 {
-  "approval": {
-    "confirmation_id": "4622e123bd8893b473bf37ee4af74b8cd3997b7f9b697be7c5a4a020877cd82e",
-    "confirmed": true,
-    "product_fingerprint": "21f7789e99b79deb192ef391c26fe3de9e6f622b58e355138549a42307da7841",
-    "required": true
-  },
+  "approval": null,
   "capture": {
     "coverage": "partial",
     "terminal": "unavailable"
   },
   "delivery": {
-    "base_commit": "33a06a780e500e0383db16b58c881f9a808febc0",
+    "base_commit": "ee48dc0aa076aaa85f11e754ee2a722c1b4318ef",
     "changed_files": [
       {
-        "path": ".github/workflows/corridor.yml",
-        "status": "modified"
+        "path": "tests/guardrails-probe-stale.txt",
+        "status": "untracked"
       }
     ],
     "outcomes": [
-      "Use the published Corridor CI v14 release for repository enforcement"
+      "Prove v14 rejects a product edit after review finalization"
     ],
-    "product_fingerprint": "21f7789e99b79deb192ef391c26fe3de9e6f622b58e355138549a42307da7841",
-    "review_first": ".github/workflows/corridor.yml",
-    "risk": "high",
+    "product_fingerprint": "374cd812fd9d68e72b58fae10b86efdef222741f629de302b9595cb555b9c90f",
+    "review_first": "tests/guardrails-probe-stale.txt",
+    "risk": "none-detected",
     "scope": [
-      ".github/workflows/corridor.yml"
+      "tests/guardrails-probe-stale.txt"
     ],
     "scope_changes": []
   },
@@ -41,10 +36,10 @@
           "diff",
           "--check"
         ],
-        "duration_ms": 78,
+        "duration_ms": 47,
         "exit_code": 0,
         "id": "structural",
-        "state_fingerprint": "21f7789e99b79deb192ef391c26fe3de9e6f622b58e355138549a42307da7841"
+        "state_fingerprint": "374cd812fd9d68e72b58fae10b86efdef222741f629de302b9595cb555b9c90f"
       }
     ],
     "level": "structural-only"
