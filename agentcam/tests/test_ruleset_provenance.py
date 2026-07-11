@@ -24,6 +24,9 @@ def test_release_workflow_uses_oidc_and_releases_only_after_pypi():
     assert "pypa/gh-action-pypi-publish@release/v1" in workflow
     assert "needs: [build, publish-pypi]" in workflow
     assert "gh release create" in workflow
+    assert "--draft" in workflow
+    assert "gh release edit" in workflow
+    assert "--draft=false" in workflow
     assert "python -m build" in workflow
 from agentcam.models import (
     ExitDetail,
