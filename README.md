@@ -120,8 +120,7 @@ upgrade. Each component also has its own README:
 
 The low-friction line is Agentcam `0.6.0` and Corridor CI `v14.0.0`. Release
 tags are prefixed per component: `agentcam-v0.6.0` and
-`corridor-ci-v14.0.0`; the immutable Corridor tag is what installed workflows
-pin after the release rollout.
+`corridor-ci-v14.0.0`. Installed workflows pin that immutable Corridor release.
 
 ## License
 
