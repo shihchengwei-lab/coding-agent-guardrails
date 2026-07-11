@@ -104,6 +104,19 @@ A workflow file is not a merge gate by itself. Repository administrators must
 make Corridor and the relevant test jobs required checks in branch protection
 or a ruleset. This repository requires all 13 stable checks on `main`.
 
+This repository also runs `Policy Gate` from the default branch with
+`pull_request_target`; it treats the PR head as data and never executes PR
+scripts. A PR that changes `.github/workflows/**` needs an OWNER approval bound
+to the exact current head SHA:
+
+```text
+Guardrails-Workflow-Approval: <full-head-sha>
+```
+
+After adding the comment, rerun the failed Policy Gate job. A later commit
+invalidates the approval. This is an explicit maintainer break-glass for
+workflow maintenance, not an approval that PR content can grant itself.
+
 ## Versioning
 
 One repo, four tools, so release tags are prefixed per tool:

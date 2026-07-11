@@ -8,6 +8,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-posix:
     name: Toolkit POSIX
@@ -28,3 +32,15 @@ jobs:
       - shell: powershell
         run: powershell -ExecutionPolicy Bypass -File tests/test-install.ps1
       - run: python tests/toolkit_e2e.py --platform windows
+
+  result:
+    name: Toolkit tests
+    if: ${{ always() }}
+    needs: [test-posix, test-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both platform results
+        env:
+          POSIX_RESULT: ${{ needs.test-posix.result }}
+          WINDOWS_RESULT: ${{ needs.test-windows.result }}
+        run: test "$POSIX_RESULT" = success && test "$WINDOWS_RESULT" = success
