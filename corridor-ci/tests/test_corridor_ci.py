@@ -764,6 +764,129 @@ class CorridorCiTest(unittest.TestCase):
         self.assertEqual(readme_tag.group(1), workflow_tag.group(1))
         self.assertEqual(readme_tag.group(1), "corridor-ci-v12")
 
+    # -- base-branch policy gate --------------------------------------
+
+    def test_policy_gate_allows_pr_without_workflow_changes(self):
+        decision = corridor_ci.evaluate_workflow_policy(
+            changed_files=["src/app.py"],
+            comments=[],
+            head_sha="a" * 40,
+            pr_author="author",
+        )
+
+        self.assertTrue(decision.ok)
+        self.assertEqual(decision.changed_workflows, [])
+
+    def test_policy_gate_blocks_workflow_change_without_external_approval(self):
+        decision = corridor_ci.evaluate_workflow_policy(
+            changed_files=[".github/workflows/agentcam.yml"],
+            comments=[],
+            head_sha="b" * 40,
+            pr_author="author",
+        )
+
+        self.assertFalse(decision.ok)
+        self.assertIn("Guardrails-Workflow-Approval", decision.reason)
+
+    def test_policy_gate_owner_approval_is_bound_to_exact_head(self):
+        head = "c" * 40
+        decision = corridor_ci.evaluate_workflow_policy(
+            changed_files=[".github/workflows/toolkit.yml"],
+            comments=[
+                {
+                    "body": f"Guardrails-Workflow-Approval: {head}",
+                    "author_association": "OWNER",
+                    "user": {"login": "author"},
+                }
+            ],
+            head_sha=head,
+            pr_author="author",
+        )
+
+        self.assertTrue(decision.ok)
+        self.assertEqual(decision.approved_by, "author")
+
+    def test_policy_gate_rejects_stale_or_author_member_approval(self):
+        head = "d" * 40
+        comments = [
+            {
+                "body": f"Guardrails-Workflow-Approval: {'e' * 40}",
+                "author_association": "OWNER",
+                "user": {"login": "owner"},
+            },
+            {
+                "body": f"Guardrails-Workflow-Approval: {head}",
+                "author_association": "MEMBER",
+                "user": {"login": "author"},
+            },
+        ]
+
+        decision = corridor_ci.evaluate_workflow_policy(
+            changed_files=[".github/workflows/corridor.yml"],
+            comments=comments,
+            head_sha=head,
+            pr_author="author",
+        )
+
+        self.assertFalse(decision.ok)
+
+    def test_policy_gate_accepts_non_author_member_approval(self):
+        head = "f" * 40
+        decision = corridor_ci.evaluate_workflow_policy(
+            changed_files=[".github/workflows/corridor.yml"],
+            comments=[
+                {
+                    "body": f"Guardrails-Workflow-Approval: {head}",
+                    "author_association": "MEMBER",
+                    "user": {"login": "maintainer"},
+                }
+            ],
+            head_sha=head,
+            pr_author="author",
+        )
+
+        self.assertTrue(decision.ok)
+        self.assertEqual(decision.approved_by, "maintainer")
+
+    def test_ci_bootstrap_contracts(self):
+        root = Path(__file__).resolve().parents[2]
+        workflows = root / ".github" / "workflows"
+        policy = (workflows / "policy-gate.yml").read_text(encoding="utf-8")
+
+        self.assertIn("pull_request_target:", policy)
+        self.assertIn("name: Policy Gate", policy)
+        self.assertIn("contents: read", policy)
+        self.assertIn("pull-requests: read", policy)
+        self.assertNotIn("pull-requests: write", policy)
+        self.assertIn("--policy-gate", policy)
+
+        pr_workflows = (
+            "agentcam.yml",
+            "corridor.yml",
+            "corridor-ci.yml",
+            "kiss.yml",
+            "slime-coding.yml",
+            "toolkit.yml",
+            "policy-gate.yml",
+        )
+        for name in pr_workflows:
+            text = (workflows / name).read_text(encoding="utf-8")
+            self.assertIn("concurrency:", text, name)
+            self.assertIn("cancel-in-progress: true", text, name)
+
+        self.assertIn(
+            "name: Agentcam tests",
+            (workflows / "agentcam.yml").read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            "name: Slime tests",
+            (workflows / "slime-coding.yml").read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            "name: Toolkit tests",
+            (workflows / "toolkit.yml").read_text(encoding="utf-8"),
+        )
+
     # -- agentcam verification evidence -------------------------------
 
     @staticmethod
