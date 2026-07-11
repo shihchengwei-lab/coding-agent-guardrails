@@ -31,13 +31,14 @@ After each run, you get an `AGENT_RUN_REPORT.md` answering four questions:
    Capture Visibility table per run, so "no output-pattern flag" cannot be
    misread as "no risk happened". Hook-mode reports declare
    `stdout = not_available`; wrap-mode reports declare `stdout = captured`.
-   Same table also reports the ruleset id + a deterministic hash of the
-   effective rule set, so reports stay diffable across releases.
+   The report also records the built-in ruleset id and deterministic behavior
+   hash, so reports stay diffable across releases.
 
 See [`examples/risky-auth-change/expected-report.md`](examples/risky-auth-change/expected-report.md)
 for what a report looks like when the agent touches a sensitive area.
 (That sample is verbatim agentcam 0.1.0 output; current reports add the
-Capture Visibility and Scanner Ruleset sections described above.)
+Capture Visibility and Scanner Ruleset sections and no longer print its
+permanent `Tests observed: unknown` placeholder.)
 
 ---
 
@@ -113,7 +114,7 @@ agentcam run --keep-empty -- claude -p "..."
 ```
 
 This is the "no-diff cleanup" default. The same logic applies to Hook
-mode (see below). Full rationale: [`docs/design.md` § 23](docs/design.md).
+mode (see below). Full rationale: [no-diff cleanup](docs/design.md#git-state-and-no-diff-cleanup).
 
 ### Wrapping Claude Code
 
@@ -138,7 +139,7 @@ agentcam run -- pwsh -Command "Get-Process | Out-File procs.txt"
 agentcam run -- cmd /c "dir > files.txt"
 ```
 
-This is a deliberate constraint; see [`docs/design.md` § 4](docs/design.md).
+This is a deliberate constraint; see [wrapped process](docs/design.md#wrapped-process).
 
 ### Backends (PTY vs PIPE)
 
@@ -163,11 +164,11 @@ until restarted).
 
 Windows requires the `pywinpty` dependency (installed automatically
 on Windows by `pip install agentcam`; not installed on Linux/macOS).
-See [`docs/design.md` § 32](docs/design.md) for the design rationale.
+See [wrapped process](docs/design.md#wrapped-process) for the design rationale.
 
 ---
 
-## Hook mode (Claude Code: no wrapper needed)
+## Hook mode (Claude Code and Codex: no wrapper needed)
 
 If your agent is Claude Code, you can register agentcam as a hook so
 that every `claude` session is recorded automatically, with no need to
@@ -193,12 +194,14 @@ some changes, exit. agentcam writes the report under
 the working tree leave no trace. The no-diff cleanup applies the
 same way as in the wrapping path.
 
-Hook mode is Claude Code-specific (it uses Claude Code's settings.json
-hook mechanism). For other agents (Codex, Aider, OpenHands), use the
-generic wrapping path above (`agentcam run -- ...`).
+Codex has no `SessionEnd`, so it uses turn-scoped hooks instead: wire
+`hook-turn-start` to `UserPromptSubmit` and `hook-turn-end` to `Stop`.
+The repository root `install.ps1` installs these Codex hooks automatically and
+preserves existing project hooks. For other agents, use the generic wrapping
+path above (`agentcam run -- ...`).
 
-Both hook commands always exit 0; Claude Code is never blocked even
-if agentcam has an internal error.
+All hook commands always exit 0; a recording error never blocks Claude Code or
+Codex.
 
 `agentcam verify` works mid-session: while a session is in progress it
 records the check against that session, not against a previous run,
@@ -299,7 +302,7 @@ agentcam handoff
 
 `handoff` drafts the five-line review handoff from the recorded run:
 `Scope` from the files that actually changed, `Review first` from the
-highest-severity risk flag, `Risk` from the overall verdict, `Verified`
+highest-severity risk flag, `Risk` from flags plus capture coverage, `Verified`
 from recorded passing checks. `Decision` always stays with you:
 agentcam records what changed, not why. Without a recorded check (or
 with only failing ones) `Verified` stays a fill-in too: red must not
@@ -315,8 +318,8 @@ agentcam export latest --files .agentcam/
 Commit it with the PR and corridor-ci appends it to its report as
 recorded evidence. Corridor CI cross-checks the handoff command against
 passing recorded checks and labels verification `recorded`, `manual`, or
-`unverified`; limited capture is marked `partial`. These provenance warnings
-are display-only and never affect the check.
+`unverified`; limited capture is marked `partial`. Manual and partial states
+remain visible; placeholders and false recorded claims fail the check.
 
 ---
 
@@ -324,6 +327,8 @@ are display-only and never affect the check.
 
 Two levels: **HIGH** and **MEDIUM**. There is no LOW: filename-only
 heuristics for "trivial" changes are unreliable, and we don't pretend.
+When no flag fires, full wrap capture reports `none-detected`; hook capture
+reports `unknown` because terminal-output scanning was unavailable.
 
 **HIGH**: flagged for any of:
 
@@ -348,7 +353,7 @@ heuristics for "trivial" changes are unreliable, and we don't pretend.
 
 **Path matching is segment-based.** Segment `auth` matches
 `src/auth/login.py` and `auth.ts`, but does NOT match `author.md` or
-`authorization-docs/x.md`. See [`docs/design.md` § 7](docs/design.md).
+`authorization-docs/x.md`. See [risk flags](docs/design.md#risk-flags).
 
 **Evidence never includes raw matched text.** Risk Flags cite the pattern
 name and a line number (`stdout.log line 42`), never the matched
@@ -356,7 +361,7 @@ substring. Secrets that happen to land near a risk pattern in output do
 not leak through the report.
 
 For the full rule list and rationale, see
-[`docs/design.md` § 7, § 12, § 15](docs/design.md).
+[risk flags](docs/design.md#risk-flags) and [redaction](docs/design.md#redaction).
 
 ---
 
@@ -387,7 +392,7 @@ renderers consume.
 v1 covers Python (`requirements.txt`, `pyproject.toml` for PEP 621
 and Poetry) and npm (`package.json` for `dependencies` +
 `devDependencies`). Cargo, go.mod, and lockfiles are deliberately
-deferred. See [`docs/design.md` § 25](docs/design.md).
+deferred. See [dependency evidence](docs/design.md#dependency-evidence).
 
 ---
 
@@ -511,13 +516,12 @@ The codebase is intentionally small (one source module per concern):
 ```
 src/agentcam/
 ├── cli.py               # argparse + wrap-mode orchestrator + export
-├── hooks.py             # Claude Code SessionStart / SessionEnd hooks
+├── hooks.py             # Claude session + Codex turn hooks
 ├── runner.py            # threads-based tee + exit code interpretation
 ├── git_state.py         # porcelain parser + git_dir resolver
 ├── paths.py             # run_id + collision-safe directory creation
 ├── redaction.py         # streaming secret redactor
-├── scanner.py           # path + output risk patterns (+ RuleSet
-│                        # + ruleset provenance hashing)
+├── scanner.py           # path + output risk patterns + behavior hash
 ├── dependency_probe.py  # pip / pyproject / npm manifest diff
 ├── report.py            # AGENT_RUN_REPORT.md generator + shared
 │                        # write_run_artifacts helper

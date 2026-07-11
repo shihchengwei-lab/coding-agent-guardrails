@@ -1,19 +1,32 @@
 import hashlib
-import re
+from collections import Counter
 from pathlib import Path
 
+from benchmark_runner import find_results, write_summary
 
-def test_fusion_result_is_bound_to_an_immutable_measured_fixture():
+
+def test_fusion_measurement_is_committed_and_recomputable(tmp_path: Path):
     lab = Path(__file__).resolve().parents[1]
     fixture = lab / "fixtures" / "discipline-fusion-20260705.md"
+    results_dir = lab / "results" / "discipline-fusion-20260705"
+    result_file = results_dir / "result.json"
+    committed_summary = results_dir / "summary.md"
     run_doc = (lab / "discipline-fusion-run.md").read_text(encoding="utf-8")
-    summary_doc = (lab / "discipline-fusion-summary.md").read_text(encoding="utf-8")
 
-    digest = "sha256:" + hashlib.sha256(fixture.read_bytes()).hexdigest()
-    assert digest in run_doc
-    assert digest in summary_doc
-    assert "historical measured fixture" in run_doc.lower()
-    assert "historical measured fixture" in summary_doc.lower()
+    fixture_digest = "sha256:" + hashlib.sha256(fixture.read_bytes()).hexdigest()
+    results_digest = "sha256:" + hashlib.sha256(result_file.read_bytes()).hexdigest()
+    assert fixture_digest in run_doc
+    assert results_digest in run_doc
 
-    documented = re.findall(r"sha256:[0-9a-f]{64}", run_doc + summary_doc)
-    assert documented and set(documented) == {digest}
+    rows = find_results(results_dir)
+    assert len(rows) == 32
+    assert Counter(row["variant"] for row in rows) == {
+        "baseline": 16,
+        "discipline": 16,
+    }
+
+    recomputed = tmp_path / "summary.md"
+    write_summary(rows, recomputed)
+    assert recomputed.read_text(encoding="utf-8").splitlines() == (
+        committed_summary.read_text(encoding="utf-8").splitlines()
+    )

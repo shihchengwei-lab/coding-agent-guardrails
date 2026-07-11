@@ -8,7 +8,7 @@ See ``docs/design.md`` for the schema design rationale.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Literal
 
@@ -145,8 +145,7 @@ class ExitDetail:
 class CaptureCapability:
     """What agentcam was able to observe for this run.
 
-    See ``docs/design.md`` decision #28 (Capture Visibility metadata)
-    for the rationale. Constant per (mode, transcript availability,
+    See ``docs/design.md#capture-visibility`` for the rationale. Constant per (mode, transcript availability,
     empty-run policy) tuple — factory functions
     :func:`capture_for_wrap_pipe` / :func:`capture_for_claude_hook` are
     the supported way to build one.
@@ -247,27 +246,11 @@ def capture_for_wrap_pty_windows(*, empty_run_policy: str) -> CaptureCapability:
 
 @dataclass(frozen=True, slots=True)
 class RulesetProvenance:
-    """Which rule set produced the risk flags in this report.
-
-    See ``docs/design.md`` decision #29 (Ruleset provenance) for the
-    rationale. Built-in-only mode is represented explicitly so future
-    YAML-loaded custom rule sets (roadmap #4) can be distinguished by
-    a non-null ``custom_rules_path`` + ``custom_rules_sha256`` and a
-    ``load_status`` other than ``"builtin_only"``.
-
-    ``merged_rules_sha256`` is a deterministic hash of the *effective*
-    rule set (built-in alone today, built-in ⊕ custom in the future)
-    so two reports diffed by future ``agentcam compare`` (or by a
-    human) cannot silently disagree because one used a different
-    ruleset. Format: ``sha256:<hex>``.
-    """
+    """Identity and behavior hash of the built-in scanner rules."""
 
     builtin_ruleset_id: str
     builtin_ruleset_version: str
-    custom_rules_path: str | None
-    custom_rules_sha256: str | None
-    merged_rules_sha256: str | None
-    load_status: str
+    rules_sha256: str
 
 
 def capture_for_claude_hook(
@@ -286,8 +269,7 @@ def capture_for_claude_hook(
     ``transcript_available`` flips the ``transcript`` field between
     ``"available_not_ingested"`` (Claude Code provided a transcript_path
     in the hook payload) and ``"unknown"`` (no path provided / not a
-    string). Ingestion itself is a v0.3+ roadmap item; we currently do
-    not read the file.
+    string). agentcam records availability but does not parse the file.
     """
     return CaptureCapability(
         mode="claude_hook",
@@ -302,6 +284,21 @@ def capture_for_claude_hook(
         file_reads="not_visible",
         network_egress="not_visible",
         empty_run_policy=empty_run_policy,
+    )
+
+
+def capture_for_codex_hook(
+    *,
+    transcript_available: bool,
+    empty_run_policy: str,
+) -> CaptureCapability:
+    """Capture profile for Codex UserPromptSubmit / Stop turn hooks."""
+    return replace(
+        capture_for_claude_hook(
+            transcript_available=transcript_available,
+            empty_run_policy=empty_run_policy,
+        ),
+        mode="codex_hook",
     )
 
 
@@ -331,12 +328,8 @@ class RunManifest:
     platform: str
     agentcam_version: str
     paths: RunPaths
-    # Optional for back-compat: legacy tests build RunManifest directly
-    # without setting capture / ruleset. Production callers (cli.py,
-    # hooks.py) always supply both. When None, serialize_manifest
-    # omits the block and render_report skips the section.
-    capture: CaptureCapability | None = None
-    ruleset: RulesetProvenance | None = None
+    capture: CaptureCapability
+    ruleset: RulesetProvenance
 
 
 @dataclass(frozen=True)
@@ -344,12 +337,7 @@ class ReportBundle:
     """Everything a renderer needs to produce one report.
 
     Aggregates the manifest, before/after git snapshots, risk flags,
-    and dependency changes into a single value so multiple renderers
-    (Markdown today; SARIF / PR-comment later) can consume the same
-    object instead of each accepting a long arg list. See
-    ``docs/design.md`` decision 26 for the rationale —
-    we intentionally stopped short of a full event-stream layer
-    because no current consumer needs streaming.
+    and dependency changes into the report renderer's single input.
 
     Defaults make construction tolerant: callers that don't have
     risk_flags or dependency_changes for a particular code path

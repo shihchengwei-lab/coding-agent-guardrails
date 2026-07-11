@@ -489,9 +489,12 @@ class TestRulesetProvenance:
         rs = _manifest(tmp_git_repo).get("ruleset")
         assert rs is not None, "wrap mode manifest must carry ruleset block"
         assert rs["builtin_ruleset_id"] == "agentcam-default"
-        assert rs["load_status"] == "builtin_only"
-        assert rs["custom_rules_path"] is None
-        assert rs["merged_rules_sha256"].startswith("sha256:")
+        assert set(rs) == {
+            "builtin_ruleset_id",
+            "builtin_ruleset_version",
+            "rules_sha256",
+        }
+        assert rs["rules_sha256"].startswith("sha256:")
 
         report = _report(tmp_git_repo)
         assert "## Scanner Ruleset" in report

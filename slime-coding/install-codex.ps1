@@ -139,39 +139,6 @@ function Merge-Hooks {
   $settings | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $SettingsPath -Encoding utf8
 }
 
-function Install-GitHook {
-  param([string]$PythonWin)
-  $gitPath = (& git -C $Project rev-parse --git-path hooks/prepare-commit-msg 2>$null)
-  if (-not $gitPath) {
-    Write-Host "  git hook skipped (target is not a git repo)"
-    return
-  }
-  if ([System.IO.Path]::IsPathRooted($gitPath)) {
-    $hookPath = $gitPath
-  } else {
-    $hookPath = Join-Path $Project $gitPath
-  }
-  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $hookPath) | Out-Null
-  $start = "# >>> Slime Coding commit evidence"
-  $end = "# <<< Slime Coding commit evidence"
-  $block = @"
-$start
-$PythonWin "$SlimeHome\bin\commit-evidence" "`$@"
-$end
-"@
-  $content = ""
-  if (Test-Path -LiteralPath $hookPath) {
-    $content = Get-Content -LiteralPath $hookPath -Raw
-  }
-  $pattern = "(?s)" + [regex]::Escape($start) + ".*?" + [regex]::Escape($end) + "\s*"
-  $content = [regex]::Replace($content, $pattern, "").TrimEnd()
-  if (-not $content.StartsWith("#!")) {
-    $content = "#!/usr/bin/env sh`n" + $content
-  }
-  Set-Content -LiteralPath $hookPath -Value ($content.TrimEnd() + "`n`n" + $block + "`n") -Encoding utf8
-  Write-Host "  wired git hook -> $hookPath"
-}
-
 $pythonWin = if ($PythonCommand) { $PythonCommand } else { Find-PythonCommand }
 # A bare interpreter path with spaces (user-supplied, or with its quotes eaten
 # at a process boundary) would split into two tokens in every baked command
@@ -213,8 +180,6 @@ Install-ManagedBlock -Path (Join-Path $Project "AGENTS.md") -Block $agentsBlock.
   -Start "<!-- coding-agent-guardrails:discipline:start -->" `
   -End "<!-- coding-agent-guardrails:discipline:end -->"
 Write-Host "  installed discipline block (root templates/DISCIPLINE.md) -> $(Join-Path $Project 'AGENTS.md')"
-
-Install-GitHook -PythonWin $pythonWin
 
 Write-Host ""
 Write-Host "Done. Restart Codex or start a new Codex run in the target repo so AGENTS.md and hooks are reloaded."

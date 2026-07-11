@@ -15,7 +15,7 @@ Decision: #123
 Scope: pkg/parser/*, tests/parser/*
 Review first: pkg/parser/links.py
 Verified: pytest tests/parser
-Risk: low
+Risk: none-detected
 ```
 
 `Decision` points to where the why already lives: an issue, discussion, RFC,
@@ -25,8 +25,8 @@ spec, bug reproduction, maintainer request, or a clearly small fix.
 CI compares the actual diff against the stated boundary and reports when the PR
 touched more than it said it would.
 
-`Scope: auto` is still available when a project only wants low-friction review
-visibility. It turns the actual changed files into the review boundary.
+`Scope` must contain explicit paths or globs. Mirroring the changed files back
+as the declared boundary does not constrain anything, so `auto` is rejected.
 
 It is not an AI detector, a spam score, an AI reviewer, or a code quality check.
 Humans still review the code. A red check means information is missing or the
@@ -57,13 +57,11 @@ jobs:
 
       - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v11
         with:
-          mode: warn
-          small_change_max_files: 1
-          max_changed_files: 12
+          mode: fail
 ```
 
-Start with `mode: warn`. Switch to `mode: fail` after the project accepts the
-rule.
+The default is `mode: fail`. Use `warn` only for a deliberate observation-only
+trial; it is not a guardrail until issues return a non-zero result.
 
 Add this to the PR body:
 
@@ -72,7 +70,7 @@ Decision: #123
 Scope: pkg/parser/*, tests/parser/*
 Review first: pkg/parser/links.py
 Verified: pytest tests/parser
-Risk: low
+Risk: none-detected
 ```
 
 The cheapest adoption path is to copy
@@ -94,16 +92,17 @@ corridor:
 Scope: pkg/parser/*, tests/parser/*
 ```
 
-Use `Scope: auto` only when you want low-friction review visibility. It uses the
-actual changed files as the review boundary.
+`Scope: auto` and match-everything patterns are rejected because they restate
+the diff instead of declaring where the change was meant to stop.
 
 `Review first` must be one of the changed files.
 
 `Verified` may describe a manual check. When a committed agentcam manifest is
 available, Corridor CI labels the line `recorded` only when its exact command
 and exit-0 result match the manifest. Otherwise it reports `manual` or
-`unverified`; hook-mode or legacy capture is also marked `partial`. These are
-provenance warnings, never additional pass/fail conditions.
+`unverified`; hook-mode or legacy capture is also marked `partial`. Manual
+verification remains valid and visibly weaker. A placeholder or false recorded
+claim is `unverified` and fails the corridor.
 
 Glob matching uses git-style semantics. `*` and `?` never cross `/`, so
 `pkg/*` matches `pkg/a.py` but not `pkg/sub/deep.py`. `**/` spans zero or
@@ -114,15 +113,14 @@ more directories, so `pkg/**/*.py` covers both `pkg/top.py` and
 
 - Required handoff fields exist.
 - Explicit `Scope` paths or globs cover the changed files.
-- `Scope: auto` resolves to the actual changed files when chosen.
 - `Review first` points to a changed file.
 - Dependency manifest changes are blocked unless explicitly allowed.
-- PRs over `max_changed_files` are blocked or warned.
-- Tiny PRs can skip the handoff when `small_change_max_files` allows it.
+- `Verified` names a completed manual check or matches a passing agentcam check.
 
-Warnings never block. Corridor CI warns when a scope pattern carries no
-information, when `Decision` has no issue/discussion/URL reference, or when the
-PR body is too long to keep the compact handoff easy to find.
+Warnings never block. Corridor CI warns when `Decision` has no
+issue/discussion/URL reference, when verification is manual, when capture is
+partial, or when the PR body is too long to keep the compact handoff easy to
+find. A scope that carries no information is an issue, not a warning.
 
 If the handoff is missing or incomplete, the CI summary includes a copyable blank
 handoff.
@@ -162,12 +160,10 @@ jobs:
 
 | input | default | meaning |
 |---|---:|---|
-| `mode` | `warn` | `fail` exits non-zero on issues; `warn` only reports. |
-| `small_change_max_files` | `0` | Allow no-handoff small changes up to this file count. `0` disables it. |
-| `max_changed_files` | `12` | Optional changed-file limit. `0` disables it. |
+| `mode` | `fail` | `fail` exits non-zero on issues; `warn` only reports. |
 | `allow_dependencies` | `false` | Allow dependency manifest changes. |
 | `comment` | `false` | Upsert the report as a sticky PR comment. |
-| `agentcam_evidence` | `.agentcam/manifest.redacted.json` | Committed agentcam manifest (from `agentcam export --files`); its evidence, verification provenance, and capture coverage are appended. Provenance warnings never affect pass/fail. |
+| `agentcam_evidence` | `.agentcam/manifest.redacted.json` | Committed agentcam manifest (from `agentcam export --files`); its evidence, verification provenance, and capture coverage are appended. Unverified claims fail; manual and partial provenance remain visible. |
 
 ## Philosophy
 

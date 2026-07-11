@@ -52,7 +52,7 @@ detail, rollback notes, log paths — is the verbatim output of agentcam 0.1.0.
 ## See also
 
 - `expected-report.md` — the rendered report
-- `../../docs/design.md` § 7 — why segment matching, not substring
-- `../../docs/design.md` § 12 — secret-like filename redaction (not
+- [`../../docs/design.md#risk-flags`](../../docs/design.md#risk-flags) — why risk flags route review
+- [`../../docs/design.md#redaction`](../../docs/design.md#redaction) — secret-like filename redaction (not
   triggered in this example, but referenced in the section about
   `Changed Files` redaction)

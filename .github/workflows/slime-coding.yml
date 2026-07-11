@@ -32,7 +32,6 @@ jobs:
         run: |
           python3 -c 'import ast; ast.parse(open("bin/patch-cost").read())'
           python3 -c 'import ast; ast.parse(open("bin/prune-inject").read())'
-          python3 -c 'import ast; ast.parse(open("bin/commit-evidence").read())'
 
       - name: Validate hooks template JSON
         run: python3 -c 'import json; json.load(open("hooks/hooks.template.json"))'
@@ -42,11 +41,10 @@ jobs:
           bash -n install.sh
           bash -n tests/test.sh
           bash -n tests/test-cg-install.sh
-          bash -n tests/test-commit-evidence.sh
 
       - name: Check executable bits
         run: |
-          for f in bin/patch-cost bin/prune-inject bin/commit-evidence install.sh tests/test.sh tests/test-commit-evidence.sh; do
+          for f in bin/patch-cost bin/prune-inject install.sh tests/test.sh; do
             if [ ! -x "$f" ]; then echo "::error::$f is not executable"; exit 1; fi
           done
 
@@ -55,9 +53,6 @@ jobs:
 
       - name: Run removed --with-cg regression tests
         run: bash tests/test-cg-install.sh
-
-      - name: Run commit evidence tests
-        run: bash tests/test-commit-evidence.sh
 
       - name: install.sh smoke test (idempotent)
         run: |

@@ -131,11 +131,11 @@ prioritize a fix and a release.
 These are **expected** behaviors, not vulnerabilities:
 
 - Risk flags fire on heuristics that may produce false positives / negatives
-  (the README and `docs/design.md` § 7 say so explicitly).
+  (the README and `docs/design.md` risk-flags section say so explicitly).
 - The wrapped subprocess can do anything your shell can do (the README
   "Known limitations" says so explicitly).
 - Raw logs contain whatever the subprocess wrote, including sensitive data.
-  This is the design — see `docs/design.md` § 2.
+  This is the design — see `docs/design.md` redaction section.
 - The `Command:` field shows the redacted argv. The raw argv lives in
   `manifest.command_argv_raw` by design.
 - agentcam does not defend against an adversarial wrapped subprocess that

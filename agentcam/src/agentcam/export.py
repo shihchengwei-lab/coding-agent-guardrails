@@ -13,7 +13,7 @@ the streaming redactor missed. The `--include-raw` flag is the
 documented opt-in for users who understand the risk and need raw logs
 anyway.
 
-See ``docs/design.md`` decision #31 for the full rationale, including
+See ``docs/design.md#verification-and-handoff`` for the rationale, including
 why a flat ZIP rather than a directory tree, why the manifest is
 redacted in place instead of cloned, and the path-traversal defense
 strategy.

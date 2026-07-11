@@ -1,37 +1,21 @@
 # Corridor: example-feature
 
-## Scope
-One or two lines describing the minimal change. Replace this whole file when
-you start a real task (or generate it with /slime-corridor).
-
 ## Rigor
 normal
 
-## Semantic Delta
-- This task changes: the smallest observable behaviour that must move.
-- This task preserves: existing APIs, data flow, architecture, naming, and
-  ownership boundaries unless a Goal Frontier item explicitly requires moving
-  them.
-
-## Non-goals
-- Do not add parallel architecture, new dependency, broad refactor, or public
-  API change unless this corridor names the evidence for it.
+## Outcome
+The smallest observable result that must become true, plus the important
+behavior or boundary that must remain unchanged.
 
 ## Paths
 - lib/feature/example/**
 - test/feature/example/**
 
-## Goal Frontier
-- The behaviour the acceptance criteria require, traced back from the criteria.
-
-## Start Frontier
-- lib/feature/example/example_service.dart:ExampleService — the seam the
-  change attaches to.
-
 ## Evidence
 - Supports: the acceptance test reaches ExampleService through the existing
   caller.
 - Would falsify: runtime tracing shows another component owns this behavior.
+- Dependency: <package> — <why this outcome cannot use the existing stack>.
 
 ## Stop Condition
-- `dart test test/feature/example/` is green.
+- Command: dart test test/feature/example/

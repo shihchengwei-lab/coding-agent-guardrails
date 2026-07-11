@@ -29,22 +29,22 @@ Rules:
 
 Process (uses the slime-coding hooks installed in this project):
 
-1. Do not generate code straight from the prompt. Grow the **Goal Frontier**
-   (necessary observable outcomes, constraints, and unknowns, read backwards
-   from the acceptance criteria) and the **Start Frontier** (real attachment
-   points in this repo) separately. Read broadly enough to understand the
-   existing flow; edit narrowly. Use the `slime-navigate` skill.
-2. Edit only inside the **Meeting Corridor** — the minimal files where the two
-   frontiers meet. Write it to `.slime/corridor.md` with `/slime-corridor`
-   before editing. Choose `trivial`, `normal`, or `high` rigor. Normal and high
-   corridors must state both the evidence supporting the route and what would
-   falsify it; high rigor also names failure, rollback, and an independent
-   check. Leaving the corridor requires new evidence and an update.
+1. Do not generate code straight from the prompt. Read backwards from the
+   acceptance criteria and forwards from real attachment points in this repo
+   until you can name one observable **Outcome**. Read broadly enough to
+   understand the existing flow; edit narrowly. Use the `slime-navigate` skill.
+2. Edit only inside the **Meeting Corridor** — the minimal paths connecting the
+   existing code to that outcome. Write Outcome, Paths, and Stop Condition to
+   `.slime/corridor.md` with `/slime-corridor` before editing. Choose `trivial`,
+   `normal`, or `high` rigor. Normal/high add supporting and falsifying evidence;
+   high adds failure, rollback, and an independent check. A dependency must be
+   named with its reason in Evidence. Leaving the corridor requires new evidence
+   and an update.
 3. **Before editing, read `.slime/PRUNED.md`.** Do not revive a rejected
    design without new evidence. When you delegate editing to a sub-agent,
    copy the relevant pruned summary into its task prompt.
-4. When you reject a design path, record it with `/slime-prune` (the
-   abandoned path + the reason).
+4. When you actually reject a design path, record it with `/slime-prune` (the
+   abandoned path, concrete falsifying evidence, and revival condition).
 
 Evidence & handoff (agentcam — do this without being asked):
 

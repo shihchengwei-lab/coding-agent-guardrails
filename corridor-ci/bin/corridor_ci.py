@@ -12,7 +12,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -38,12 +38,13 @@ DEPENDENCY_GLOBS = (
 )
 
 COMPACT_HANDOFF_LABELS = ("Decision", "Scope", "Review first", "Verified", "Risk")
+HANDOFF_PLACEHOLDERS = {"n/a", "not set", "tbd", "todo"}
 
-COPYABLE_REVIEW_HANDOFF = """Decision: #123 or small fix
-Scope: path/or/glob
-Review first: path/to/file
-Verified: test command or manual check
-Risk: none
+COPYABLE_REVIEW_HANDOFF = """Decision: <fill in: issue, discussion, or short decision>
+Scope: <fill in: repo-relative path or glob>
+Review first: <fill in: changed file>
+Verified: <fill in: completed command or manual check>
+Risk: <fill in: high, medium, none-detected, or unknown>
 """
 
 COMMENT_MARKER = "<!-- corridor-ci -->"
@@ -126,9 +127,8 @@ def iter_visible_lines(text: str):
 
     PR bodies routinely carry a fenced handoff *example* — the template
     seeds one, and corridor-ci's own failure comment offers a copyable
-    block. Since field parsing is first-non-empty-value-wins, a fenced
-    ``Scope: auto`` example would otherwise shadow the author's real
-    handoff below it (and silently disable the corridor check).
+    block. Since field parsing is first-non-empty-value-wins, a fenced example
+    would otherwise shadow the author's real handoff below it.
     """
     fence: str | None = None
     for line in text.splitlines():
@@ -204,15 +204,6 @@ def find_pr_number() -> str | None:
     pull = event.get("pull_request") or {}
     number = pull.get("number") or event.get("number")
     return str(number) if number else None
-
-
-def is_paths_auto(value: str) -> bool:
-    cleaned = value.strip().strip("`").lower()
-    return cleaned == "auto"
-
-
-def auto_paths_from_changed_files(changed_files: list[str]) -> list[str]:
-    return [path for path in changed_files if path]
 
 
 def rev_exists(repo: Path, rev: str) -> bool:
@@ -348,8 +339,6 @@ def evaluate(
     changed_files: list[str],
     corridor_text: str | None,
     allow_dependencies: bool = False,
-    max_changed_files: int = 0,
-    small_change_max_files: int = 0,
 ) -> Report:
     changed = [normalize_path(p) for p in changed_files if normalize_path(p)]
     allowed_paths: list[str] = []
@@ -361,13 +350,18 @@ def evaluate(
     deps = [p for p in changed if is_dependency_file(p)]
 
     scope = handoff.get("Scope", "")
-    if is_paths_auto(scope):
-        allowed_paths = auto_paths_from_changed_files(changed)
+    if scope.strip().strip("`").lower() == "auto":
+        issues.append(
+            "Scope must declare explicit paths or globs; `auto` mirrors the diff "
+            "and creates no review boundary"
+        )
     elif scope:
         allowed_paths = split_path_list(scope)
         for pattern in allowed_paths:
             if normalize_path(pattern) in {"*", "**", "**/*"}:
-                warnings.append(f"scope pattern `{pattern}` matches everything; the corridor carries no information")
+                issues.append(
+                    f"scope pattern `{pattern}` matches everything; the corridor carries no information"
+                )
 
     decision = handoff.get("Decision", "")
     if decision and not re.search(r"#\d+|https?://", decision):
@@ -378,18 +372,7 @@ def evaluate(
         if line_count > 60:
             warnings.append(f"PR body is {line_count} lines; prefer a compact handoff")
 
-    small_change_fast_path = (
-        not handoff_attempted
-        and small_change_max_files > 0
-        and 0 < len(changed) <= small_change_max_files
-        and not deps
-    )
-
-    if small_change_fast_path:
-        warnings.append(
-            f"small change fast path: review boundary skipped for {len(changed)} changed file(s)"
-        )
-    elif not handoff_attempted:
+    if not handoff_attempted:
         issues.append("compact handoff is required, but no handoff fields were found")
     else:
         for label, value in handoff.items():
@@ -401,15 +384,19 @@ def evaluate(
                     )
                 else:
                     issues.append(f"compact handoff is missing `{label}`")
+            elif (
+                value.strip().lower().startswith("<fill in")
+                or value.strip().lower() in HANDOFF_PLACEHOLDERS
+            ):
+                issues.append(
+                    f"compact handoff `{label}` still contains a fill-in placeholder"
+                )
         # Strip backticks the way split_path_list does for Scope, so a
         # markdown-styled `src/a.py` (the form the report itself renders)
         # does not false-FAIL the review-first check.
         review_first = normalize_path(handoff.get("Review first", "").strip().strip("`"))
         if review_first and review_first not in changed:
             issues.append(f"review first is not a changed file: {review_first}")
-
-    if max_changed_files > 0 and len(changed) > max_changed_files:
-        issues.append(f"changed file count is {len(changed)}, above max_changed_files={max_changed_files}")
 
     outside: list[str] = []
     if allowed_paths:
@@ -438,10 +425,9 @@ AGENTCAM_EVIDENCE_DEFAULT = ".agentcam/manifest.redacted.json"
 def read_agentcam_manifest(path: Path) -> tuple[dict | None, str | None]:
     """Best-effort read of a committed agentcam manifest.
 
-    Returns ``(manifest, note)``. Recorded evidence is display-only and
-    must never affect pass/fail, so this never raises: a missing file
-    yields ``(None, None)`` (no section), an unreadable or evidence-less
-    manifest yields ``(None, one-line note)``.
+    Returns ``(manifest, note)``. A malformed author-controlled artifact must
+    not crash the action: a missing file yields ``(None, None)`` and an
+    unreadable or evidence-less manifest yields ``(None, one-line note)``.
     """
     if not path.is_file():
         return None, None
@@ -457,14 +443,6 @@ def read_agentcam_manifest(path: Path) -> tuple[dict | None, str | None]:
     return data, None
 
 
-def read_agentcam_evidence(path: Path) -> tuple[dict | None, str | None]:
-    """Compatibility wrapper returning only the manifest evidence block."""
-    manifest, note = read_agentcam_manifest(path)
-    if manifest is None:
-        return None, note
-    return manifest["evidence"], None
-
-
 UNVERIFIED_VALUES = {"n/a", "none", "not run", "unverified"}
 RECORDED_MARKER = "[recorded by agentcam]"
 
@@ -473,12 +451,12 @@ def classify_verification_provenance(
     verified: str | None,
     manifest: dict | None,
 ) -> VerificationProvenance:
-    """Classify handoff verification without changing the corridor verdict.
+    """Classify the verification source for policy and reporting.
 
     Both the PR body and committed manifest are author-controlled.  A handoff
     earns ``recorded`` only when its stable marker and exact ``command (exit
-    0)`` fragment agree with a passed check in the manifest.  Everything else
-    degrades to a warning-only manual or unverified status.
+    0)`` fragment agree with a passed check in the manifest. Manual checks stay
+    visible and valid; placeholders and false recorded claims are unverified.
     """
     value = verified.strip() if isinstance(verified, str) else ""
     normalized = value.lower()
@@ -497,7 +475,11 @@ def classify_verification_provenance(
         f"{command} (exit 0)" in value for command in passing_commands
     )
     warnings = []
-    placeholder = normalized.startswith("<fill in") or normalized in UNVERIFIED_VALUES
+    placeholder = (
+        normalized.startswith("<fill in")
+        or normalized in UNVERIFIED_VALUES
+        or re.match(r"^(?:n/a|none|not\s+run|unverified)\b", normalized) is not None
+    )
     if matched:
         status = "recorded"
     elif marker_present:
@@ -541,6 +523,22 @@ def classify_verification_provenance(
         partial=partial,
         warnings=warnings,
     )
+
+
+def apply_verification_policy(
+    report: Report,
+    provenance: VerificationProvenance | None,
+) -> Report:
+    """Reject a handoff whose required verification is not completed."""
+    if provenance is None or provenance.status != "unverified":
+        return report
+    issue = (
+        "verification is unverified; provide a completed manual check or "
+        "matching recorded check"
+    )
+    if issue in report.issues:
+        return report
+    return replace(report, ok=False, issues=[*report.issues, issue])
 
 
 def compact_markdown(value: str) -> list[str]:
@@ -764,23 +762,16 @@ def upsert_pr_comment(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Validate a PR against a declared corridor.")
     parser.add_argument("--repo", default=".", help="repository checkout path")
-    parser.add_argument("--mode", choices=("fail", "warn"), default=os.environ.get("INPUT_MODE", "warn"))
+    parser.add_argument("--mode", choices=("fail", "warn"), default=os.environ.get("INPUT_MODE", "fail"))
     parser.add_argument("--allow-dependencies", default=os.environ.get("INPUT_ALLOW_DEPENDENCIES", "false"))
-    parser.add_argument("--max-changed-files", type=int, default=int(os.environ.get("INPUT_MAX_CHANGED_FILES", "12") or "12"))
     parser.add_argument("--comment", default=os.environ.get("INPUT_COMMENT", "false"))
-    parser.add_argument(
-        "--small-change-max-files",
-        type=int,
-        default=int(os.environ.get("INPUT_SMALL_CHANGE_MAX_FILES", "0") or "0"),
-        help="allow PRs without a review boundary when changed-file count is at or below this value",
-    )
     parser.add_argument(
         "--agentcam-evidence",
         default=os.environ.get("INPUT_AGENTCAM_EVIDENCE", AGENTCAM_EVIDENCE_DEFAULT),
         help=(
             "checkout-relative path of a committed agentcam "
-            "manifest.redacted.json; its recorded evidence is appended to "
-            "the report, display-only, never affecting pass/fail"
+            "manifest.redacted.json; its evidence is appended to the report "
+            "and false or incomplete verification claims fail the corridor"
         ),
     )
     return parser
@@ -795,8 +786,6 @@ def main(argv: list[str] | None = None) -> int:
         changed_files=changed,
         corridor_text=corridor,
         allow_dependencies=truthy(args.allow_dependencies),
-        max_changed_files=args.max_changed_files,
-        small_change_max_files=args.small_change_max_files,
     )
     manifest, evidence_note = read_agentcam_manifest(
         repo / args.agentcam_evidence
@@ -807,6 +796,7 @@ def main(argv: list[str] | None = None) -> int:
         provenance = classify_verification_provenance(
             report.handoff.get("Verified"), manifest
         )
+    report = apply_verification_policy(report, provenance)
     markdown = render_markdown(
         report,
         agentcam_evidence=evidence,

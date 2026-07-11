@@ -52,24 +52,29 @@ git clone https://github.com/shihchengwei-lab/coding-agent-guardrails ~/guardrai
 ~/guardrails/install.sh /path/to/your/project
 ```
 
+```powershell
+git clone https://github.com/shihchengwei-lab/coding-agent-guardrails $HOME\guardrails
+& $HOME\guardrails\install.ps1 -Project C:\path\to\your\project
+```
+
 Re-running is safe. The installer wires the discipline block (rules plus
 the agentcam handoff loop) into `CLAUDE.md` and `AGENTS.md` (Claude Code
 reads the former; Codex and friends read the latter), installs the
 slime-coding hooks, drops a starter corridor-ci workflow (skipping any
 you already have), pip-installs agentcam from the checkout into your
-current Python (3.11+ required), and wires agentcam's session hooks so
-Claude Code sessions are recorded without the `agentcam run` wrapper.
+  current Python (3.11+ required), and wires automatic agentcam recording:
+  Claude Code sessions on the shell path, or Codex turns on the PowerShell path.
+  Codex project hooks must be reviewed once with `/hooks`.
 
 ## The loop
 
 The four tools connect into one workflow. That is why they are packaged
 together:
 
-1. **Record**: `agentcam run -- <agent command>` (or just work in
-   Claude Code: the installer wires agentcam session hooks that record
-   automatically). Everything the agent changed is recorded under
+1. **Record**: `agentcam run -- <agent command>` (or use the installed
+   Claude Code session / Codex turn hooks). Everything the agent changed is recorded under
    `.git/agentcam/runs/`. Trade-off, disclosed: hook-mode evidence is
-   thinner, because Claude Code does not expose terminal output to hooks, so
+   thinner, because lifecycle hooks do not expose terminal output, so
    output-pattern risk flags (`rm -rf` and friends) are unavailable;
    wrap the session with `agentcam run` when you want the full record.
 2. **Verify**: `agentcam verify -- pytest -q`. agentcam runs the check
@@ -86,8 +91,9 @@ together:
 5. **Gate**: corridor-ci on the PR validates the handoff against the
    actual diff and appends the recorded evidence (risk flags, recorded
    checks, diff stat) to its report. It labels verification as recorded,
-   manual, or unverified, and marks partial observation. These provenance
-   warnings inform the reviewer; they never flip the check.
+   manual, or unverified, and marks partial observation. Manual and partial
+   provenance stay visible; a placeholder or false recorded claim fails the
+   corridor.
 
 Every tool also works standalone; each subdirectory has its own README.
 

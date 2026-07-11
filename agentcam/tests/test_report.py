@@ -6,6 +6,7 @@ Covers plan §5 (four rollback wording cases), §9 (Exit Code Detail), §10
 from __future__ import annotations
 
 import json
+import inspect
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,8 +17,35 @@ from agentcam.models import (
     ReportBundle,
     RunManifest,
     RunPaths,
+    capture_for_wrap_pipe,
 )
-from agentcam.report import render_report, serialize_manifest, write_manifest
+from agentcam.report import (
+    render_report as _render_report,
+    serialize_manifest,
+    write_manifest,
+)
+from agentcam.scanner import provenance_for_builtin_ruleset
+
+
+def render_report(
+    manifest_or_bundle,
+    state_before=None,
+    state_after=None,
+    risk_flags=None,
+    dependency_changes=None,
+):
+    """Test convenience: production render_report accepts ReportBundle only."""
+    if isinstance(manifest_or_bundle, ReportBundle):
+        return _render_report(manifest_or_bundle)
+    return _render_report(
+        ReportBundle(
+            manifest=manifest_or_bundle,
+            state_before=state_before,
+            state_after=state_after,
+            risk_flags=list(risk_flags or []),
+            dependency_changes=list(dependency_changes or []),
+        )
+    )
 
 
 def _empty_state(*, dirty: bool = False) -> GitState:
@@ -117,6 +145,8 @@ def _manifest(
         platform="linux",
         agentcam_version="0.1.0",
         paths=_paths(tmp_path),
+        capture=capture_for_wrap_pipe(empty_run_policy="auto_delete_clean_no_diff"),
+        ruleset=provenance_for_builtin_ruleset(),
     )
 
 
@@ -356,12 +386,14 @@ class TestManifestSerialization:
 # ---------------------------------------------------------------------------
 
 class TestVerdict:
-    def test_no_flags_low(self, tmp_path: Path):
+    def test_no_flags_are_none_detected_not_low(self, tmp_path: Path):
         report = render_report(
             _manifest(tmp_path), _empty_state(), _empty_state(), [],
         )
-        assert "LOW" in report
+        assert "No heuristic risk flags detected" in report
+        assert "LOW" not in report
         assert "Human review required: no" in report
+        assert "Tests observed: unknown" not in report
 
     def test_high_flag_promotes(self, tmp_path: Path):
         from agentcam.models import RiskFlag
@@ -538,29 +570,10 @@ class TestDependencyChangesSection:
 # ---------------------------------------------------------------------------
 
 class TestReportBundle:
-    """The Bundle shape is the input contract any future renderer
-    (SARIF, PR comment) will consume. These tests pin two things:
+    """The renderer has one input contract with useful empty-list defaults."""
 
-    1. render_report(bundle) and the legacy positional call produce
-       identical output for the same inputs.
-    2. Bundle defaults (empty risk_flags / dependency_changes) work.
-    """
-
-    def test_bundle_call_matches_legacy_positional(self, tmp_path: Path):
-        m = _manifest(tmp_path)
-        sb = _empty_state()
-        sa = _state_with(
-            ChangedFile(path="src/auth/login.py", status="unstaged_modified")
-        )
-        legacy = render_report(m, sb, sa, [])
-        bundle = ReportBundle(
-            manifest=m,
-            state_before=sb,
-            state_after=sa,
-            risk_flags=[],
-            dependency_changes=[],
-        )
-        assert render_report(bundle) == legacy
+    def test_runtime_renderer_accepts_only_bundle(self):
+        assert list(inspect.signature(_render_report).parameters) == ["bundle"]
 
     def test_bundle_with_defaults(self, tmp_path: Path):
         # Construction with only the required fields must work; the

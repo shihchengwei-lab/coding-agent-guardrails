@@ -80,7 +80,7 @@ try {
   } else {
     Bad "6b removes the legacy Slime Coding Codex block" $agentsText
   }
-  if (Test-Path -LiteralPath $GitHook) { Ok "7  wires prepare-commit-msg hook" } else { Bad "7  wires prepare-commit-msg hook" "missing" }
+  if (-not (Test-Path -LiteralPath $GitHook)) { Ok "7  does not add redundant commit-message evidence" } else { Bad "7  does not add redundant commit-message evidence" "unexpected hook" }
 
   Add-Content -LiteralPath $Corridor -Value "`n<!-- keep-existing-corridor -->"
   & powershell -NoProfile -ExecutionPolicy Bypass -File $Install -Project $Project | Out-Null

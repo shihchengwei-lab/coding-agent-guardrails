@@ -25,7 +25,7 @@ class TestManifestEvidence:
         assert "evidence" in manifest
         ev = manifest["evidence"]
         assert [cf["path"] for cf in ev["changed_files"]] == ["produced.txt"]
-        assert ev["overall_risk"] in {"LOW", "MEDIUM", "HIGH"}
+        assert ev["overall_risk"] in {"NONE_DETECTED", "MEDIUM", "HIGH"}
         assert isinstance(ev["risk_flags"], list)
         assert "diff_stat" in ev
         assert "diff_stat_cached" in ev
@@ -49,7 +49,20 @@ class TestHandoff:
         # Decision and Verified stay with the author.
         assert "<fill in" in lines[0]
         assert "<fill in" in lines[3]
-        assert lines[4].removeprefix("Risk: ") in {"low", "medium", "high"}
+        assert lines[4] == "Risk: none-detected"
+
+    def test_partial_capture_reports_unknown_instead_of_low(self, tmp_git_repo: Path):
+        _make_one_run(tmp_git_repo)
+        manifest_path = _run_dir(tmp_git_repo) / "manifest.json"
+        data = json.loads(manifest_path.read_text("utf-8"))
+        data["capture"]["mode"] = "claude_hook"
+        data["capture"]["output_risk_scan"] = "disabled_no_output_stream"
+        manifest_path.write_text(json.dumps(data), encoding="utf-8")
+
+        proc = _agentcam(tmp_git_repo, "handoff")
+
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.decode("utf-8").splitlines()[4] == "Risk: unknown"
 
     def test_handoff_redacts_secret_like_filenames(self, tmp_git_repo: Path):
         # The handoff is drafted for a PR body; a secret-like filename must
