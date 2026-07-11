@@ -780,6 +780,17 @@ class CorridorCiTest(unittest.TestCase):
         self.assertIn("pull-requests: write", workflow)
         self.assertIn("comment: true", workflow)
 
+    def test_dogfood_workflow_pins_published_v13_checker(self):
+        monorepo_root = Path(__file__).resolve().parents[2]
+        workflow = (monorepo_root / ".github" / "workflows" / "corridor.yml").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "coding-agent-guardrails/corridor-ci@corridor-ci-v13.0.0",
+            workflow,
+        )
+        self.assertNotIn("coding-agent-guardrails/corridor-ci@corridor-ci-v12", workflow)
+        self.assertNotIn("uses: ./corridor-ci", workflow)
+
     def test_example_pr_template_contains_copyable_handoff(self):
         repo = Path(__file__).resolve().parents[1]
         template = (repo / "examples" / "PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
