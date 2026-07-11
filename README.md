@@ -72,9 +72,10 @@ The four tools connect into one workflow. That is why they are packaged
 together:
 
 1. **Record**: `agentcam run -- <agent command>` (or use the installed
-   Claude Code session / Codex turn hooks). Everything the agent changed is recorded under
-   `.git/agentcam/runs/`. Trade-off, disclosed: hook-mode evidence is
-   thinner, because lifecycle hooks do not expose terminal output, so
+   Claude Code session / Codex turn hooks). Agentcam records the before/after
+   Git state, changed-file list, and diff stat under `.git/agentcam/runs/`;
+   wrap mode also keeps terminal output. Trade-off, disclosed: hook-mode
+   evidence is thinner, because lifecycle hooks do not expose terminal output, so
    output-pattern risk flags (`rm -rf` and friends) are unavailable;
    wrap the session with `agentcam run` when you want the full record.
 2. **Verify**: `agentcam verify -- pytest -q`. agentcam runs the check
