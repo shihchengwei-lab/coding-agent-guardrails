@@ -8,47 +8,69 @@ def read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
-def test_standalone_installers_leave_no_permanent_backups_or_duplicate_agents_writer():
-    posix = read("slime-coding/install.sh")
-    powershell = read("slime-coding/install-codex.ps1")
-
-    assert ".bak-" not in posix
-    assert ".bak-" not in powershell
-    assert "Install-ManagedBlock" not in powershell
-    assert 'Join-Path $Project "AGENTS.md"' not in powershell
+def test_only_unified_installer_entrypoints_remain():
+    assert (ROOT / "install.sh").is_file()
+    assert (ROOT / "install.ps1").is_file()
+    assert not (ROOT / "slime-coding" / "install.sh").exists()
+    assert not (ROOT / "slime-coding" / "install-codex.ps1").exists()
 
 
-def test_current_runtime_has_no_legacy_parsers():
-    patch_cost = read("slime-coding/bin/patch-cost")
-    corridor = read("corridor-ci/bin/corridor_ci.py")
+def test_runtime_and_action_use_low_friction_contract():
+    runtime = read("slime-coding/bin/patch-cost")
+    action = read("corridor-ci/action.yml")
+    installer = read("installer/guardrails_installer.py")
 
-    assert 'return "legacy"' not in patch_cost
-    assert "SLIME_TEST_CMD" not in patch_cost
-    assert "SLIME_TYPECHECK_CMD" not in patch_cost
-    assert "Independent check )?Command" not in patch_cost
-    assert "LEGACY_RECORDED_MARKER" not in corridor
+    assert ".guardrails/review.json" in runtime
+    assert "guardrails internal scope set" in runtime
+    assert "review_artifact" in action
+    assert "agentcam_evidence" not in action
+    assert "guardrails-coordinator" in installer
 
 
-def test_current_docs_describe_real_boundaries_without_stale_claims():
+def test_obsolete_user_workflow_assets_are_pruned():
+    for relative in (
+        "slime-coding/bin/prune-inject",
+        "slime-coding/commands/slime-corridor.md",
+        "slime-coding/commands/slime-prune.md",
+        "slime-coding/skills/slime-navigate/SKILL.md",
+        "slime-coding/templates/.slime/corridor.md",
+        "slime-coding/templates/.slime/PRUNED.md",
+        "corridor-ci/examples/PULL_REQUEST_TEMPLATE.md",
+        "corridor-ci/docs/assets/corridor-ci-before-after.svg",
+    ):
+        assert not (ROOT / relative).exists(), relative
+
+
+def test_runtime_has_no_legacy_corridor_fallback_parser():
+    runtime = read("slime-coding/bin/patch-cost")
+    for token in (
+        "RIGOR_LEVELS",
+        "corridor_problem",
+        "corridor_sections",
+        "stop_blocks",
+        "PRUNED.md",
+        ".slime/corridor.md",
+    ):
+        assert token not in runtime
+
+
+def test_current_docs_describe_real_hook_boundary():
     root = read("README.md")
     root_zh = read("README.zh-TW.md")
-    slime = read("slime-coding/README.md")
-    handoff = read("corridor-ci/docs/HANDOFF_SPEC.md")
-
-    assert "direct edits are checked before writing" in root
-    assert "shell writes are checked immediately afterward" in root
+    assert "Direct edits are" in root and "checked before writing" in root
+    assert "Shell writes can only be detected immediately after" in root
     assert "OS sandbox" in root
-    assert "寫入前" in root_zh and "寫入後" in root_zh and "OS sandbox" in root_zh
-    assert "不會備份既有設定" in slime
-    assert "changed-file limit" not in handoff
-    assert "manual` or `unverified`,\n   manual, or unverified" not in root
+    assert "寫入前" in root_zh and "寫入後" in root_zh and "OS 權限" in root_zh
 
 
-def test_migration_guide_covers_every_breaking_transition():
-    migration = read("docs/MIGRATION.md")
+def test_user_docs_do_not_restore_removed_daily_steps():
+    root = read("README.md")
+    root_zh = read("README.zh-TW.md")
+    corridor = read("corridor-ci/README.md")
 
-    assert "Agentcam 0.4 → 0.5" in migration
-    assert "Corridor CI v12 → v13" in migration
-    assert "inline command → trusted check" in migration
-    assert "guardrails check set primary --" in migration
-    assert "[locally recorded by agentcam]" in migration
+    assert "You do not edit a corridor" in root
+    assert "不必執行 Agentcam 指令" in root_zh
+    assert "does not parse the pull-request body" in corridor
+    assert "agentcam verify --" not in root
+    assert "agentcam handoff" not in root
+    assert "agentcam export latest" not in root

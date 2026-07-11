@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Corridor CI: keep incoming PR changes inside a declared review corridor."""
+"""Corridor CI v14: validate a state-bound Guardrails review artifact."""
 
 from __future__ import annotations
 
@@ -39,24 +39,14 @@ DEPENDENCY_GLOBS = (
     "Gemfile.lock",
 )
 
-COMPACT_HANDOFF_LABELS = ("Decision", "Scope", "Review first", "Verified", "Risk")
-HANDOFF_PLACEHOLDERS = {"n/a", "not set", "tbd", "todo"}
-
-COPYABLE_REVIEW_HANDOFF = """Decision: <fill in: issue, discussion, or short decision>
-Scope: <fill in: repo-relative path or glob>
-Review first: <fill in: changed file>
-Verified: <fill in: completed command or manual check>
-Risk: <fill in: high, medium, none-detected, or unknown>
-"""
-
 COMMENT_MARKER = "<!-- corridor-ci -->"
 WORKFLOW_APPROVAL_LABEL = "Guardrails-Workflow-Approval"
 DEPENDENCY_APPROVAL_LABEL = "Guardrails-Dependency-Approval"
 WORKFLOW_PREFIX = ".github/workflows/"
 SCOPE_METADATA_PATHS = {
-    ".agentcam/AGENT_RUN_REPORT.md",
-    ".agentcam/manifest.redacted.json",
+    ".guardrails/review.json",
 }
+REVIEW_ARTIFACT_DEFAULT = ".guardrails/review.json"
 MANIFEST_MAX_BYTES = 1024 * 1024
 RISK_VALUES = {"high", "medium", "none-detected", "unknown"}
 GITHUB_API_URL = "https://api.github.com"
@@ -72,13 +62,6 @@ class Report:
     outside_files: list[str]
     dependency_files: list[str]
     issues: list[str]
-    warnings: list[str]
-
-
-@dataclass(frozen=True)
-class VerificationProvenance:
-    status: str
-    partial: bool
     warnings: list[str]
 
 
@@ -120,105 +103,6 @@ def truthy(value: str | bool | None) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def normalize_heading(text: str) -> str:
-    return " ".join(text.strip().strip("#").strip().lower().replace("_", " ").split())
-
-
-def handoff_field_labels() -> dict[str, str]:
-    return {normalize_heading(label): label for label in COMPACT_HANDOFF_LABELS}
-
-
-def decorated_field_candidates(stripped: str) -> list[tuple[str, str]]:
-    candidates: list[tuple[str, str]] = []
-
-    bold_colon_inside = re.match(r"^\*\*(?P<key>[^:\n*][^:\n]*?):\*\*", stripped)
-    if bold_colon_inside:
-        candidates.append((bold_colon_inside.group("key").strip(), bold_colon_inside.group(0)))
-
-    bold_colon_outside = re.match(r"^\*\*(?P<key>[^*\n]+?)\*\*:", stripped)
-    if bold_colon_outside:
-        candidates.append((bold_colon_outside.group("key").strip(), bold_colon_outside.group(0)))
-
-    bullet = re.match(r"^(?P<bullet>[-*+])\s+(?P<key>[^:\n]+):", stripped)
-    if bullet:
-        token = f"{bullet.group('bullet')} {bullet.group('key').strip()}:"
-        candidates.append((bullet.group("key").strip(), token))
-
-    heading = re.match(r"^(?P<hashes>#{1,6})\s+(?P<rest>.+)$", stripped)
-    if heading:
-        rest = heading.group("rest").strip()
-        if ":" in rest:
-            key = rest.split(":", 1)[0].strip()
-            token = f"{heading.group('hashes')} {key}:"
-        else:
-            key = rest
-            token = f"{heading.group('hashes')} {key}"
-        candidates.append((key, token))
-
-    return candidates
-
-
-def iter_visible_lines(text: str):
-    """Yield lines that are outside fenced code blocks.
-
-    PR bodies routinely carry a fenced handoff *example* — the template
-    seeds one, and corridor-ci's own failure comment offers a copyable
-    block. Since field parsing is first-non-empty-value-wins, a fenced example
-    would otherwise shadow the author's real handoff below it.
-    """
-    fence: str | None = None
-    for line in text.splitlines():
-        stripped = line.strip()
-        marker = None
-        if stripped.startswith("```"):
-            marker = "```"
-        elif stripped.startswith("~~~"):
-            marker = "~~~"
-        if marker is not None:
-            if fence is None:
-                fence = marker
-            elif fence == marker:
-                fence = None
-            continue
-        if fence is None:
-            yield line
-
-
-def detect_near_miss_fields(corridor_text: str | None) -> dict[str, str]:
-    near_misses: dict[str, str] = {}
-    if not corridor_text:
-        return near_misses
-
-    labels = handoff_field_labels()
-    for line in iter_visible_lines(corridor_text):
-        stripped = line.strip()
-        if not stripped:
-            continue
-        for key, token in decorated_field_candidates(stripped):
-            label = labels.get(normalize_heading(key))
-            if label and label not in near_misses:
-                near_misses[label] = token
-                break
-    return near_misses
-
-
-def extract_compact_handoff(corridor_text: str | None) -> dict[str, str]:
-    handoff = {label: "" for label in COMPACT_HANDOFF_LABELS}
-    if not corridor_text:
-        return handoff
-
-    labels = handoff_field_labels()
-    for line in iter_visible_lines(corridor_text):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or ":" not in stripped:
-            continue
-        key, value = stripped.split(":", 1)
-        label = labels.get(normalize_heading(key))
-        if label and value.strip() and not handoff[label]:
-            handoff[label] = value.strip()
-    return handoff
-
-
 def read_event_payload() -> dict[str, Any]:
     event_path = os.environ.get("GITHUB_EVENT_PATH")
     if not event_path:
@@ -227,12 +111,6 @@ def read_event_payload() -> dict[str, Any]:
         return json.loads(Path(event_path).read_text(encoding="utf-8-sig"))
     except Exception:
         return {}
-
-
-def find_pr_body() -> str | None:
-    event = read_event_payload()
-    pull = event.get("pull_request") or {}
-    return pull.get("body")
 
 
 def find_pr_number() -> str | None:
@@ -268,6 +146,24 @@ def diff_base(repo: Path) -> str:
 def extract_changed_files(repo: Path) -> list[str]:
     base = diff_base(repo)
     return extract_changed_files_between(repo, base, "HEAD")
+
+
+def extract_deleted_files(repo: Path) -> list[str]:
+    base = diff_base(repo)
+    proc = subprocess.run(
+        [
+            "git", "-c", "core.quotepath=false", "diff", "--diff-filter=D",
+            "--name-only", f"{base}...HEAD",
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if proc.returncode != 0:
+        raise SystemExit(f"failed to read deleted files: {proc.stderr.strip()}")
+    return [normalize_path(path) for path in proc.stdout.splitlines() if path.strip()]
 
 
 def extract_changed_files_between(repo: Path, base: str, head: str) -> list[str]:
@@ -419,15 +315,6 @@ def evaluate_dependency_policy(
     )
 
 
-def split_path_list(raw: str) -> list[str]:
-    paths: list[str] = []
-    for chunk in raw.split(","):
-        cleaned = chunk.strip().strip("`")
-        if cleaned:
-            paths.append(normalize_path(cleaned))
-    return paths
-
-
 def _glob_to_regex(pattern: str) -> "re.Pattern[str]":
     """Translate a git-style glob into a compiled regex.
 
@@ -503,247 +390,212 @@ def is_dependency_file(path: str) -> bool:
     return any(fnmatch.fnmatch(name, pattern) or fnmatch.fnmatch(path, f"**/{pattern}") for pattern in DEPENDENCY_GLOBS)
 
 
-def evaluate(
+def _review_high_risk_path(path: str) -> bool:
+    normalized = normalize_path(path).lower()
+    if normalized.startswith(WORKFLOW_PREFIX):
+        return True
+    if is_dependency_file(normalized):
+        return True
+    high = {
+        "auth", "login", "oauth", "session", "jwt", "permission",
+        "credential", "secret", "migration", "migrations", "terraform",
+        "kubernetes", "helm", "deploy", "deployment", "infrastructure",
+    }
+    return bool(set(normalized.split("/")) & high)
+
+
+def evaluate_review_artifact(
     *,
     changed_files: list[str],
-    corridor_text: str | None,
+    deleted_files: list[str] | None = None,
+    review: dict[str, Any] | None,
+    current_product_fingerprint: str,
+    pr_title: str,
+    pr_url: str,
 ) -> Report:
-    changed = [normalize_path(p) for p in changed_files if normalize_path(p)]
-    allowed_paths: list[str] = []
-    handoff = extract_compact_handoff(corridor_text)
-    near_misses = detect_near_miss_fields(corridor_text)
-    handoff_attempted = any(handoff.values()) or bool(near_misses)
+    """Validate the v14 machine-generated review artifact, not PR prose."""
+    changed = [normalize_path(path) for path in changed_files if normalize_path(path)]
+    product = [path for path in changed if path not in SCOPE_METADATA_PATHS]
+    deleted = {
+        normalize_path(path) for path in (deleted_files or [])
+        if normalize_path(path) in product
+    }
+    dependencies = [path for path in product if is_dependency_file(path)]
+    handoff = {
+        "Decision": f"{pr_title} ({pr_url})".strip(),
+        "Scope": "",
+        "Review first": "",
+        "Verified": "",
+        "Risk": "",
+    }
     issues: list[str] = []
     warnings: list[str] = []
-    deps = [p for p in changed if is_dependency_file(p)]
-
-    scope = handoff.get("Scope", "")
-    if scope.strip().strip("`").lower() == "auto":
-        issues.append(
-            "Scope must declare explicit paths or globs; `auto` mirrors the diff "
-            "and creates no review boundary"
-        )
-    elif scope:
-        allowed_paths = split_path_list(scope)
-        for pattern in allowed_paths:
-            if normalize_path(pattern) in {"*", "**", "**/*"}:
-                issues.append(
-                    f"scope pattern `{pattern}` matches everything; the corridor carries no information"
-                )
-
-    decision = handoff.get("Decision", "")
-    if decision and not re.search(r"#\d+|https?://", decision):
-        warnings.append("Decision does not point to an issue/discussion/URL; free-text reasons are allowed")
-
-    if corridor_text:
-        line_count = len(corridor_text.splitlines())
-        if line_count > 60:
-            warnings.append(f"PR body is {line_count} lines; prefer a compact handoff")
-
-    if not handoff_attempted:
-        issues.append("compact handoff is required, but no handoff fields were found")
-    else:
-        for label, value in handoff.items():
-            if not value:
-                near_miss = near_misses.get(label)
-                if near_miss:
-                    issues.append(
-                        f"compact handoff is missing `{label}` (found `{near_miss}` - fields must be plain `{label}: value` lines, no bold, bullets, or headings)"
-                    )
-                else:
-                    issues.append(f"compact handoff is missing `{label}`")
-            elif (
-                value.strip().lower().startswith("<fill in")
-                or value.strip().lower() in HANDOFF_PLACEHOLDERS
-            ):
-                issues.append(
-                    f"compact handoff `{label}` still contains a fill-in placeholder"
-                )
-        # Strip backticks the way split_path_list does for Scope, so a
-        # markdown-styled `src/a.py` (the form the report itself renders)
-        # does not false-FAIL the review-first check.
-        review_first = normalize_path(handoff.get("Review first", "").strip().strip("`"))
-        if review_first and review_first not in changed:
-            issues.append(f"review first is not a changed file: {review_first}")
-
+    allowed: list[str] = []
     outside: list[str] = []
-    if allowed_paths:
-        outside = [
-            p for p in changed
-            if p not in SCOPE_METADATA_PATHS and not is_allowed(p, allowed_paths)
-        ]
+    if not isinstance(review, dict):
+        issues.append(
+            "review artifact `.guardrails/review.json` is required; let the "
+            "installed Stop hook finish the delivery"
+        )
+        return Report(False, changed, allowed, handoff, product, dependencies, issues, warnings)
+    if type(review.get("schema")) is not int or review.get("schema") != 1:
+        issues.append("review artifact requires integer schema 1")
+    generator = review.get("generator")
+    if not (
+        isinstance(generator, dict)
+        and isinstance(generator.get("agentcam_version"), str)
+        and generator["agentcam_version"]
+        and isinstance(generator.get("runtime_revision"), str)
+        and generator["runtime_revision"]
+    ):
+        issues.append("review artifact generator must name Agentcam and runtime revisions")
+    delivery = review.get("delivery")
+    verification = review.get("verification")
+    if not isinstance(delivery, dict):
+        issues.append("review artifact delivery must be an object")
+        delivery = {}
+    if not isinstance(verification, dict):
+        issues.append("review artifact verification must be an object")
+        verification = {}
+    artifact_fingerprint = delivery.get("product_fingerprint")
+    if artifact_fingerprint != current_product_fingerprint:
+        issues.append("review artifact is stale for the current PR product fingerprint")
+    base_commit = delivery.get("base_commit")
+    if base_commit is not None and (
+        not isinstance(base_commit, str)
+        or re.fullmatch(r"[0-9a-f]{40}", base_commit) is None
+    ):
+        issues.append("review artifact base_commit must be null or a full lowercase SHA")
+    outcomes = delivery.get("outcomes")
+    if not isinstance(outcomes, list) or not outcomes or any(
+        not isinstance(value, str) or not value.strip() for value in outcomes
+    ):
+        issues.append("review artifact outcomes must be a non-empty string array")
+    if not isinstance(delivery.get("scope_changes"), list):
+        issues.append("review artifact scope_changes must be an array")
+    raw_scope = delivery.get("scope")
+    if not isinstance(raw_scope, list) or not raw_scope or any(
+        not isinstance(value, str) or not normalize_path(value) for value in raw_scope
+    ):
+        issues.append("review artifact scope must be a non-empty string array")
+    else:
+        allowed = [normalize_path(value) for value in raw_scope]
+        if any(value in {"*", "**", "**/*"} for value in allowed):
+            issues.append("review artifact scope cannot match everything")
+        outside = [path for path in product if not is_allowed(path, allowed)]
         if outside:
-            issues.append("changed files outside corridor paths: " + ", ".join(outside))
+            issues.append("product files outside review artifact scope: " + ", ".join(outside))
+    raw_changed = delivery.get("changed_files")
+    artifact_statuses: dict[str, str] = {}
+    if not isinstance(raw_changed, list):
+        issues.append("review artifact changed_files must be an array")
+    else:
+        malformed_changed = False
+        for item in raw_changed:
+            if (
+                not isinstance(item, dict)
+                or not isinstance(item.get("path"), str)
+                or not normalize_path(item["path"])
+                or not isinstance(item.get("status"), str)
+                or item["status"].lower()
+                not in {"modified", "deleted", "untracked", "added", "renamed"}
+            ):
+                malformed_changed = True
+                continue
+            artifact_statuses[normalize_path(item["path"])] = item["status"].lower()
+        if malformed_changed:
+            issues.append("review artifact contains a malformed changed_files entry")
+        if set(artifact_statuses) != set(product):
+            issues.append("review artifact changed_files do not match current product paths")
+        if any(artifact_statuses.get(path) != "deleted" for path in deleted):
+            issues.append("review artifact changed_files underreports a tracked deleted file")
+    review_first = delivery.get("review_first")
+    if not isinstance(review_first, str) or normalize_path(review_first) not in product:
+        issues.append("review artifact review_first must be a changed product file")
+    else:
+        handoff["Review first"] = normalize_path(review_first)
+    risk = delivery.get("risk")
+    if risk not in RISK_VALUES:
+        issues.append("review artifact risk must be high, medium, none-detected, or unknown")
+    risk_floor = "high" if deleted or any(
+        _review_high_risk_path(path) for path in product
+    ) else "none-detected"
+    if risk_floor == "high" and risk != "high":
+        issues.append("review artifact risk underreports the current PR risk floor")
+    handoff["Risk"] = risk if isinstance(risk, str) else ""
+    handoff["Scope"] = ", ".join(allowed)
 
-    if deps:
-        issues.append("dependency files require head-bound trusted approval: " + ", ".join(deps))
-
+    level = verification.get("level")
+    checks = verification.get("checks")
+    if level not in {"recorded", "structural-only"}:
+        issues.append("review artifact verification level is invalid")
+    if not isinstance(checks, list) or not checks:
+        issues.append("review artifact requires at least one verification check")
+        checks = []
+    valid_names: list[str] = []
+    for check in checks:
+        if not isinstance(check, dict):
+            issues.append("review artifact contains a malformed verification check")
+            continue
+        if type(check.get("exit_code")) is not int or check.get("exit_code") != 0:
+            issues.append("review artifact verification check did not record integer exit 0")
+        if check.get("state_fingerprint") != artifact_fingerprint:
+            issues.append("review artifact verification check is stale")
+        duration = check.get("duration_ms")
+        if type(duration) is not int or duration < 0:
+            issues.append("review artifact verification duration_ms must be a non-negative integer")
+        argv = check.get("argv")
+        if not isinstance(argv, list) or not argv or any(
+            not isinstance(value, str) or not value for value in argv
+        ):
+            issues.append("review artifact verification argv must be a non-empty string array")
+        if isinstance(check.get("id"), str):
+            valid_names.append(check["id"])
+    handoff["Verified"] = ", ".join(valid_names)
+    if level == "structural-only":
+        warnings.append("verification is structural-only; no project test was configured")
+    elif level == "recorded" and "primary" not in valid_names:
+        issues.append("recorded verification requires a passed primary check")
+    capture = review.get("capture")
+    if not isinstance(capture, dict):
+        issues.append("review artifact capture must be an object")
+    else:
+        if capture.get("coverage") not in {"full", "partial"}:
+            issues.append("review artifact capture coverage must be full or partial")
+        if capture.get("terminal") not in {"captured", "unavailable"}:
+            issues.append("review artifact capture terminal must be captured or unavailable")
+        if capture.get("coverage") == "partial":
+            warnings.append("capture coverage is partial")
+        if capture.get("terminal") == "unavailable":
+            warnings.append("terminal output is unavailable")
+    if risk == "high":
+        approval = review.get("approval")
+        if not (
+            isinstance(approval, dict)
+            and approval.get("required") is True
+            and approval.get("confirmed") is True
+            and approval.get("product_fingerprint") == artifact_fingerprint
+            and isinstance(approval.get("confirmation_id"), str)
+            and re.fullmatch(r"[0-9a-f]{64}", approval["confirmation_id"]) is not None
+        ):
+            issues.append("high-risk review artifact lacks a matching user confirmation")
     return Report(
-        ok=not issues,
-        changed_files=changed,
-        allowed_paths=allowed_paths,
-        handoff=handoff,
-        outside_files=outside,
-        dependency_files=deps,
-        issues=issues,
-        warnings=warnings,
+        not issues, changed, allowed, handoff, outside, dependencies, issues, warnings
     )
 
 
-AGENTCAM_EVIDENCE_DEFAULT = ".agentcam/manifest.redacted.json"
-
-
-def read_agentcam_manifest(path: Path) -> tuple[dict | None, str | None]:
-    """Best-effort read of a committed agentcam manifest.
-
-    Returns ``(manifest, note)``. A malformed author-controlled artifact must
-    not crash the action: a missing file yields ``(None, None)`` and an
-    unreadable or evidence-less manifest yields ``(None, one-line note)``.
-    """
+def read_review_artifact(path: Path) -> tuple[dict[str, Any] | None, str | None]:
     if not path.is_file():
-        return None, None
+        return None, "review artifact is missing"
     try:
         if path.stat().st_size > MANIFEST_MAX_BYTES:
-            return None, (
-                f"agentcam manifest at `{path.name}` exceeds the 1 MiB safety limit"
-            )
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        return None, f"agentcam manifest at `{path.name}` could not be read: {exc}"
-    if not isinstance(data, dict) or not isinstance(data.get("evidence"), dict):
-        return None, (
-            f"agentcam manifest at `{path.name}` has no evidence section "
-            "(recorded by an older agentcam)."
-        )
-    return data, None
-
-
-UNVERIFIED_VALUES = {"n/a", "none", "not run", "unverified"}
-LOCAL_RECORDED_MARKER = "[locally recorded by agentcam]"
-
-
-def classify_verification_provenance(
-    verified: str | None,
-    manifest: dict | None,
-    *,
-    current_product_fingerprint: str | None = None,
-) -> VerificationProvenance:
-    """Classify the verification source for policy and reporting.
-
-    Both the PR body and committed manifest are author-controlled.  A handoff
-    earns ``local-recorded`` only when its stable marker and exact
-    ``command (exit 0)`` fragment agree with a passed check in the manifest.
-    Manual checks stay
-    visible and valid; placeholders and false recorded claims are unverified.
-    """
-    value = verified.strip() if isinstance(verified, str) else ""
-    normalized = value.lower()
-    local_marker_present = LOCAL_RECORDED_MARKER in normalized
-    recorded_claim_present = "recorded by agentcam" in normalized
-    marker_present = local_marker_present or recorded_claim_present
-    evidence = manifest.get("evidence") if isinstance(manifest, dict) else None
-    checks = evidence.get("verifications") if isinstance(evidence, dict) else None
-    final_state = manifest.get("final_state_fingerprint") if isinstance(manifest, dict) else None
-    manifest_product = evidence.get("product_fingerprint") if isinstance(evidence, dict) else None
-    passing_commands = []
-    for check in checks if isinstance(checks, list) else []:
-        if (
-            not isinstance(check, dict)
-            or type(check.get("exit_code")) is not int
-            or check.get("exit_code") != 0
-            or not isinstance(final_state, str)
-            or check.get("state_fingerprint") != final_state
-        ):
-            continue
-        command = check.get("command")
-        if isinstance(command, str) and command.strip():
-            passing_commands.append(command.strip())
-
-    grammar = re.fullmatch(
-        r"(?P<checks>.+ \(exit 0\)(?:; .+ \(exit 0\))*) "
-        r"\[locally recorded by agentcam\]",
-        value,
-    )
-    claimed = grammar.group("checks").split("; ") if grammar else []
-    expected = {f"{command} (exit 0)" for command in passing_commands}
-    product_matches = (
-        isinstance(current_product_fingerprint, str)
-        and bool(current_product_fingerprint)
-        and manifest_product == current_product_fingerprint
-    )
-    matched = (
-        local_marker_present
-        and bool(claimed)
-        and len(claimed) == len(set(claimed))
-        and all(fragment in expected for fragment in claimed)
-        and product_matches
-    )
-    warnings = []
-    placeholder = (
-        normalized.startswith("<fill in")
-        or normalized in UNVERIFIED_VALUES
-        or re.match(r"^(?:n/a|none|not\s+run|unverified)\b", normalized) is not None
-    )
-    if matched:
-        status = "local-recorded"
-    elif marker_present:
-        status = "unverified"
-        if local_marker_present and not product_matches:
-            warnings.append("locally recorded verification is stale for the current PR product")
-        else:
-            warnings.append(
-                "Verified claims an agentcam recording marker, but its exact grammar "
-                "or state-bound passed record did not match"
-            )
-    elif not value or placeholder:
-        status = "unverified"
-        warnings.append("Verified has no completed check; verification is unverified")
-    else:
-        status = "manual"
-        if passing_commands:
-            warnings.append(
-                "Verified does not match a passed recorded check; treating it as manual"
-            )
-        else:
-            warnings.append(
-                "Verified is author-supplied; no matching passed agentcam check was found"
-            )
-
-    partial = False
-    if isinstance(manifest, dict):
-        capture = manifest.get("capture")
-        if not isinstance(capture, dict):
-            partial = True
-        else:
-            partial = (
-                capture.get("mode") == "claude_hook"
-                or capture.get("stdout") == "not_available"
-                or capture.get("output_risk_scan") != "enabled"
-            )
-    if partial:
-        warnings.append(
-            "agentcam observation coverage is partial; terminal-output evidence may be unavailable"
-        )
-
-    return VerificationProvenance(
-        status=status,
-        partial=partial,
-        warnings=warnings,
-    )
-
-
-def apply_manifest_policy(report: Report, manifest: dict | None) -> Report:
-    risk = str(report.handoff.get("Risk") or "").strip().lower()
-    issues = list(report.issues)
-    if risk not in RISK_VALUES:
-        issues.append("Risk must be one of: high, medium, none-detected, unknown")
-    evidence = manifest.get("evidence") if isinstance(manifest, dict) else None
-    overall = str(evidence.get("overall_risk") or "").strip().upper() if isinstance(evidence, dict) else ""
-    minimum = {"HIGH": "high", "MEDIUM": "medium", "NONE_DETECTED": "none-detected"}.get(overall)
-    ranks = {"none-detected": 0, "unknown": 1, "medium": 2, "high": 3}
-    if minimum and risk in ranks and ranks[risk] < ranks[minimum]:
-        issues.append(f"Risk `{risk}` underreports agentcam manifest risk `{overall}`")
-    return replace(report, ok=not issues, issues=issues)
+            return None, "review artifact exceeds the 1 MiB size limit"
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return None, f"review artifact is malformed: {exc}"
+    if not isinstance(value, dict):
+        return None, "review artifact root must be an object"
+    return value, None
 
 
 def apply_dependency_policy(
@@ -756,125 +608,27 @@ def apply_dependency_policy(
     return replace(report, ok=not issues, issues=issues)
 
 
-def apply_verification_policy(
-    report: Report,
-    provenance: VerificationProvenance | None,
-) -> Report:
-    """Reject a handoff whose required verification is not completed."""
-    if provenance is None or provenance.status != "unverified":
-        return report
-    issue = (
-        "verification is unverified; provide a completed manual check or "
-        "matching recorded check"
-    )
-    if issue in report.issues:
-        return report
-    return replace(report, ok=False, issues=[*report.issues, issue])
-
-
-def compact_markdown(value: str) -> list[str]:
-    return [escape_markdown(line.rstrip()) for line in value.splitlines() if line.strip()]
-
-
-def should_show_handoff_template(report: Report) -> bool:
-    return any(
-        issue.startswith("compact handoff is required")
-        or issue.startswith("compact handoff is missing")
-        for issue in report.issues
-    )
-
-
-def render_agentcam_section(
-    evidence: dict | None, note: str | None
-) -> list[str]:
-    """Markdown lines for the recorded-evidence section, or [].
-
-    The manifest is a committed, author-controlled file, so any field
-    may carry any shape; entries render best-effort or are skipped.
-    Display-only means no shape may raise before the verdict is set.
-    """
-    if evidence is None and note is None:
-        return []
-    lines = ["", "## Recorded Evidence (agentcam)"]
-    if note is not None:
-        lines.append(f"- {escape_markdown(note)}")
-        return lines
-    overall = evidence.get("overall_risk")
-    if overall:
-        lines.append(f"- overall risk: {escape_markdown(overall)}")
-    recorded = evidence.get("changed_files")
-    if isinstance(recorded, list) and recorded:
-        lines.append(f"- recorded changed files: {len(recorded)}")
-    flags = evidence.get("risk_flags")
-    for flag in flags if isinstance(flags, list) else []:
-        if not isinstance(flag, dict):
-            continue
-        level = flag.get("level", "?")
-        rule = flag.get("rule", "?")
-        found = flag.get("evidence", "")
-        lines.append(
-            f"- {escape_markdown(level)} | {escape_markdown(rule)} | "
-            f"`{escape_markdown(found)}`"
-        )
-    checks = evidence.get("verifications")
-    for check in checks if isinstance(checks, list) else []:
-        if not isinstance(check, dict):
-            continue
-        cmd = check.get("command") or "?"
-        code = check.get("exit_code")
-        code_note = "?" if code is None else code
-        dur = check.get("duration_seconds")
-        dur_note = f" ({dur}s)" if isinstance(dur, (int, float)) else ""
-        lines.append(
-            f"- recorded check: `{escape_markdown(cmd)}` | exit "
-            f"{escape_markdown(code_note)}{escape_markdown(dur_note)}"
-        )
-    raw_diff_stat = evidence.get("diff_stat")
-    diff_stat = (
-        raw_diff_stat.strip() if isinstance(raw_diff_stat, str) else ""
-    )
-    if diff_stat:
-        lines.append("- diff stat: " + "<br>".join(
-            escape_markdown(line) for line in diff_stat.splitlines()
-        ))
-    return lines
-
-
-def render_verification_provenance(
-    provenance: VerificationProvenance | None,
-) -> list[str]:
-    if provenance is None:
-        return []
-    lines = ["", "## Verification Provenance", f"- status: {provenance.status}"]
-    if provenance.partial:
-        lines.append("- observation coverage: partial")
-    return lines
-
-
 def render_markdown(
     report: Report,
-    agentcam_evidence: dict | None = None,
-    agentcam_note: str | None = None,
-    verification_provenance: VerificationProvenance | None = None,
 ) -> str:
     status = "PASS" if report.ok else "FAIL"
     lines = [
         f"# Corridor CI: {status}",
         "",
         f"- changed files: {len(report.changed_files)}",
-        f"- corridor paths: {len(report.allowed_paths)}",
+        f"- declared paths: {len(report.allowed_paths)}",
     ]
 
     if any(report.handoff.values()):
         lines.append("")
-        lines.append("## Review Handoff")
-        for label in COMPACT_HANDOFF_LABELS:
+        lines.append("## Review Artifact")
+        for label in ("Decision", "Scope", "Review first", "Verified", "Risk"):
             value = report.handoff.get(label, "")
             if not value:
                 continue
             lines.append("")
             lines.append(f"### {label}")
-            lines.extend(compact_markdown(value))
+            lines.append(escape_markdown(value))
 
     if report.allowed_paths:
         lines.append("")
@@ -888,7 +642,7 @@ def render_markdown(
 
     if report.outside_files:
         lines.append("")
-        lines.append("## Out Of Corridor")
+        lines.append("## Outside Declared Scope")
         lines.extend(f"- `{escape_markdown(p)}`" for p in report.outside_files)
 
     if report.dependency_files:
@@ -896,23 +650,11 @@ def render_markdown(
         lines.append("## Dependency Changes")
         lines.extend(f"- `{escape_markdown(p)}`" for p in report.dependency_files)
 
-    lines.extend(render_agentcam_section(agentcam_evidence, agentcam_note))
-    lines.extend(render_verification_provenance(verification_provenance))
-
     if report.issues:
         lines.append("")
         lines.append("## Issues")
         lines.extend(f"- {escape_markdown(issue)}" for issue in report.issues)
-    if should_show_handoff_template(report):
-        lines.append("")
-        lines.append("## Copyable Review Handoff")
-        lines.append("")
-        lines.append("```md")
-        lines.extend(COPYABLE_REVIEW_HANDOFF.splitlines())
-        lines.append("```")
     warnings = list(report.warnings)
-    if verification_provenance is not None:
-        warnings.extend(verification_provenance.warnings)
     if warnings:
         lines.append("")
         lines.append("## Warnings")
@@ -1095,7 +837,7 @@ def upsert_pr_comment(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Validate a PR against a declared corridor.")
+    parser = argparse.ArgumentParser(description="Validate a PR review artifact.")
     parser.add_argument("--repo", default=".", help="repository checkout path")
     parser.add_argument(
         "--policy-gate",
@@ -1107,13 +849,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mode", choices=("fail", "warn"), default=os.environ.get("INPUT_MODE", "fail"))
     parser.add_argument("--comment", default=os.environ.get("INPUT_COMMENT", "false"))
     parser.add_argument(
-        "--agentcam-evidence",
-        default=os.environ.get("INPUT_AGENTCAM_EVIDENCE", AGENTCAM_EVIDENCE_DEFAULT),
-        help=(
-            "checkout-relative path of a committed agentcam "
-            "manifest.redacted.json; its evidence is appended to the report "
-            "and false or incomplete verification claims fail the corridor"
-        ),
+        "--review-artifact",
+        default=os.environ.get("INPUT_REVIEW_ARTIFACT", REVIEW_ARTIFACT_DEFAULT),
+        help="checkout-relative Guardrails review artifact",
     )
     return parser
 
@@ -1125,32 +863,28 @@ def main(argv: list[str] | None = None) -> int:
         if not args.base or not args.head:
             raise SystemExit("--policy-gate requires --base and --head")
         return run_policy_gate(repo, args.base, args.head)
-    corridor = find_pr_body()
     changed = extract_changed_files(repo)
-    report = evaluate(
-        changed_files=changed,
-        corridor_text=corridor,
-    )
-    manifest, evidence_note = read_agentcam_manifest(
-        repo / args.agentcam_evidence
-    )
-    evidence = manifest.get("evidence") if isinstance(manifest, dict) else None
-    report = apply_manifest_policy(report, manifest)
+    deleted = extract_deleted_files(repo)
     current_product_fingerprint = compute_current_product_fingerprint(
         repo, changed
     )
-    provenance = None
-    if any(report.handoff.values()) or manifest is not None or evidence_note is not None:
-        provenance = classify_verification_provenance(
-            report.handoff.get("Verified"),
-            manifest,
-            current_product_fingerprint=current_product_fingerprint,
-        )
-    report = apply_verification_policy(report, provenance)
+    review, review_note = read_review_artifact(repo / args.review_artifact)
+    event = read_event_payload()
+    pull = event.get("pull_request") if isinstance(event, dict) else None
+    pr_title = str(pull.get("title") or "Pull request") if isinstance(pull, dict) else "Pull request"
+    pr_url = str(pull.get("html_url") or "") if isinstance(pull, dict) else ""
+    report = evaluate_review_artifact(
+        changed_files=changed,
+        deleted_files=deleted,
+        review=review,
+        current_product_fingerprint=current_product_fingerprint,
+        pr_title=pr_title,
+        pr_url=pr_url,
+    )
+    if review_note and review is None and "required" not in "\n".join(report.issues):
+        report = replace(report, ok=False, issues=[*report.issues, review_note])
 
     if report.dependency_files:
-        event = read_event_payload()
-        pull = event.get("pull_request") if isinstance(event, dict) else None
         head_data = pull.get("head") if isinstance(pull, dict) else None
         user_data = pull.get("user") if isinstance(pull, dict) else None
         head_sha = str(head_data.get("sha") or "") if isinstance(head_data, dict) else ""
@@ -1180,12 +914,9 @@ def main(argv: list[str] | None = None) -> int:
             pr_author=pr_author,
         )
         report = apply_dependency_policy(report, decision)
-    markdown = render_markdown(
-        report,
-        agentcam_evidence=evidence,
-        agentcam_note=evidence_note,
-        verification_provenance=provenance,
-    )
+    if review_note and review is not None:
+        report = replace(report, warnings=[*report.warnings, review_note])
+    markdown = render_markdown(report)
     print(markdown)
     write_step_summary(markdown)
     if truthy(args.comment):

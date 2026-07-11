@@ -1,51 +1,33 @@
 # The Corridor Manifesto
 
-Code is now cheap. Review is not.
+Review attention is scarce. Before a maintainer reads a diff deeply, a tool
+should answer four factual questions:
 
-A pull request costs minutes to generate and hours to review. The person
-paying those hours needs enough information to decide whether to pay.
+1. What product files changed?
+2. Where did the agent intend the change to stop?
+3. Which checks actually ran against the final state?
+4. Which file should the reviewer inspect first?
 
-We are not against AI. We do not care who wrote the code. We care that
-someone can say where the change was meant to stop.
+Earlier Corridor versions made the author encode those answers in five exact PR
+body lines. That exposed the right concerns but assigned machine bookkeeping to
+the human. It also allowed prose, recorded evidence, and final state to drift
+apart.
 
-Every low-context PR outsources the same three questions to the maintainer:
+Corridor v14 moves that structure to `.guardrails/review.json`. The local Stop
+coordinator generates it from Git-local intent, trusted checks, Agentcam, and
+the final product fingerprint. CI recomputes the PR state independently. The PR
+body is again for normal human explanation, with no fixed grammar.
 
-> Why does this exist?
-> Where does it end?
-> Where do I start reading?
+The artifact is not a quality score or third-party attestation. It is
+author-controlled evidence made falsifiable by state binding. A red Corridor
+means the review facts are missing, stale, malformed, under-scoped, or
+under-reporting objective risk; it does not mean the implementation is bad.
 
-Answering them by reading the diff is the most expensive possible way to
-answer them.
+The useful boundary is simple:
 
-Longer descriptions are not the fix. A vague PR and a verbose PR fail the
-same way: nobody knows where the change was supposed to stop.
+> Humans explain why. Tools record what happened and prove which final state
+> they are describing.
 
-So we ask for a handoff. Five lines:
-
-```md
-Decision: #123
-Scope: pkg/parser/*, tests/parser/*
-Review first: pkg/parser/links.py
-Verified: pytest tests/parser
-Risk: none-detected
-```
-
-Thirty seconds for the author. It hands the maintainer the boundary instead
-of hiding it in the diff.
-
-The author's words explain intent. Recorded behavior determines confidence:
-manual checks stay labeled manual, and a check is called local-recorded only
-when the committed author-controlled observation matches it. Missing or
-partial observation stays
-visible instead of being promoted into proof.
-
-An author who cannot fill in these five lines, no matter who they are, is
-not ready to ask for review.
-
-A red check does not mean the code is bad. It means information is missing.
-Humans still review. The corridor only decides where review begins.
-
-Tiny fixes stay exempt. This is not ceremony. It is the minimum unit of
-respect for someone else's attention.
-
-No scope, no review.
+Required GitHub checks remain essential. A repository workflow is only a merge
+gate when ruleset or branch protection makes it required, and PR policy must
+run from the default branch so a change cannot replace its own enforcement.

@@ -10,7 +10,7 @@ from agentcam import __version__
 
 
 def test_release_version_matches_product_closure_release():
-    assert __version__ == "0.5.0"
+    assert __version__ == "0.6.0"
 
 
 def test_release_workflow_uses_oidc_and_releases_only_after_pypi():

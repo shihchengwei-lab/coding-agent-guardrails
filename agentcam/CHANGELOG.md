@@ -7,6 +7,23 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-07-11
+
+### Changed
+
+- The Guardrails Stop coordinator now owns verification and finalization, then
+  emits the state-bound `.guardrails/review.json` consumed by Corridor CI v14.
+- Guardrails excludes that generated artifact from Agentcam's product delta so
+  the evidence file does not recursively change the state it describes.
+- The integrated workflow no longer asks users to run `verify`, `handoff`, or
+  `export`; those commands remain available for standalone diagnostics.
+
+### Migration
+
+- Upgrade the per-repository runtime with the root Guardrails installer and
+  start a new delivery. Corridor CI v14 does not accept Agentcam 0.5 exports or
+  the historical five-line PR-body format.
+
 ## [0.5.0] — 2026-07-11
 
 ### Changed

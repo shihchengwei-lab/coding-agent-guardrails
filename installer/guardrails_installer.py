@@ -25,12 +25,17 @@ import uuid
 
 SCHEMA = 1
 DEFAULT_TIMEOUT = 600
+OFFICIAL_WORKFLOW_HASHES = {
+    # corridor-ci/examples/workflow.yml from the immutable v13.0.0 release.
+    "bf11e60c97edb5323cf0df4042335013d2f24818efae7a63d343a013ffa901e8",
+}
 CHECK_ID = re.compile(r"^[a-z0-9_-]{1,64}$")
 BLOCK_START = "<!-- coding-agent-guardrails:discipline:start -->"
 BLOCK_END = "<!-- coding-agent-guardrails:discipline:end -->"
 MANAGED_HOOK_TOKENS = (
     "guardrails_managed",
     "patch-cost",
+    # Upgrade cleanup only: recognize hooks installed by pre-v14 releases.
     "prune-inject",
     "hook-turn-start",
     "hook-turn-end",
@@ -42,10 +47,6 @@ MANAGED_RELATIVE_PATHS = {
     "CLAUDE.md",
     ".codex/hooks.json",
     ".claude/settings.json",
-    ".agents/skills/slime-navigate",
-    ".claude/skills/slime-navigate",
-    ".claude/commands/slime-corridor.md",
-    ".claude/commands/slime-prune.md",
     ".github/workflows/corridor.yml",
     "guardrails",
     "guardrails.cmd",
@@ -295,8 +296,6 @@ def _source_revision(source: Path) -> str:
     roots = [
         source / "agentcam",
         source / "slime-coding" / "bin",
-        source / "slime-coding" / "commands",
-        source / "slime-coding" / "skills",
         source / "templates" / "DISCIPLINE.md",
         source / "corridor-ci" / "examples" / "workflow.yml",
         source / "installer",
@@ -316,10 +315,6 @@ def _validate_source(source: Path) -> None:
     required = [
         "agentcam/pyproject.toml",
         "slime-coding/bin/patch-cost",
-        "slime-coding/bin/prune-inject",
-        "slime-coding/skills/slime-navigate/SKILL.md",
-        "slime-coding/templates/.slime/corridor.md",
-        "slime-coding/templates/.slime/PRUNED.md",
         "templates/DISCIPLINE.md",
         "corridor-ci/examples/workflow.yml",
         "installer/guardrails_installer.py",
@@ -332,10 +327,7 @@ def _validate_source(source: Path) -> None:
 def validate_managed_destinations(root: Path) -> None:
     """Refuse writes that would traverse a user-controlled symbolic link."""
     root = root.absolute()
-    relatives = set(MANAGED_RELATIVE_PATHS) | {
-        ".slime/corridor.md",
-        ".slime/PRUNED.md",
-    }
+    relatives = set(MANAGED_RELATIVE_PATHS)
     for relative in relatives:
         candidate = root
         for part in Path(relative).parts:
@@ -359,8 +351,7 @@ def _validate_python(python: Path) -> None:
 
 def _copy_runtime(source: Path, destination: Path) -> None:
     (destination / "slime-coding").mkdir(parents=True)
-    for name in ("bin", "commands", "skills"):
-        shutil.copytree(source / "slime-coding" / name, destination / "slime-coding" / name)
+    shutil.copytree(source / "slime-coding" / "bin", destination / "slime-coding" / "bin")
     shutil.copytree(
         source / "installer",
         destination / "installer",
@@ -409,7 +400,7 @@ def _prepare_version(repo: Repository, source: Path, python: Path) -> PreparedVe
             _run([env_python, "-m", "pip", "install", "--quiet", "--upgrade", source / "agentcam"])
         env_python = _python_in_env(env)
         version = _run([env_python, "-m", "agentcam.cli", "version"]).stdout.strip()
-        if version != "agentcam 0.5.0":
+        if version != "agentcam 0.6.0":
             raise InstallerError(f"installed Agentcam version mismatch: {version}")
         return PreparedVersion(revision, runtime, env, env_python, created_runtime, created_env)
     except Exception:
@@ -448,30 +439,14 @@ def _hook(command: Sequence[Path | str], managed_id: str, status: str | None = N
 
 def _managed_hooks(prepared: PreparedVersion, *, codex: bool) -> dict[str, list[dict[str, Any]]]:
     patch = [prepared.python, prepared.runtime / "slime-coding" / "bin" / "patch-cost"]
-    prune = [prepared.python, prepared.runtime / "slime-coding" / "bin" / "prune-inject"]
-    agentcam = [prepared.python, "-m", "agentcam.cli"]
     pre_matcher = "Edit|Write|apply_patch" if codex else "Edit|Write"
     managed: dict[str, list[dict[str, Any]]] = {
-        "SessionStart": [{"hooks": [_hook(prune, "slime-prune"), _hook(patch, "slime-baseline")]}],
-        "UserPromptSubmit": [{"hooks": [_hook(prune, "slime-prune"), _hook(patch, "slime-baseline")]}],
-        "PreToolUse": [{"matcher": pre_matcher, "hooks": [_hook(patch, "slime-pretool")]}],
-        "PostToolUse": [{"matcher": "Bash", "hooks": [_hook(patch, "slime-bash")]}],
-        "Stop": [{"hooks": [_hook(patch, "slime-stop")]}],
+        "UserPromptSubmit": [{"hooks": [_hook(patch, "guardrails-coordinator", "Starting Guardrails turn")]}],
+        "PreToolUse": [{"matcher": pre_matcher, "hooks": [_hook(patch, "guardrails-coordinator", "Checking intended edit")]}],
+        "PostToolUse": [{"matcher": "Bash", "hooks": [_hook(patch, "guardrails-coordinator", "Checking shell delta")]}],
+        "Stop": [{"hooks": [_hook(patch, "guardrails-coordinator", "Finishing Guardrails review")]}],
+        "SessionEnd": [{"hooks": [_hook(patch, "guardrails-coordinator", "Cleaning Guardrails state")]}],
     }
-    if codex:
-        managed["UserPromptSubmit"].append(
-            {"hooks": [_hook([*agentcam, "hook-turn-start"], "agentcam-turn-start")]}
-        )
-        managed["Stop"].append(
-            {"hooks": [_hook([*agentcam, "hook-turn-end"], "agentcam-turn-end")]}
-        )
-    else:
-        managed["SessionStart"].append(
-            {"matcher": "", "hooks": [_hook([*agentcam, "hook-session-start"], "agentcam-session-start")]}
-        )
-        managed["SessionEnd"] = [
-            {"matcher": "", "hooks": [_hook([*agentcam, "hook-session-end"], "agentcam-session-end")]}
-        ]
     return managed
 
 
@@ -496,9 +471,14 @@ def _official_workflow_action(path: Path, template: Path) -> str:
         return "create"
     text = path.read_text(encoding="utf-8-sig")
     marker = "# coding-agent-guardrails:managed corridor-ci-v"
-    if text.startswith(marker) and _sha256_bytes(text.replace("\r\n", "\n").encode()) == _sha256_bytes(
+    existing_hash = _sha256_bytes(text.replace("\r\n", "\n").encode())
+    current_hash = _sha256_bytes(
         template.read_text(encoding="utf-8").replace("\r\n", "\n").encode()
-    ):
+    )
+    if text.startswith(marker) and existing_hash in {
+        *OFFICIAL_WORKFLOW_HASHES,
+        current_hash,
+    }:
         return "upgrade"
     return "preserve"
 
@@ -569,13 +549,7 @@ def install_project(
         print(f"  environment: {repo.git_dir / 'guardrails' / 'envs' / revision}")
         print("  update AGENTS.md and CLAUDE.md managed blocks")
         print("  merge Claude Code and Codex hooks without removing user hooks")
-        print("  install repo-local skill, commands, and launchers")
-        missing_slime = [
-            name for name in ("corridor.md", "PRUNED.md")
-            if not (repo.root / ".slime" / name).exists()
-        ]
-        if missing_slime:
-            print("  create missing .slime files: " + ", ".join(missing_slime))
+        print("  install repo-local launchers; existing .slime state is preserved but archived")
         workflow = repo.root / ".github" / "workflows" / "corridor.yml"
         action = _official_workflow_action(
             workflow,
@@ -615,25 +589,6 @@ def install_project(
                 transaction.write_text(path, _json_text(merged))
                 _record(files, repo.root, relative, "hooks")
 
-            skill_source = prepared.runtime / "slime-coding" / "skills" / "slime-navigate"
-            for relative in (".agents/skills/slime-navigate", ".claude/skills/slime-navigate"):
-                transaction.replace_tree(repo.root / relative, skill_source)
-                _record(files, repo.root, relative, "managed-tree")
-            commands_source = prepared.runtime / "slime-coding" / "commands"
-            for command in sorted(commands_source.glob("*.md")):
-                relative = f".claude/commands/{command.name}"
-                transaction.write_bytes(repo.root / relative, command.read_bytes())
-                _record(files, repo.root, relative, "managed-file")
-
-            slime = repo.root / ".slime"
-            for name in ("corridor.md", "PRUNED.md"):
-                path = slime / name
-                if not path.exists():
-                    transaction.write_bytes(
-                        path,
-                        (source / "slime-coding" / "templates" / ".slime" / name).read_bytes(),
-                    )
-
             workflow = repo.root / ".github" / "workflows" / "corridor.yml"
             action = _official_workflow_action(workflow, workflow_template)
             if action in {"create", "upgrade"}:
@@ -663,7 +618,7 @@ def install_project(
                 "environment": str(prepared.env),
                 "python": str(prepared.python),
                 "installer_python": str(python),
-                "agentcam_version": "0.5.0",
+                "agentcam_version": "0.6.0",
                 "files": files,
             }
             manifest["owned_versions"] = merge_owned_versions(
@@ -682,6 +637,7 @@ def install_project(
         if prepared.created_runtime:
             shutil.rmtree(prepared.runtime, ignore_errors=True)
         raise
+    ensure_detected_primary(repo)
     print(f"Done. Installed guardrails revision {prepared.revision} into {repo.root}")
     return 0
 
@@ -778,18 +734,22 @@ def doctor(project: Path, *, remote: bool = False) -> int:
         )
         if str(runtime) not in commands or str(python) not in commands:
             failures.append(f"managed hook targets are stale or missing: {path}")
+    check_mode = "structural-only"
     config = repo.git_dir / "guardrails" / "config.json"
     if config.exists():
         try:
             value = json.loads(config.read_text(encoding="utf-8"))
             if value.get("schema") != 1 or not isinstance(value.get("checks"), dict):
                 raise ValueError("expected schema 1 and checks object")
+            primary = value["checks"].get("primary")
+            if isinstance(primary, dict):
+                check_mode = "detected" if primary.get("source") == "detected" else "configured"
         except (OSError, ValueError, json.JSONDecodeError) as error:
             failures.append(f"trusted check config is invalid: {config}: {error}")
     workflow = repo.root / ".github" / "workflows" / "corridor.yml"
     if workflow.exists():
         text = workflow.read_text(encoding="utf-8-sig")
-        if not re.search(r"(?m)^\s{4}name: Corridor\s*$", text) or "corridor-ci@corridor-ci-v13.0.0" not in text:
+        if not re.search(r"(?m)^\s{4}name: Corridor\s*$", text) or "corridor-ci@corridor-ci-v14.0.0" not in text:
             failures.append(f"Corridor workflow has unexpected check name or version: {workflow}")
     if remote:
         try:
@@ -803,7 +763,10 @@ def doctor(project: Path, *, remote: bool = False) -> int:
         for failure in failures:
             print(f"- {failure}")
         return 1
-    print(f"guardrails doctor: OK ({manifest['revision']})")
+    archived = "; archived .slime state present" if (repo.root / ".slime").exists() else ""
+    print(
+        f"guardrails doctor: OK ({manifest['revision']}; checks: {check_mode}{archived})"
+    )
     return 0
 
 
@@ -915,6 +878,110 @@ def uninstall(project: Path, *, dry_run: bool = False, purge_state: bool = False
     return 0
 
 
+def detect_primary_check(project: Path) -> list[str] | None:
+    """Return one unambiguous root test command; never guess for monorepos."""
+    candidates: list[list[str]] = []
+    if (project / "pytest.ini").is_file():
+        candidates.append(["python", "-m", "pytest", "-q"])
+    elif (project / "tox.ini").is_file():
+        try:
+            if "[pytest]" in (project / "tox.ini").read_text(encoding="utf-8"):
+                candidates.append(["python", "-m", "pytest", "-q"])
+        except OSError:
+            pass
+    elif (project / "pyproject.toml").is_file():
+        try:
+            if "[tool.pytest" in (project / "pyproject.toml").read_text(encoding="utf-8"):
+                candidates.append(["python", "-m", "pytest", "-q"])
+        except OSError:
+            pass
+
+    package = project / "package.json"
+    if package.is_file():
+        try:
+            value = json.loads(package.read_text(encoding="utf-8"))
+            script = value.get("scripts", {}).get("test") if isinstance(value, dict) else None
+        except (OSError, json.JSONDecodeError):
+            script = None
+        placeholder = "no test specified" in str(script or "").lower()
+        if isinstance(script, str) and script.strip() and not placeholder:
+            candidates.append(["npm", "test"])
+
+    if (project / "Cargo.toml").is_file():
+        candidates.append(["cargo", "test"])
+    if (project / "go.mod").is_file():
+        candidates.append(["go", "test", "./..."])
+    pubspec = project / "pubspec.yaml"
+    if pubspec.is_file():
+        try:
+            flutter = "sdk: flutter" in pubspec.read_text(encoding="utf-8")
+        except OSError:
+            flutter = False
+        if flutter:
+            candidates.append(["flutter", "test"])
+    if len(candidates) != 1:
+        return None
+    candidate = candidates[0]
+    return candidate if shutil.which(candidate[0]) else None
+
+
+def ensure_detected_primary(repo: Repository) -> None:
+    path = repo.git_dir / "guardrails" / "config.json"
+    if path.exists():
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        checks = value.get("checks") if isinstance(value, dict) else None
+        if isinstance(checks, dict) and "primary" in checks:
+            return
+    candidate = detect_primary_check(repo.root)
+    if candidate:
+        set_check(repo.root, "primary", candidate, DEFAULT_TIMEOUT)
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["checks"]["primary"]["source"] = "detected"
+        _atomic_write(path, _json_text(value).encode())
+
+
+def remove_check(project: Path, check_id: str) -> int:
+    if not CHECK_ID.fullmatch(check_id):
+        raise InstallerError("check ID must match [a-z0-9_-]{1,64}")
+    repo = discover_repository(project)
+    path = repo.git_dir / "guardrails" / "config.json"
+    if not path.is_file():
+        print(f"trusted check {check_id!r} was not configured")
+        return 0
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise InstallerError(f"trusted check config is malformed: {path}: {error}") from error
+    checks = config.get("checks") if isinstance(config, dict) else None
+    if config.get("schema") != 1 or not isinstance(checks, dict):
+        raise InstallerError(f"trusted check config must use schema 1: {path}")
+    checks.pop(check_id, None)
+    _atomic_write(path, _json_text(config).encode())
+    print(f"trusted check {check_id!r} removed from {path}")
+    return 0
+
+
+def run_runtime_action(project: Path, argv: Sequence[str], *, interactive: bool = False) -> int:
+    repo = discover_repository(project)
+    _, manifest = _load_manifest(repo)
+    python = Path(str(manifest.get("python") or ""))
+    runtime = Path(str(manifest.get("runtime") or "")) / "slime-coding" / "bin" / "patch-cost"
+    if not python.is_file() or not runtime.is_file():
+        raise InstallerError("installed Guardrails runtime is incomplete; run guardrails doctor")
+    command = [str(python), str(runtime), *argv, "--repo", str(repo.root)]
+    if interactive:
+        return subprocess.run(command).returncode
+    result = subprocess.run(command, text=True, capture_output=True)
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.returncode:
+        raise InstallerError((result.stderr or result.stdout).strip() or "runtime action failed")
+    return 0
+
+
 def set_check(project: Path, check_id: str, argv: Sequence[str], timeout: int) -> int:
     if not CHECK_ID.fullmatch(check_id):
         raise InstallerError("check ID must match [a-z0-9_-]{1,64}")
@@ -965,6 +1032,26 @@ def build_parser() -> argparse.ArgumentParser:
     set_parser.add_argument("check_id")
     set_parser.add_argument("--repo", default=default_repo)
     set_parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT)
+    remove_parser = check_commands.add_parser("remove")
+    remove_parser.add_argument("check_id")
+    remove_parser.add_argument("--repo", default=default_repo)
+    internal = commands.add_parser("internal")
+    internal_commands = internal.add_subparsers(dest="internal_command", required=True)
+    internal_scope = internal_commands.add_parser("scope")
+    internal_scope_commands = internal_scope.add_subparsers(dest="scope_command", required=True)
+    internal_set = internal_scope_commands.add_parser("set")
+    internal_set.add_argument("--outcome", required=True)
+    internal_set.add_argument("--path", action="append", required=True)
+    internal_set.add_argument("--repo", default=default_repo)
+    internal_add = internal_scope_commands.add_parser("add")
+    internal_add.add_argument("--path", action="append", required=True)
+    internal_add.add_argument("--reason", required=True)
+    internal_add.add_argument("--repo", default=default_repo)
+    internal_sync = internal_commands.add_parser("pr-sync")
+    internal_sync.add_argument("--repo", default=default_repo)
+    approve_parser = commands.add_parser("approve")
+    approve_parser.add_argument("nonce")
+    approve_parser.add_argument("--repo", default=default_repo)
     return parser
 
 
@@ -989,7 +1076,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         return doctor(Path(args.project), remote=args.remote)
     if args.command == "uninstall":
         return uninstall(Path(args.project), dry_run=args.dry_run, purge_state=args.purge_state)
-    return set_check(Path(args.repo), args.check_id, check_argv or [], args.timeout)
+    if args.command == "approve":
+        return run_runtime_action(Path(args.repo), ["approve", args.nonce], interactive=True)
+    if args.command == "internal":
+        if args.internal_command == "pr-sync":
+            return run_runtime_action(Path(args.repo), ["pr-sync"])
+        values = ["scope", args.scope_command]
+        if args.scope_command == "set":
+            values += ["--outcome", args.outcome]
+        else:
+            values += ["--reason", args.reason]
+        for path in args.path:
+            values += ["--path", path]
+        return run_runtime_action(Path(args.repo), values)
+    if args.check_command == "set":
+        return set_check(Path(args.repo), args.check_id, check_argv or [], args.timeout)
+    return remove_check(Path(args.repo), args.check_id)
 
 
 if __name__ == "__main__":

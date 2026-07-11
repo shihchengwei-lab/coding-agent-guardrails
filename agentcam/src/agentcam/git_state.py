@@ -96,7 +96,10 @@ def collect_git_state(cwd: Path, *, is_after: bool = False) -> GitState:
         )
 
     pre_existing_op = detect_pre_existing_op(git_dir)
-    changed_files = parse_porcelain_v1z(porcelain_raw)
+    changed_files = [
+        changed for changed in parse_porcelain_v1z(porcelain_raw)
+        if changed.path.replace("\\", "/") not in EVIDENCE_OUTPUT_PATHS
+    ]
     path_signatures = {
         changed.path: _path_signature(cwd, changed.path)
         for changed in changed_files
@@ -122,6 +125,7 @@ def collect_git_state(cwd: Path, *, is_after: bool = False) -> GitState:
 EVIDENCE_OUTPUT_PATHS = {
     ".agentcam/AGENT_RUN_REPORT.md",
     ".agentcam/manifest.redacted.json",
+    ".guardrails/review.json",
 }
 
 
@@ -164,31 +168,6 @@ def compute_final_state_fingerprint(cwd: Path) -> str:
         ).encode("ascii")
     )
     return fp.hexdigest()
-
-
-def read_declared_scope(cwd: Path) -> list[str]:
-    """Read the corridor Paths snapshot without importing Slime's hook script."""
-    path = cwd / ".slime" / "corridor.md"
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
-    in_paths = False
-    scope: list[str] = []
-    for raw in lines:
-        line = raw.strip()
-        if line.lower() == "## paths":
-            in_paths = True
-            continue
-        if in_paths and line.startswith("##"):
-            break
-        if in_paths:
-            match = re.match(r"-\s+(.+)", line)
-            if match:
-                value = match.group(1).strip().strip("`")
-                if value and value not in scope:
-                    scope.append(value.replace("\\", "/"))
-    return scope
 
 
 def derive_turn_delta(cwd: Path, before: GitState, after: GitState) -> GitState:

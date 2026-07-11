@@ -753,7 +753,6 @@ def _run_command(args) -> int:
         compute_final_state_fingerprint,
         derive_turn_delta,
         is_working_tree_dirty,
-        read_declared_scope,
         resolve_git_dir,
         resolve_git_root,
     )
@@ -805,7 +804,7 @@ def _run_command(args) -> int:
         )
         return 2
     pre_run_dirty = is_working_tree_dirty(state_before)
-    declared_scope = read_declared_scope(git_root)
+    declared_scope: list[str] = []
 
     # Diff fingerprint for the no-diff cleanup decision (step 6.5).
     # Computed only when cleanup might fire — `--keep-empty` skips the

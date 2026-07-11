@@ -1,24 +1,27 @@
 #!/usr/bin/env python3
-"""Deterministic corridor and completion gates plus a factual cost report.
+"""Low-friction Guardrails hook coordinator and internal CLI.
 
-PreToolUse denies product edits without a valid corridor or outside its Paths.
-Stop rechecks the persistent facts that must be true before completion:
-configured typecheck/test commands pass, new dependencies are justified, all
-product changes remain inside the corridor, and trivial work changes at most one
-product file. PRUNED.md records rejected routes; it never waives a red gate.
-
-Trusted checks are loaded from <git-dir>/guardrails/config.json and executed
-as argv with shell=False. SLIME_TEST_TIMEOUT may lower their timeout ceiling.
-  SLIME_PUBSPEC        alternate pubspec path (default pubspec.yaml).
+Intent and approval state live under the Git directory. Repository Markdown
+never authorizes execution. Trusted checks are loaded from
+<git-dir>/guardrails/config.json and run as argv with shell=False.
 """
+import argparse
 import json
 import hashlib
 import os
 import re
+import secrets
 import subprocess
 import sys
+import time
 
 PUBSPEC = os.environ.get("SLIME_PUBSPEC", "pubspec.yaml")
+REVIEW_ARTIFACT = ".guardrails/review.json"
+HIGH_RISK_SEGMENTS = {
+    "auth", "login", "oauth", "session", "jwt", "permission",
+    "credential", "secret", "migration", "migrations", "terraform",
+    "kubernetes", "helm", "deploy", "deployment", "infrastructure",
+}
 
 
 def read_input():
@@ -52,187 +55,6 @@ def git(cwd, *args):
 
 def is_git(cwd):
     return bool(git(cwd, "rev-parse", "--is-inside-work-tree").strip())
-
-
-# --------------------------------------------------------------------------
-# L2 — PreToolUse corridor gate
-# --------------------------------------------------------------------------
-TEMPLATE_ID = "example-feature"
-TEMPLATE_GLOBS = {"lib/feature/example/**", "test/feature/example/**"}
-RIGOR_LEVELS = {"trivial", "normal", "high"}
-RIGOR_REQUIRED_SECTIONS = {
-    "trivial": ("outcome", "paths", "stop condition"),
-    "normal": (
-        "outcome",
-        "paths",
-        "evidence",
-        "stop condition",
-    ),
-    "high": (
-        "outcome",
-        "paths",
-        "evidence",
-        "stop condition",
-        "high-risk controls",
-    ),
-}
-
-
-def corridor_id(cwd):
-    path = os.path.join(cwd, ".slime", "corridor.md")
-    try:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                m = re.match(r"#\s*Corridor:\s*(.+)", line.strip())
-                if m:
-                    return m.group(1).strip()
-    except OSError:
-        return None
-    return None
-
-
-def corridor_sections(cwd):
-    """Parse ``##`` sections once for rigor validation and path matching.
-
-    Values are stripped, non-empty source lines.  Section names are normalized
-    to lower case because the Markdown is author-written, while the required
-    shape remains deterministic enough for the L2 gate.
-    """
-    path = os.path.join(cwd, ".slime", "corridor.md")
-    sections = {}
-    current = None
-    try:
-        with open(path, encoding="utf-8") as f:
-            for raw in f:
-                stripped = raw.strip()
-                heading = re.match(r"##\s+(.+?)\s*$", stripped)
-                if heading:
-                    current = " ".join(heading.group(1).lower().split())
-                    sections.setdefault(current, [])
-                    continue
-                if current is not None and stripped:
-                    sections[current].append(stripped)
-    except OSError:
-        return {}
-    return sections
-
-
-def corridor_rigor(cwd, sections=None):
-    """Return explicit rigor or an invalid sentinel/raw value."""
-    sections = corridor_sections(cwd) if sections is None else sections
-    if "rigor" not in sections:
-        return "<missing>"
-    values = [
-        line
-        for line in sections.get("rigor", [])
-        if not line.startswith("<!--")
-    ]
-    if not values:
-        return "<empty>"
-    if len(values) != 1:
-        return "<multiple values>"
-    return values[0].strip().lower()
-
-
-def section_has_labeled_item(sections, section, label):
-    pattern = re.compile(r"-\s*" + re.escape(label) + r"\s*\S", re.IGNORECASE)
-    return any(pattern.match(line) for line in sections.get(section, []))
-
-
-def corridor_problem(cwd):
-    """Return a reason string if the corridor is missing/invalid, else None.
-
-    Only unambiguous signals block: missing file, missing header, the template
-    id, an empty Paths list, or paths still pointing at the template example.
-    """
-    path = os.path.join(cwd, ".slime", "corridor.md")
-    if not os.path.exists(path):
-        return ".slime/corridor.md is missing"
-    cid = corridor_id(cwd)
-    if not cid:
-        return ".slime/corridor.md has no '# Corridor: <id>' header"
-    if cid == TEMPLATE_ID:
-        return ".slime/corridor.md is still the template (id 'example-feature')"
-    globs = corridor_globs(cwd)
-    if not globs:
-        return ".slime/corridor.md has an empty '## Paths' list"
-    if any(glob.strip() in {"*", "**", "**/*"} for glob in globs):
-        return ".slime/corridor.md contains a match-all path instead of a corridor"
-    if any(
-        glob.startswith("/")
-        or re.match(r"^[A-Za-z]:[/\\]", glob)
-        or ".." in glob.replace("\\", "/").split("/")
-        for glob in globs
-    ):
-        return ".slime/corridor.md Paths must stay inside the repository"
-    if any(g in TEMPLATE_GLOBS for g in globs):
-        return ".slime/corridor.md still lists the template example paths"
-
-    sections = corridor_sections(cwd)
-    rigor = corridor_rigor(cwd, sections)
-    if rigor == "<missing>":
-        return (
-            ".slime/corridor.md requires an explicit Rigor migration before "
-            "product work can continue"
-        )
-    if rigor not in RIGOR_LEVELS:
-        if rigor == "<empty>":
-            return ".slime/corridor.md has an empty Rigor section"
-        return (
-            ".slime/corridor.md has unknown rigor "
-            + repr(rigor)
-            + "; expected trivial, normal, or high"
-        )
-
-    for required in RIGOR_REQUIRED_SECTIONS[rigor]:
-        if not sections.get(required):
-            display = " ".join(word.capitalize() for word in required.split())
-            return f".slime/corridor.md rigor {rigor} requires a non-empty '## {display}' section"
-
-    if rigor in {"normal", "high"}:
-        if not section_has_labeled_item(sections, "evidence", "Supports:"):
-            return ".slime/corridor.md Evidence requires a non-empty 'Supports:' item"
-        if not section_has_labeled_item(sections, "evidence", "Would falsify:"):
-            return ".slime/corridor.md Evidence requires a non-empty 'Would falsify:' item"
-
-    if rigor == "high":
-        for label in ("Failure mode:", "Rollback:", "Independent check:"):
-            if not section_has_labeled_item(sections, "high-risk controls", label):
-                return (
-                    ".slime/corridor.md High-risk Controls requires a non-empty '"
-                    + label
-                    + "' item"
-                )
-    primary = stop_check_ids(cwd)
-    manual = stop_manual(cwd)
-    if not primary and not manual:
-        return ".slime/corridor.md Stop Condition requires Check: or Manual:"
-    if rigor == "high" and not primary:
-        return ".slime/corridor.md high rigor requires at least one primary Check:"
-    if rigor == "high" and not independent_check_id(cwd):
-        return ".slime/corridor.md high rigor requires Independent check:"
-
-    if primary or rigor == "high":
-        _, config_error = load_trusted_checks(cwd)
-        if config_error:
-            return config_error
-    return None
-
-
-# Repo-metadata files: not product code, no real frontier to compute, so the
-# corridor concept doesn't apply. Matched by basename so a nested .gitignore
-# (which git itself honours at any depth) is also exempt. README.md is
-# deliberately NOT here — it describes product behaviour and is a real edit
-# target. Keep the list conservative; widening it is a one-line change.
-META_BASENAMES = {
-    ".gitignore",
-    ".gitattributes",
-    ".editorconfig",
-    "LICENSE",
-    "LICENSE.md",
-    "LICENSE.txt",
-    "CHANGELOG.md",
-}
 
 
 def normalize_target(cwd, path):
@@ -275,9 +97,7 @@ def target_paths(cwd, data):
 
 
 def is_exempt_target(path):
-    return path == ".slime" or path.startswith(".slime/") or (
-        os.path.basename(path) in META_BASENAMES
-    )
+    return path == REVIEW_ARTIFACT
 
 
 def deny_pretool(reason):
@@ -294,281 +114,12 @@ def deny_pretool(reason):
     )
 
 
-def corridor_gate(data):
-    cwd = data.get("cwd") or os.getcwd()
-    targets = target_paths(cwd, data)
-    if not targets:
-        deny_pretool(
-            "could not identify the edit target from the hook payload; "
-            "refusing an unscoped write"
-        )
-        sys.exit(0)
-    external = [
-        path
-        for path in targets
-        if path == ".." or path.startswith("../")
-    ]
-    if external:
-        deny_pretool(
-            f"{', '.join(external)} is outside the repository and cannot be authorized by a corridor"
-        )
-        sys.exit(0)
-    product_targets = [path for path in targets if not is_exempt_target(path)]
-    # .slime artifacts must bootstrap the corridor itself; conservative repo
-    # metadata is also outside the product boundary.
-    if not product_targets:
-        sys.exit(0)
-    problem = corridor_problem(cwd)
-    if problem:
-        out = {
-            "hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "permissionDecision": "deny",
-                "permissionDecisionReason": (
-                    "Slime Coding: " + problem + ". Define the Meeting Corridor "
-                    "before editing — run /slime-corridor (or the slime-navigate "
-                    "skill). No valid corridor = no evidence for where the "
-                    "minimal change should land."
-                ),
-            }
-        }
-        print(json.dumps(out))
-        sys.exit(0)
-    globs = corridor_globs(cwd)
-    outside = [
-        target
-        for target in product_targets
-        if not any(glob_match(target, pattern) for pattern in globs)
-    ]
-    if outside:
-        deny_pretool(
-            f"{', '.join(outside)} is outside the corridor paths. Update the corridor with "
-            "new evidence before editing, or keep the change inside its declared boundary."
-        )
-    sys.exit(0)
-
-
-# --------------------------------------------------------------------------
-# L2 — Stop: new-dependency gate
-# --------------------------------------------------------------------------
-def parse_deps(text):
-    # Tolerant of real-world pubspec formatting: a trailing comment on the
-    # dependencies: line and any consistent indent width (2 or 4 spaces) —
-    # the old "exactly two spaces" match silently disabled the gate on
-    # 4-space files. Direct deps are the entries at the block's first indent
-    # level; deeper lines (sdk: flutter) are attributes, not deps.
-    deps = set()
-    in_block = False
-    base_indent = None
-    for line in text.splitlines():
-        if re.match(r"^dependencies:\s*(#.*)?$", line):
-            in_block = True
-            base_indent = None
-            continue
-        if in_block:
-            if re.match(r"^\S", line):  # next top-level key ends the block
-                break
-            m = re.match(r"^(\s+)([\w-]+):", line)
-            if m:
-                indent = len(m.group(1).expandtabs())
-                if base_indent is None:
-                    base_indent = indent
-                if indent == base_indent:
-                    deps.add(m.group(2))
-    return deps
-
-
-def pubspec_new_dependencies(cwd):
-    head = git(cwd, "show", "HEAD:" + PUBSPEC)
-    if not head:
-        # No baseline at HEAD (fresh repo, or manifest not yet committed) — we
-        # cannot tell new deps from existing ones, so degrade rather than
-        # false-block. L2 gates must never fire on an ambiguous signal.
-        return []
-    try:
-        with open(os.path.join(cwd, PUBSPEC), encoding="utf-8") as f:
-            cur = f.read()
-    except OSError:
-        return []
-    return sorted(parse_deps(cur) - parse_deps(head))
-
-
-def requirement_name(spec):
-    match = re.match(r"\s*([A-Za-z0-9_.-]+)", spec)
-    return match.group(1).lower() if match else None
-
-
-def dependency_names(path, text):
-    name = os.path.basename(path)
-    if name == "package.json":
-        try:
-            data = json.loads(text)
-        except (TypeError, ValueError):
-            return set()
-        deps = set()
-        for group in (
-            "dependencies",
-            "devDependencies",
-            "peerDependencies",
-            "optionalDependencies",
-        ):
-            values = data.get(group)
-            if isinstance(values, dict):
-                deps.update(str(key).lower() for key in values)
-        return deps
-    if name.startswith("requirements") and name.endswith(".txt"):
-        deps = set()
-        for line in text.splitlines():
-            stripped = line.strip()
-            if not stripped or stripped.startswith(("#", "-")):
-                continue
-            package = requirement_name(stripped)
-            if package:
-                deps.add(package)
-        return deps
-    if name in {"pyproject.toml", "Cargo.toml"}:
-        try:
-            import tomllib
-
-            data = tomllib.loads(text)
-        except (ImportError, ValueError):
-            return set()
-        if name == "Cargo.toml":
-            deps = set()
-            for group in ("dependencies", "dev-dependencies", "build-dependencies"):
-                values = data.get(group)
-                if isinstance(values, dict):
-                    deps.update(str(key).lower() for key in values)
-            return deps
-        deps = set()
-        project = data.get("project")
-        if isinstance(project, dict):
-            for spec in project.get("dependencies", []):
-                package = requirement_name(str(spec))
-                if package:
-                    deps.add(package)
-            optional = project.get("optional-dependencies")
-            if isinstance(optional, dict):
-                for specs in optional.values():
-                    if isinstance(specs, list):
-                        for spec in specs:
-                            package = requirement_name(str(spec))
-                            if package:
-                                deps.add(package)
-        poetry = data.get("tool", {}).get("poetry", {})
-        if isinstance(poetry, dict):
-            for group in ("dependencies", "dev-dependencies"):
-                values = poetry.get(group)
-                if isinstance(values, dict):
-                    deps.update(str(key).lower() for key in values if key != "python")
-        return deps
-    if name == "go.mod":
-        deps = set()
-        in_block = False
-        for line in text.splitlines():
-            stripped = line.strip()
-            if stripped == "require (":
-                in_block = True
-                continue
-            if in_block and stripped == ")":
-                in_block = False
-                continue
-            if stripped.startswith("require "):
-                parts = stripped.split()
-                if len(parts) >= 2:
-                    deps.add(parts[1])
-            elif in_block and stripped and not stripped.startswith("//"):
-                deps.add(stripped.split()[0])
-        return deps
-    return set()
-
-
-def dependency_manifest_paths(cwd):
-    return dependency_manifest_paths_for(cwd, None)
-
-
 def is_dependency_manifest(path):
     supported = {PUBSPEC, "package.json", "pyproject.toml", "Cargo.toml", "go.mod"}
     return path == PUBSPEC or os.path.basename(path) in supported or (
         os.path.basename(path).startswith("requirements") and path.endswith(".txt")
     )
-
-
-def dependency_manifest_paths_for(cwd, baseline):
-    touched, new_files = changed_paths(cwd, baseline)
-    return sorted(
-        {
-            path
-            for path in touched + new_files
-            if is_dependency_manifest(path)
-        }
-    )
-
-
-def new_dependencies(cwd, baseline=None):
-    if baseline is None:
-        added = [f"{PUBSPEC}: {name}" for name in pubspec_new_dependencies(cwd)]
-    else:
-        added = []
-    for path in dependency_manifest_paths_for(cwd, baseline):
-        if baseline is None and path == PUBSPEC:
-            continue
-        try:
-            with open(os.path.join(cwd, path), encoding="utf-8") as f:
-                current = f.read()
-        except OSError:
-            continue
-        if baseline is not None and path in baseline.get("dependency_baseline", {}):
-            old_names = set(baseline["dependency_baseline"][path])
-        else:
-            head = baseline.get("head") if baseline is not None else "HEAD"
-            old_text = git(cwd, "show", f"{head}:{path}") if head else ""
-            old_names = dependency_names(path, old_text)
-        for package in sorted(
-            dependency_names(path, current) - old_names
-        ):
-            added.append(f"{path}: {package}")
-    return sorted(added)
-
-
-def justified_dependencies(cwd):
-    justified = set()
-    for line in corridor_sections(cwd).get("evidence", []):
-        match = re.match(r"-\s*Dependency:\s*(\S+)", line, re.IGNORECASE)
-        if match:
-            justified.add(match.group(1).lower())
-    return justified
-
-
-def dependency_package(record):
-    return record.rsplit(": ", 1)[-1].lower()
-
-
 CHECK_ID_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
-
-
-def stop_check_ids(cwd):
-    result = []
-    for line in corridor_sections(cwd).get("stop condition", []):
-        match = re.match(r"-\s*Check:\s*(\S+)\s*$", line, re.IGNORECASE)
-        if match:
-            result.append(match.group(1).lower())
-    return result
-
-
-def stop_manual(cwd):
-    for line in corridor_sections(cwd).get("stop condition", []):
-        if re.match(r"-\s*Manual:\s*\S", line, re.IGNORECASE):
-            return True
-    return False
-
-
-def independent_check_id(cwd):
-    for line in corridor_sections(cwd).get("high-risk controls", []):
-        match = re.match(r"-\s*Independent check:\s*(\S+)\s*$", line, re.IGNORECASE)
-        if match:
-            return match.group(1).lower()
-    return None
 
 
 def guardrails_config_path(cwd):
@@ -627,19 +178,6 @@ def run_trusted_check(cwd, check, check_id):
         return 124, f"trusted check {check_id} timed out after {timeout} seconds"
     except Exception as exc:
         return 126, f"trusted check {check_id} could not run: {exc}"
-
-
-# --------------------------------------------------------------------------
-# L3 — Stop: cost report
-# --------------------------------------------------------------------------
-def corridor_globs(cwd):
-    globs = []
-    sections = corridor_sections(cwd)
-    for line in sections.get("paths", []):
-        match = re.match(r"-\s+(.+)", line)
-        if match:
-            globs.append(match.group(1).strip())
-    return globs
 
 
 def head_changed_paths(cwd):
@@ -701,15 +239,6 @@ def dirty_signatures(cwd):
     }
 
 
-def corridor_digest(cwd):
-    path = os.path.join(cwd, ".slime", "corridor.md")
-    try:
-        with open(path, "rb") as f:
-            return hashlib.sha256(f.read()).hexdigest()
-    except OSError:
-        return None
-
-
 def git_dir(cwd):
     raw = git(cwd, "rev-parse", "--git-dir").strip()
     if not raw:
@@ -717,34 +246,62 @@ def git_dir(cwd):
     return raw if os.path.isabs(raw) else os.path.abspath(os.path.join(cwd, raw))
 
 
-def baseline_token(data):
-    value = data.get("turn_id") or data.get("session_id")
-    return value if isinstance(value, str) and value.strip() else None
+def _session_turn_path(cwd, session_id):
+    root = git_dir(cwd)
+    if not root:
+        return None
+    safe = hashlib.sha256(session_id.encode("utf-8")).hexdigest()[:24]
+    return os.path.join(root, "guardrails", "sessions", safe + ".json")
+
+
+def baseline_token(data, cwd=None, create=False):
+    value = data.get("turn_id")
+    if isinstance(value, str) and value.strip():
+        return value
+    session = data.get("session_id")
+    if not isinstance(session, str) or not session.strip() or not cwd:
+        return None
+    state_path = _session_turn_path(cwd, session)
+    if create:
+        counter = 0
+        try:
+            with open(state_path, encoding="utf-8") as handle:
+                counter = int(json.load(handle).get("counter", 0))
+        except (OSError, ValueError, TypeError):
+            pass
+        token = hashlib.sha256(f"{session}\0{counter + 1}".encode("utf-8")).hexdigest()[:24]
+        _atomic_json(state_path, {"schema": 1, "counter": counter + 1, "token": token})
+        return token
+    try:
+        with open(state_path, encoding="utf-8") as handle:
+            state = json.load(handle)
+        token = state.get("token")
+    except (OSError, ValueError, TypeError):
+        return None
+    return token if isinstance(token, str) and token else None
 
 
 def baseline_path(cwd, data, create=False):
-    token = baseline_token(data)
+    token = baseline_token(data, cwd, create=create)
     root = git_dir(cwd)
     if not token or not root:
         return None
     safe = hashlib.sha256(token.encode("utf-8")).hexdigest()[:24]
-    parent = os.path.join(root, "slime", "turns", safe)
+    parent = os.path.join(root, "guardrails", "turns", safe)
     if create:
         os.makedirs(parent, exist_ok=True)
     return os.path.join(parent, "baseline.json")
 
 
-def dependency_snapshot(cwd, dirty):
-    snapshot = {}
-    for path in dirty:
-        if not is_dependency_manifest(path):
-            continue
-        try:
-            with open(os.path.join(cwd, path), encoding="utf-8") as f:
-                snapshot[path] = sorted(dependency_names(path, f.read()))
-        except OSError:
-            snapshot[path] = []
-    return snapshot
+def _baseline_path_for_token(cwd, token, create=False):
+    root = git_dir(cwd)
+    if not root or not token:
+        return None
+    safe = hashlib.sha256(token.encode("utf-8")).hexdigest()[:24]
+    parent = os.path.join(root, "guardrails", "turns", safe)
+    if create:
+        os.makedirs(parent, exist_ok=True)
+    return os.path.join(parent, "baseline.json")
 
 
 def record_baseline(data):
@@ -755,12 +312,13 @@ def record_baseline(data):
     if not path or os.path.exists(path):
         return
     dirty = dirty_signatures(cwd)
+    turn_token = baseline_token(data, cwd)
     state = {
         "schema": 1,
         "head": current_head(cwd),
         "dirty_paths": dirty,
-        "dependency_baseline": dependency_snapshot(cwd, dirty),
-        "corridor_hash": corridor_digest(cwd),
+        "agentcam_turn_id": turn_token,
+        "agentcam_ready": False,
     }
     tmp = path + f".tmp-{os.getpid()}"
     try:
@@ -768,12 +326,96 @@ def record_baseline(data):
             json.dump(state, f, sort_keys=True)
             f.write("\n")
         os.replace(tmp, path)
+        state["agentcam_ready"] = _agentcam_hook(cwd, data, "hook-turn-start", turn_token)
+        _atomic_json(path, state)
     finally:
         try:
             if os.path.exists(tmp):
                 os.unlink(tmp)
         except OSError:
             pass
+
+
+def _agentcam_hook(cwd, data, command, turn_token):
+    if not turn_token:
+        return False
+    payload = dict(data)
+    payload["cwd"] = str(cwd)
+    payload["turn_id"] = turn_token
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "agentcam.cli", command],
+            cwd=cwd,
+            input=json.dumps(payload),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _agentcam_session_dir(cwd, turn_token):
+    try:
+        from agentcam.hooks import _safe_session_id
+    except Exception:
+        return None
+    root = git_dir(cwd)
+    return None if not root else os.path.join(root, "agentcam", "sessions", _safe_session_id(turn_token))
+
+
+def _record_agentcam_checks(cwd, baseline, checks):
+    turn_token = baseline.get("agentcam_turn_id")
+    session_dir = _agentcam_session_dir(cwd, turn_token)
+    if not session_dir or not os.path.isdir(session_dir):
+        return False
+    try:
+        from agentcam.redaction import redact_argv
+        from agentcam.git_state import compute_final_state_fingerprint
+        from agentcam.verification import new_record_id, write_record
+        final_state = compute_final_state_fingerprint(__import__("pathlib").Path(cwd))
+        recorded_at = __import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc
+        ).astimezone().isoformat()
+        for check in checks:
+            write_record(__import__("pathlib").Path(session_dir), {
+                "record_id": new_record_id(),
+                "command": " ".join(redact_argv(list(check["argv"]))),
+                "exit_code": check["exit_code"],
+                "duration_seconds": round(check["duration_ms"] / 1000, 3),
+                "recorded_at": recorded_at,
+                "state_fingerprint": final_state,
+            })
+        return True
+    except Exception:
+        return False
+
+
+def _finalize_agentcam(cwd, data, baseline):
+    root = git_dir(cwd)
+    if not root:
+        return None
+    runs = os.path.join(root, "agentcam", "runs")
+    before = set(os.listdir(runs)) if os.path.isdir(runs) else set()
+    final_payload = dict(data)
+    scope = read_delivery_scope(cwd)
+    final_payload["declared_scope"] = scope.get("paths", [])
+    if not _agentcam_hook(
+        cwd, final_payload, "hook-turn-end", baseline.get("agentcam_turn_id")
+    ):
+        return None
+    after = set(os.listdir(runs)) if os.path.isdir(runs) else set()
+    created = sorted(after - before)
+    if len(created) != 1:
+        return None
+    run_dir = os.path.join(runs, created[0])
+    try:
+        with open(os.path.join(run_dir, "manifest.json"), encoding="utf-8") as handle:
+            manifest = json.load(handle)
+    except (OSError, ValueError):
+        return None
+    return manifest if isinstance(manifest, dict) else None
 
 
 def load_baseline(cwd, data):
@@ -793,21 +435,38 @@ def load_baseline(cwd, data):
 
 
 def clear_baselines(cwd, data):
-    tokens = [data.get("turn_id"), data.get("session_id")]
-    for token in tokens:
-        if not isinstance(token, str) or not token:
-            continue
-        probe = dict(data)
-        probe["turn_id"] = token
-        probe["session_id"] = None
-        path = baseline_path(cwd, probe)
-        if not path:
-            continue
+    path = baseline_path(cwd, data)
+    if path:
+        old_path = None
+        try:
+            with open(path, encoding="utf-8") as handle:
+                old_token = json.load(handle).get("agentcam_turn_id")
+            old_path = _baseline_path_for_token(cwd, old_token)
+        except (OSError, ValueError, TypeError):
+            pass
         try:
             os.unlink(path)
             os.rmdir(os.path.dirname(path))
         except OSError:
             pass
+        if old_path and old_path != path:
+            try:
+                os.unlink(old_path)
+                os.rmdir(os.path.dirname(old_path))
+            except OSError:
+                pass
+
+
+def cleanup_session(cwd, data):
+    session = data.get("session_id")
+    if not isinstance(session, str) or not session:
+        return
+    path = _session_turn_path(cwd, session)
+    try:
+        os.unlink(path)
+        os.rmdir(os.path.dirname(path))
+    except OSError:
+        pass
 
 
 def changed_paths(cwd, baseline=None):
@@ -876,56 +535,551 @@ def glob_match(path, pattern):
     return glob_to_regex(pattern).match(path) is not None
 
 
-def out_of_corridor_files(cwd, baseline=None):
-    globs = corridor_globs(cwd)
+# --------------------------------------------------------------------------
+# Low-friction delivery scope and review artifact
+# --------------------------------------------------------------------------
+def _atomic_json(path, value):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temporary = path + f".tmp-{os.getpid()}-{secrets.token_hex(4)}"
+    try:
+        with open(temporary, "w", encoding="utf-8") as handle:
+            json.dump(value, handle, indent=2, ensure_ascii=False, sort_keys=True)
+            handle.write("\n")
+        os.replace(temporary, path)
+    finally:
+        try:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+        except OSError:
+            pass
+
+
+def delivery_key(cwd):
+    branch = git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD").strip()
+    identity = branch or current_head(cwd) or "detached"
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
+
+
+def delivery_state_dir(cwd):
+    root = git_dir(cwd)
+    if not root:
+        return None
+    return os.path.join(root, "guardrails", "deliveries", delivery_key(cwd))
+
+
+def delivery_scope_path(cwd):
+    parent = delivery_state_dir(cwd)
+    return None if not parent else __import__("pathlib").Path(parent) / "scope.json"
+
+
+def resolve_delivery_base(cwd):
+    current_branch = git(cwd, "symbolic-ref", "--quiet", "--short", "HEAD").strip()
+    candidates = []
+    remote_head = git(cwd, "symbolic-ref", "--quiet", "refs/remotes/origin/HEAD").strip()
+    if remote_head:
+        candidates.append(remote_head)
+    candidates += ["origin/main", "main", "origin/master", "master"]
+    for candidate in candidates:
+        short = candidate.removeprefix("refs/remotes/")
+        if short == current_branch or candidate == current_branch:
+            continue
+        if not git(cwd, "rev-parse", "--verify", candidate).strip():
+            continue
+        base = git(cwd, "merge-base", "HEAD", candidate).strip()
+        if base:
+            return base
+    return current_head(cwd)
+
+
+def _approval_path(cwd):
+    parent = delivery_state_dir(cwd)
+    return None if not parent else os.path.join(parent, "approval.json")
+
+
+def set_delivery_scope(cwd, outcome, paths):
+    normalized = []
+    for raw in paths:
+        value = normalize_target(cwd, raw)
+        if (
+            not value
+            or value == ".."
+            or value.startswith("../")
+            or value in {"*", "**", "**/*"}
+        ):
+            raise ValueError(f"invalid delivery scope path: {raw}")
+        if value not in normalized:
+            normalized.append(value)
+    if not str(outcome).strip() or not normalized:
+        raise ValueError("delivery scope requires an outcome and at least one path")
+    path = delivery_scope_path(cwd)
+    if path is None:
+        raise ValueError("delivery scope requires a git repository")
+    existing = read_delivery_scope(cwd)
+    value = {
+        "schema": 1,
+        "base_commit": existing.get("base_commit") or resolve_delivery_base(cwd),
+        "outcomes": [str(outcome).strip()],
+        "paths": normalized,
+        "changes": [],
+    }
+    _atomic_json(str(path), value)
+    return value
+
+
+def read_delivery_scope(cwd):
+    path = delivery_scope_path(cwd)
+    if path is None:
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(value, dict) or value.get("schema") != 1:
+        return {}
+    return value
+
+
+def add_delivery_scope(cwd, paths, reason):
+    state = read_delivery_scope(cwd)
+    if not state:
+        raise ValueError("set the delivery scope before expanding it")
+    if not str(reason).strip():
+        raise ValueError("scope expansion requires a concrete reason")
+    added = []
+    current = list(state.get("paths") or [])
+    for raw in paths:
+        value = normalize_target(cwd, raw)
+        if not value or value == ".." or value.startswith("../"):
+            raise ValueError(f"invalid delivery scope path: {raw}")
+        if value not in current:
+            current.append(value)
+            added.append(value)
+    if added:
+        state["paths"] = current
+        changes = list(state.get("changes") or [])
+        changes.append({"added": added, "reason": str(reason).strip()})
+        state["changes"] = changes
+        _atomic_json(str(delivery_scope_path(cwd)), state)
+    return state
+
+
+def scope_gate(data):
+    cwd = data.get("cwd") or os.getcwd()
+    targets = target_paths(cwd, data)
+    if not targets:
+        deny_pretool("could not identify the edit target; refusing an unscoped write")
+        return False
+    external = [path for path in targets if path == ".." or path.startswith("../")]
+    if external:
+        deny_pretool(f"{', '.join(external)} is outside the repository")
+        return False
+    products = [path for path in targets if not is_exempt_target(path)]
+    if not products:
+        return True
+    scope = read_delivery_scope(cwd)
+    globs = scope.get("paths") if isinstance(scope.get("paths"), list) else []
     if not globs:
-        return []
-    touched, new_files = changed_paths(cwd, baseline)
-    out_corr = []
-    for n in touched + new_files:
-        # .slime/ artifacts aren't scope creep: corridor edits are tracked
-        # separately (corridor changed), and PRUNED.md updates are required.
-        if n.startswith(".slime/"):
-            continue
-        # Repo metadata is not product code, so the default strict corridor gate
-        # should not turn harmless config hygiene into a hard stop.
-        if os.path.basename(n) in META_BASENAMES:
-            continue
-        if not any(glob_match(n, g) for g in globs):
-            out_corr.append(n)
-    return out_corr
-
-
-def l3_report(cwd, baseline=None):
-    touched, new_files = changed_paths(cwd, baseline)
-    globs = corridor_globs(cwd)
-    out_corr = out_of_corridor_files(cwd, baseline)
-    rigor = corridor_rigor(cwd)
-    lines = [
-        "Slime Coding — cost report:",
-        f"  corridor rigor: {rigor}",
-        f"  touched files: {len(touched)}",
-        f"  new files: {len(new_files)}",
+        deny_pretool(
+            "declare the intended edit before writing. Agent: run `guardrails "
+            "internal scope set --outcome \"<observable result>\" --path <path>`."
+        )
+        return False
+    outside = [
+        path for path in products
+        if not any(glob_match(path, pattern) for pattern in globs)
     ]
-    if globs:
-        suffix = f" -> {', '.join(out_corr[:10])}" if out_corr else ""
-        lines.append(f"  out-of-corridor files: {len(out_corr)}{suffix}")
-    else:
-        lines.append("  out-of-corridor: (no '## Paths' defined in corridor.md)")
-    # The corridor gate always lets .slime/ through (to avoid a bootstrap
-    # deadlock), so widening the corridor mid-task is possible. That can be
-    # legitimate new evidence, so we don't block — but surface it for the user.
-    corridor_changed = (
-        corridor_digest(cwd) != baseline.get("corridor_hash")
-        if baseline is not None
-        else bool(git(cwd, "status", "--porcelain", "--", ".slime/corridor.md").strip())
+    if outside:
+        deny_pretool(
+            f"{', '.join(outside)} is outside the intended edit. Agent: run "
+            "`guardrails internal scope add --path <path> --reason \"<evidence>\"` "
+            "before editing it."
+        )
+        return False
+    return True
+
+
+def _delivery_products(cwd, baseline):
+    return [path for path in product_paths(cwd, baseline) if path != REVIEW_ARTIFACT]
+
+
+def delivery_changed_files(cwd, baseline):
+    untracked = set(
+        line for line in git(cwd, "ls-files", "--others", "--exclude-standard").splitlines()
+        if line
     )
-    lines.append(f"  corridor changed this session: {'yes' if corridor_changed else 'no'}")
+    paths = set(_delivery_products(cwd, baseline))
+    scope = read_delivery_scope(cwd)
+    base = scope.get("base_commit")
+    head = current_head(cwd)
+    if isinstance(base, str) and base and head and base != head:
+        paths.update(
+            line for line in git(cwd, "diff", "--name-only", f"{base}..{head}").splitlines()
+            if line and line != REVIEW_ARTIFACT and not is_exempt_target(line)
+        )
+    result = []
+    for path in sorted(paths):
+        absolute = os.path.join(cwd, path)
+        if path in untracked:
+            status = "untracked"
+        elif not os.path.lexists(absolute):
+            status = "deleted"
+        else:
+            status = "modified"
+        result.append({"path": path, "status": status})
+    return result
+
+
+def review_product_fingerprint(cwd, changed):
+    digest = hashlib.sha256()
+    for item in sorted(changed, key=lambda value: value["path"]):
+        path = item["path"]
+        digest.update(path.encode("utf-8", errors="surrogateescape"))
+        digest.update(b"\0")
+        absolute = os.path.join(cwd, path)
+        try:
+            if os.path.islink(absolute):
+                content = b"symlink:" + os.readlink(absolute).encode(
+                    "utf-8", errors="surrogateescape"
+                )
+            else:
+                with open(absolute, "rb") as handle:
+                    file_hash = hashlib.sha256()
+                    while chunk := handle.read(1024 * 1024):
+                        file_hash.update(chunk)
+                    content = file_hash.digest()
+                    digest.update(content)
+                    digest.update(b"\0")
+                    continue
+            digest.update(hashlib.sha256(content).digest())
+        except OSError:
+            digest.update(b"<missing>")
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def delivery_risk(changed):
+    reasons = []
+    level = "none-detected"
+    for item in changed:
+        path = item["path"].replace("\\", "/").lower()
+        segments = set(filter(None, path.split("/")))
+        if item.get("status") == "deleted":
+            reasons.append("tracked file deleted")
+        if path.startswith(".github/workflows/"):
+            reasons.append("workflow changed")
+        if is_dependency_manifest(path):
+            reasons.append("dependency manifest changed")
+        matched = sorted(segments & HIGH_RISK_SEGMENTS)
+        if matched:
+            reasons.append(matched[0] + " path changed")
+    if reasons:
+        level = "high"
+    return level, list(dict.fromkeys(reasons))
+
+
+def agentcam_path_risk(changed):
+    """Return Agentcam's canonical path risk before finalizing its session."""
+    try:
+        from agentcam.models import ChangedFile
+        from agentcam.scanner import scan_paths
+    except Exception as exc:
+        return None, [f"Agentcam risk classifier unavailable: {exc}"]
+    status_map = {
+        "deleted": "unstaged_deleted",
+        "untracked": "untracked",
+        "modified": "unstaged_modified",
+    }
+    try:
+        flags = scan_paths([
+            ChangedFile(
+                path=item["path"],
+                status=status_map.get(item.get("status"), "unstaged_modified"),
+            )
+            for item in changed
+        ])
+    except Exception as exc:
+        return None, [f"Agentcam risk classifier failed: {exc}"]
+    high = [flag.rule for flag in flags if flag.level == "HIGH"]
+    medium = [flag.rule for flag in flags if flag.level == "MEDIUM"]
+    if high:
+        return "high", list(dict.fromkeys(high))
+    if medium:
+        return "medium", list(dict.fromkeys(medium))
+    return "none-detected", []
+
+
+def _read_approval(cwd):
+    path = _approval_path(cwd)
+    try:
+        with open(path, encoding="utf-8") as handle:
+            value = json.load(handle)
+    except (OSError, ValueError, TypeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _pending_confirmation(cwd, fingerprint, reasons, turn_token, checks):
+    current = _read_approval(cwd)
+    if current.get("product_fingerprint") == fingerprint and current.get("nonce"):
+        if current.get("checks") != checks:
+            current["checks"] = checks
+            _atomic_json(_approval_path(cwd), current)
+        return current
+    nonce = secrets.token_hex(3).upper()
+    value = {
+        "schema": 1,
+        "nonce": nonce,
+        "phrase": f"確認高風險變更 {nonce}",
+        "product_fingerprint": fingerprint,
+        "turn_token": turn_token,
+        "reasons": reasons,
+        "checks": checks,
+        "confirmed": False,
+    }
+    _atomic_json(_approval_path(cwd), value)
+    return value
+
+
+def accept_high_risk_prompt(cwd, data):
+    prompt = data.get("prompt") or data.get("user_prompt")
+    if not isinstance(prompt, str):
+        return False
+    pending = _read_approval(cwd)
+    if not pending or pending.get("confirmed"):
+        return False
+    if prompt.strip() != pending.get("phrase"):
+        return False
+    current_token = baseline_token(data, cwd)
+    old_token = pending.get("turn_token")
+    if current_token and old_token and current_token != old_token:
+        old_path = _baseline_path_for_token(cwd, old_token)
+        new_path = _baseline_path_for_token(cwd, current_token, create=True)
+        try:
+            with open(old_path, "rb") as source:
+                blob = source.read()
+            temporary = new_path + f".tmp-{os.getpid()}"
+            with open(temporary, "wb") as target:
+                target.write(blob)
+            os.replace(temporary, new_path)
+        except OSError:
+            return False
+    pending["confirmed"] = True
+    pending["confirmation_id"] = hashlib.sha256(
+        (pending["phrase"] + "\0" + pending["product_fingerprint"]).encode("utf-8")
+    ).hexdigest()
+    pending.pop("phrase", None)
+    _atomic_json(_approval_path(cwd), pending)
+    return True
+
+
+def _run_review_checks(cwd, fingerprint):
+    checks = []
+    started = time.monotonic()
+    structural = subprocess.run(
+        ["git", "diff", "--check"], cwd=cwd, capture_output=True, text=True
+    )
+    checks.append({
+        "id": "structural",
+        "argv": ["git", "diff", "--check"],
+        "exit_code": structural.returncode,
+        "duration_ms": round((time.monotonic() - started) * 1000),
+        "state_fingerprint": fingerprint,
+    })
+    if structural.returncode:
+        return checks, f"structural check failed:\n{structural.stdout or structural.stderr}"
+
+    config_path = guardrails_config_path(cwd)
+    configured = os.path.isfile(config_path) if config_path else False
+    trusted = {}
+    if configured:
+        trusted, error = load_trusted_checks(cwd)
+        if error:
+            return checks, error
+    selected = [name for name in ("primary", "integration") if name in trusted]
+    try:
+        from agentcam.redaction import redact_argv
+    except Exception as exc:
+        if selected:
+            return checks, f"could not load command redaction: {exc}"
+        redact_argv = lambda argv: argv
+    for check_id in selected:
+        started = time.monotonic()
+        code, output = run_trusted_check(cwd, trusted[check_id], check_id)
+        checks.append({
+            "id": check_id,
+            "argv": redact_argv(list(trusted[check_id]["argv"])),
+            "exit_code": code,
+            "duration_ms": round((time.monotonic() - started) * 1000),
+            "state_fingerprint": fingerprint,
+        })
+        if code:
+            return checks, f"trusted check {check_id} failed (exit {code}):\n{output[:1500]}"
+    return checks, None
+
+
+def _cached_review_checks(value, fingerprint):
+    if not isinstance(value, list) or not value:
+        return None
+    for check in value:
+        if (
+            not isinstance(check, dict)
+            or not isinstance(check.get("id"), str)
+            or not isinstance(check.get("argv"), list)
+            or not check["argv"]
+            or any(not isinstance(item, str) or not item for item in check["argv"])
+            or type(check.get("exit_code")) is not int
+            or check["exit_code"] != 0
+            or check.get("state_fingerprint") != fingerprint
+        ):
+            return None
+    return value
+
+
+def finish_delivery(cwd, data):
+    baseline = load_baseline(cwd, data)
     if baseline is None:
-        lines.append("  turn baseline: unavailable (HEAD fallback; coverage partial)")
+        return {"decision": "block", "reason": "turn baseline is unavailable"}
+    if not baseline.get("agentcam_ready"):
+        return {"decision": "block", "reason": "Agentcam turn capture failed to initialize"}
+    scope = read_delivery_scope(cwd)
+    if not scope:
+        return {
+            "decision": "block",
+            "reason": "Agent must declare the intended edit with `guardrails internal scope set`.",
+        }
+    changed = delivery_changed_files(cwd, baseline)
+    if not changed:
+        return {"decision": "ready", "changed": 0, "artifact": None}
+    paths = scope.get("paths") or []
+    outside = [
+        item["path"] for item in changed
+        if not any(glob_match(item["path"], pattern) for pattern in paths)
+    ]
+    if outside:
+        return {
+            "decision": "block",
+            "reason": "Out-of-scope changes: " + ", ".join(outside),
+        }
+    fingerprint = review_product_fingerprint(cwd, changed)
+    risk, reasons = delivery_risk(changed)
+    scanner_risk, scanner_reasons = agentcam_path_risk(changed)
+    if scanner_risk is None:
+        return {"decision": "block", "reason": "; ".join(scanner_reasons)}
+    reasons = list(dict.fromkeys(reasons + scanner_reasons))
+    if scanner_risk == "high":
+        risk = "high"
+    elif scanner_risk == "medium" and risk == "none-detected":
+        risk = "medium"
+    pending_state = _read_approval(cwd) if risk == "high" else {}
+    checks = None
+    if pending_state.get("product_fingerprint") == fingerprint:
+        checks = _cached_review_checks(pending_state.get("checks"), fingerprint)
+    if checks is None:
+        checks, check_error = _run_review_checks(cwd, fingerprint)
+        if check_error:
+            return {"decision": "block", "reason": check_error}
+    approval = None
+    if risk == "high":
+        pending = _pending_confirmation(
+            cwd, fingerprint, reasons, baseline.get("agentcam_turn_id"), checks
+        )
+        if not pending.get("confirmed"):
+            return {
+                "decision": "block",
+                "reason": "High-risk change needs your confirmation: " + "; ".join(reasons),
+                "confirmation_phrase": pending["phrase"],
+            }
+        if pending.get("product_fingerprint") != fingerprint:
+            return {"decision": "block", "reason": "high-risk confirmation is stale"}
+        approval = {
+            "required": True,
+            "confirmed": True,
+            "product_fingerprint": fingerprint,
+            "confirmation_id": pending["confirmation_id"],
+        }
+    finalized = baseline.get("finalized_agentcam")
+    manifest = None
+    if (
+        isinstance(finalized, dict)
+        and finalized.get("product_fingerprint") == fingerprint
+        and isinstance(finalized.get("manifest"), dict)
+    ):
+        manifest = finalized["manifest"]
     else:
-        lines.append("  turn baseline: captured")
-    return "\n".join(lines)
+        if not _record_agentcam_checks(cwd, baseline, checks):
+            return {"decision": "block", "reason": "could not record verification with Agentcam"}
+        manifest = _finalize_agentcam(cwd, data, baseline)
+        if manifest is None:
+            return {"decision": "block", "reason": "could not finalize the Agentcam turn record"}
+        baseline["finalized_agentcam"] = {
+            "product_fingerprint": fingerprint,
+            "manifest": manifest,
+        }
+        state_path = baseline_path(cwd, data)
+        try:
+            _atomic_json(state_path, baseline)
+        except (OSError, TypeError, ValueError) as exc:
+            return {
+                "decision": "block",
+                "reason": f"could not preserve finalized Agentcam state: {exc}",
+            }
+    evidence = manifest.get("evidence") if isinstance(manifest.get("evidence"), dict) else {}
+    if str(evidence.get("overall_risk") or "").upper() == "HIGH":
+        risk = "high"
+    capture_data = manifest.get("capture") if isinstance(manifest.get("capture"), dict) else {}
+    review_first = next(
+        (item["path"] for item in changed if any(
+            segment in set(item["path"].lower().split("/"))
+            for segment in HIGH_RISK_SEGMENTS
+        )),
+        changed[0]["path"],
+    )
+    recorded = any(item["id"] == "primary" for item in checks)
+    artifact = {
+        "schema": 1,
+        "generator": {
+            "agentcam_version": "0.6.0",
+            "runtime_revision": os.environ.get("GUARDRAILS_RUNTIME_REVISION", "development"),
+        },
+        "delivery": {
+            "base_commit": scope.get("base_commit"),
+            "product_fingerprint": fingerprint,
+            "changed_files": changed,
+            "outcomes": scope.get("outcomes") or [],
+            "scope": paths,
+            "scope_changes": scope.get("changes") or [],
+            "review_first": review_first,
+            "risk": risk,
+        },
+        "verification": {
+            "level": "recorded" if recorded else "structural-only",
+            "checks": checks,
+        },
+        "capture": {
+            "terminal": (
+                "captured" if capture_data.get("stdout") == "captured" else "unavailable"
+            ),
+            "coverage": (
+                "full" if capture_data.get("output_risk_scan") == "enabled" else "partial"
+            ),
+        },
+        "approval": approval,
+    }
+    try:
+        _atomic_json(os.path.join(cwd, REVIEW_ARTIFACT), artifact)
+    except (OSError, TypeError, ValueError) as exc:
+        return {
+            "decision": "block",
+            "reason": f"could not write review artifact: {exc}",
+        }
+    return {
+        "decision": "ready",
+        "changed": len(changed),
+        "checks": "primary passed" if recorded else "structural-only",
+        "risk": risk,
+        "review_first": review_first,
+        "artifact": REVIEW_ARTIFACT,
+    }
 
 
 def product_paths(cwd, baseline=None):
@@ -934,105 +1088,9 @@ def product_paths(cwd, baseline=None):
         {
             path
             for path in touched + new_files
-            if not path.startswith(".slime/")
-            and os.path.basename(path) not in META_BASENAMES
+            if path != REVIEW_ARTIFACT
         }
     )
-
-
-def stop_blocks(cwd, baseline=None):
-    blocks = []
-    products = product_paths(cwd, baseline)
-    problem = corridor_problem(cwd)
-    if problem and products:
-        blocks.append(
-            "Product code changed but "
-            + problem
-            + ". Restore or complete .slime/corridor.md before finishing: "
-            + ", ".join(products[:10])
-        )
-
-    allowed_dependencies = justified_dependencies(cwd)
-    dependencies = [
-        record
-        for record in new_dependencies(cwd, baseline)
-        if dependency_package(record) not in allowed_dependencies
-    ]
-    if dependencies:
-        blocks.append(
-            "New dependency added without corridor evidence: "
-            + ", ".join(dependencies)
-            + ". Remove it or add '- Dependency: <package> — <reason>' to "
-            ".slime/corridor.md Evidence."
-        )
-
-    if not problem:
-        checks, config_error = load_trusted_checks(cwd)
-        primary_ids = stop_check_ids(cwd)
-        independent_id = (
-            independent_check_id(cwd) if corridor_rigor(cwd) == "high" else None
-        )
-        referenced = primary_ids + ([independent_id] if independent_id else [])
-        if referenced and config_error:
-            blocks.append(config_error)
-        else:
-            unknown = [check_id for check_id in referenced if check_id not in checks]
-            if unknown:
-                blocks.append("Unknown check ID in trusted config: " + ", ".join(unknown))
-            duplicate = independent_id in primary_ids if independent_id else False
-            if duplicate:
-                blocks.append("Independent check ID must differ from primary Check IDs.")
-            if independent_id and independent_id in checks:
-                independent_argv = tuple(checks[independent_id]["argv"])
-                if any(
-                    check_id in checks
-                    and tuple(checks[check_id]["argv"]) == independent_argv
-                    for check_id in primary_ids
-                ):
-                    blocks.append(
-                        "Independent check has the same argv as a primary check."
-                    )
-            if not unknown and not duplicate and not any(
-                "same argv" in block.lower() for block in blocks
-            ):
-                for check_id in primary_ids:
-                    result = run_trusted_check(cwd, checks[check_id], check_id)
-                    if result[0] != 0:
-                        blocks.append(
-                            f"Trusted check {check_id} failed or could not run "
-                            f"(exit {result[0]}).\n\n{result[1][:1500]}"
-                        )
-                if independent_id:
-                    result = run_trusted_check(
-                        cwd, checks[independent_id], independent_id
-                    )
-                    if result[0] != 0:
-                        blocks.append(
-                            "Independent check failed or could not run (exit "
-                            + str(result[0])
-                            + ").\n\n"
-                            + result[1][:1500]
-                        )
-
-    outside = out_of_corridor_files(cwd, baseline)
-    if outside:
-        blocks.append(
-            "Out-of-corridor product edits detected: "
-            + ", ".join(outside[:10])
-            + ". Move the change inside Paths or update the corridor with the "
-            "new evidence before editing."
-        )
-
-    if corridor_rigor(cwd) == "trivial" and len(products) > 1:
-        blocks.append(
-            "A trivial corridor may change one product file; found "
-            + str(len(products))
-            + ": "
-            + ", ".join(products[:10])
-            + ". Use normal rigor or narrow the change."
-        )
-
-    return blocks
 
 
 def stop(data):
@@ -1040,17 +1098,26 @@ def stop(data):
     if not is_git(cwd):
         sys.exit(0)
 
-    # Re-run every gate on every Stop. Retrying Stop does not turn red evidence
-    # into completion.
-    baseline = load_baseline(cwd, data)
-    blocks = stop_blocks(cwd, baseline)
-    report = l3_report(cwd, baseline)
-    if blocks:
-        print(json.dumps({"decision": "block", "reason": "\n\n".join(blocks) + "\n\n" + report}))
-        sys.exit(0)
+    result = finish_delivery(cwd, data)
+    if result.get("decision") == "block":
+        reason = result["reason"]
+        if result.get("confirmation_phrase"):
+            reason += "\n\nReply exactly:\n" + result["confirmation_phrase"]
+        print(json.dumps({"decision": "block", "reason": reason}, ensure_ascii=False))
+        return
     clear_baselines(cwd, data)
-    print(json.dumps({"systemMessage": report}))
-    sys.exit(0)
+    if result.get("artifact"):
+        summary = (
+            "Guardrails ready\n"
+            f"Changed: {result['changed']} files\n"
+            f"Checks: {result['checks']}\n"
+            f"Risk: {result['risk']}\n"
+            f"Review first: {result['review_first']}\n"
+            f"Review artifact: {result['artifact']}"
+        )
+    else:
+        summary = "Guardrails ready\nChanged: 0 files"
+    print(json.dumps({"systemMessage": summary}, ensure_ascii=False))
 
 
 def post_tool(data):
@@ -1060,14 +1127,16 @@ def post_tool(data):
     if not is_git(cwd):
         return
     baseline = load_baseline(cwd, data)
-    outside = out_of_corridor_files(cwd, baseline)
-    products = product_paths(cwd, baseline)
-    problem = corridor_problem(cwd)
+    scope = read_delivery_scope(cwd)
+    globs = scope.get("paths") if isinstance(scope.get("paths"), list) else []
+    products = _delivery_products(cwd, baseline)
+    outside = [
+        path for path in products
+        if not any(glob_match(path, pattern) for pattern in globs)
+    ] if globs else products
     reasons = []
-    if problem and products:
-        reasons.append(
-            "Shell command produced product edits while " + problem + "."
-        )
+    if products and not globs:
+        reasons.append("Shell command produced product edits before the agent declared its intent.")
     if outside:
         reasons.append(
             "Shell command produced out-of-corridor product edits: "
@@ -1081,7 +1150,7 @@ def post_tool(data):
                     "decision": "block",
                     "reason": (
                         " ".join(reasons)
-                        + " Revert them or update the corridor with new evidence. "
+                        + " Revert them or update the Git-local scope with evidence. "
                         "The shell side effect already occurred; this hook cannot undo it."
                     ),
                 }
@@ -1089,19 +1158,136 @@ def post_tool(data):
         )
 
 
+def sync_pr_approval(cwd):
+    artifact_path = os.path.join(cwd, REVIEW_ARTIFACT)
+    try:
+        with open(artifact_path, encoding="utf-8") as handle:
+            artifact = json.load(handle)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"review artifact is unavailable: {exc}") from exc
+    approval = artifact.get("approval") if isinstance(artifact, dict) else None
+    delivery = artifact.get("delivery") if isinstance(artifact, dict) else None
+    if not isinstance(approval, dict) or approval.get("confirmed") is not True:
+        return {"status": "not-needed", "comments": []}
+    if not isinstance(delivery, dict) or approval.get("product_fingerprint") != delivery.get("product_fingerprint"):
+        raise ValueError("review artifact high-risk approval is stale")
+    try:
+        auth = subprocess.run(
+            ["gh", "auth", "status"], cwd=cwd, capture_output=True, text=True,
+            timeout=30,
+        )
+        if auth.returncode:
+            raise ValueError("gh is not authenticated")
+        view = subprocess.run(
+            ["gh", "pr", "view", "--json", "number,headRefOid,comments"],
+            cwd=cwd, capture_output=True, text=True, timeout=30,
+        )
+    except ValueError:
+        raise
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ValueError(f"gh is unavailable: {exc}") from exc
+    if view.returncode:
+        raise ValueError("current branch has no accessible pull request")
+    value = json.loads(view.stdout)
+    head = current_head(cwd)
+    if value.get("headRefOid") != head:
+        raise ValueError("pull request head SHA does not match local HEAD")
+    changed = delivery.get("changed_files") or []
+    paths = [item.get("path") for item in changed if isinstance(item, dict)]
+    labels = []
+    if any(is_dependency_manifest(str(path)) for path in paths):
+        labels.append("Guardrails-Dependency-Approval")
+    if any(str(path).replace("\\", "/").startswith(".github/workflows/") for path in paths):
+        labels.append("Guardrails-Workflow-Approval")
+    existing = {
+        str(comment.get("body") or "")
+        for comment in value.get("comments", [])
+        if isinstance(comment, dict)
+    }
+    posted = []
+    for label in labels:
+        body = f"{label}: {head}"
+        if body in existing:
+            continue
+        result = subprocess.run(
+            ["gh", "pr", "comment", str(value["number"]), "--body", body],
+            cwd=cwd, capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode:
+            raise ValueError(f"could not post {label}")
+        posted.append(body)
+    return {"status": "synced", "comments": posted}
+
+
+def cli_main(argv):
+    parser = argparse.ArgumentParser(prog="guardrails-runtime")
+    commands = parser.add_subparsers(dest="command", required=True)
+    scope = commands.add_parser("scope")
+    scope_commands = scope.add_subparsers(dest="scope_command", required=True)
+    set_parser = scope_commands.add_parser("set")
+    set_parser.add_argument("--repo", default=os.getcwd())
+    set_parser.add_argument("--outcome", required=True)
+    set_parser.add_argument("--path", action="append", required=True)
+    add_parser = scope_commands.add_parser("add")
+    add_parser.add_argument("--repo", default=os.getcwd())
+    add_parser.add_argument("--path", action="append", required=True)
+    add_parser.add_argument("--reason", required=True)
+    approve = commands.add_parser("approve")
+    approve.add_argument("nonce")
+    approve.add_argument("--repo", default=os.getcwd())
+    sync = commands.add_parser("pr-sync")
+    sync.add_argument("--repo", default=os.getcwd())
+    args = parser.parse_args(argv)
+    if args.command == "scope":
+        if args.scope_command == "set":
+            set_delivery_scope(args.repo, args.outcome, args.path)
+        else:
+            add_delivery_scope(args.repo, args.path, args.reason)
+        return 0
+    if args.command == "approve":
+        if not sys.stdin.isatty():
+            raise ValueError("high-risk fallback approval requires an interactive terminal")
+        pending = _read_approval(args.repo)
+        if pending.get("nonce") != args.nonce:
+            raise ValueError("approval nonce is missing or stale")
+        phrase = f"確認高風險變更 {args.nonce}"
+        typed = input(f"Type exactly `{phrase}`: ")
+        if not accept_high_risk_prompt(args.repo, {"prompt": typed}):
+            raise ValueError("confirmation phrase did not match")
+        return 0
+    result = sync_pr_approval(args.repo)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
 def main():
     data = read_input()
     event = data.get("hook_event_name")
-    if event in {"SessionStart", "UserPromptSubmit"}:
-        record_baseline(data)
+    if event == "UserPromptSubmit":
+        if accept_high_risk_prompt(
+            data.get("cwd") or os.getcwd(), data
+        ):
+            print(json.dumps({"systemMessage": "High-risk change confirmed; resume completion."}))
+        else:
+            record_baseline(data)
+    elif event == "SessionStart":
+        pass
     elif event == "PreToolUse":
-        corridor_gate(data)
+        scope_gate(data)
     elif event == "PostToolUse":
         post_tool(data)
     elif event == "Stop":
         stop(data)
+    elif event == "SessionEnd":
+        cleanup_session(data.get("cwd") or os.getcwd(), data)
     sys.exit(0)
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1:
+        try:
+            raise SystemExit(cli_main(sys.argv[1:]))
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            raise SystemExit(1)
     main()

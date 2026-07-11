@@ -1,179 +1,93 @@
-# Corridor CI
+# Corridor CI v14
 
-**First-glance PR triage before deep review.**
+Corridor CI is the receiving-side gate for the single Guardrails review
+artifact. It does not parse the pull-request body and does not execute PR code.
+The author may describe the PR normally.
 
-Corridor CI is a small GitHub Action for maintainers who need a quick answer
-before spending review attention: is this PR ready for a close look, and where
-should that look start?
+The installed coordinator creates:
 
-Why this exists: [The Corridor Manifesto](docs/MANIFESTO.md).
-
-It asks non-trivial PRs for a compact handoff:
-
-```md
-Decision: #123
-Scope: pkg/parser/*, tests/parser/*
-Review first: pkg/parser/links.py
-Verified: pytest tests/parser
-Risk: none-detected
+```text
+.guardrails/review.json
 ```
 
-`Decision` points to where the why already lives: an issue, discussion, RFC,
-spec, bug reproduction, maintainer request, or a clearly small fix.
+Corridor independently compares that artifact with the current PR diff before
+a maintainer spends review attention.
 
-`Scope` is the declared review boundary. With explicit paths or globs, Corridor
-CI compares the actual diff against the stated boundary and reports when the PR
-touched more than it said it would.
+## Workflow
 
-`Scope` must contain explicit paths or globs. Mirroring the changed files back
-as the declared boundary does not constrain anything, so `auto` is rejected.
-
-It is not an AI detector, a spam score, an AI reviewer, or a code quality check.
-Humans still review the code. A red check means information is missing or the
-declared boundary does not match the diff; it does not mean the code is bad.
-
-For agent-authored PRs, the value is a shaping signal: say why the change
-exists, declare where it was meant to stop, and point the maintainer at the
-first file to read.
-
-![Before and after Corridor CI review handoff](docs/assets/corridor-ci-before-after.svg)
-
-## Quick Start
+After the v14 release, pin the immutable tag:
 
 ```yaml
 name: Corridor CI
 
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
 
 jobs:
   corridor:
+    name: Corridor
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v13.0.0
-        with:
-          mode: fail
+      - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v14.0.0
 ```
 
-The default is `mode: fail`. Use `warn` only for a deliberate observation-only
-trial; it is not a guardrail until issues return a non-zero result.
+The default mode is `fail`. A workflow is not a merge gate until `Corridor` is
+a required check in branch protection or a ruleset.
 
-Add this to the PR body:
+## What it checks
 
-```md
-Decision: #123
-Scope: pkg/parser/*, tests/parser/*
-Review first: pkg/parser/links.py
-Verified: pytest tests/parser
-Risk: none-detected
-```
+- The artifact exists, is no larger than 1 MiB, and matches schema 1.
+- Its product fingerprint equals the current PR product diff.
+- Its declared scope covers every product file.
+- `review_first` names an actual changed product file.
+- Recorded checks use a non-boolean integer exit code `0`, valid argv, and a
+  state fingerprint equal to the current product state.
+- The declared risk is not lower than the risk Corridor derives from paths,
+  statuses, dependency manifests, and workflow changes.
+- High-risk work has a confirmation bound to the same product fingerprint.
+- Dependency and workflow changes have the required GitHub approval bound to
+  the current full head SHA.
 
-The cheapest adoption path is to copy
-[`examples/PULL_REQUEST_TEMPLATE.md`](examples/PULL_REQUEST_TEMPLATE.md) to
-`.github/PULL_REQUEST_TEMPLATE.md`.
+`.guardrails/review.json` is listed as a touched file but excluded from the
+product fingerprint and scope comparison. This lets the artifact describe the
+product without recursively changing the state it binds.
 
-The standalone format spec is in
-[`docs/HANDOFF_SPEC.md`](docs/HANDOFF_SPEC.md).
+`structural-only`, partial capture, and unavailable terminal output are visible
+warnings. They never pretend behavioral tests ran. Malformed, stale, tampered,
+or under-reported evidence is an issue and fails in the default mode.
 
-## Handoff Notes
-
-`Decision` can be an issue, discussion, RFC, spec, bug reproduction, maintainer
-request, URL, or small self-contained fix.
-
-Use explicit paths or globs when you want the PR to stay inside a declared
-corridor:
-
-```md
-Scope: pkg/parser/*, tests/parser/*
-```
-
-`Scope: auto` and match-everything patterns are rejected because they restate
-the diff instead of declaring where the change was meant to stop.
-
-`Review first` must be one of the changed files.
-
-`Verified` may describe a manual check. When a committed agentcam manifest is
-available, Corridor CI labels the line `local-recorded` only when its exact
-grammar, integer exit-0 result, verification state fingerprint, and product
-fingerprint match the current PR and the handoff uses
-`[locally recorded by agentcam]`. Any unmatched recorded-looking claim is
-`unverified`; hook-mode or incomplete capture is also marked `partial`. Manual
-verification remains valid and visibly weaker. A placeholder or false recorded
-claim is `unverified` and fails the corridor.
-
-Glob matching uses git-style semantics. `*` and `?` never cross `/`, so
-`pkg/*` matches `pkg/a.py` but not `pkg/sub/deep.py`. `**/` spans zero or
-more directories, so `pkg/**/*.py` covers both `pkg/top.py` and
-`pkg/sub/deep.py`. `dir/**` means the directory and the whole subtree.
-
-## What It Checks
-
-- Required handoff fields exist.
-- Explicit `Scope` paths or globs cover the changed files.
-- `Review first` points to a changed file.
-- Dependency manifest changes require an OWNER/MEMBER comment bound to the
-  current head SHA: `Guardrails-Dependency-Approval: <full-head-sha>`.
-- `Risk` must be `high`, `medium`, `none-detected`, or `unknown` and cannot
-  underreport the committed agentcam manifest.
-- `Verified` names a completed manual check or matches a passing agentcam check.
-
-Warnings never block. Corridor CI warns when `Decision` has no
-issue/discussion/URL reference, when verification is manual, when capture is
-partial, or when the PR body is too long to keep the compact handoff easy to
-find. A scope that carries no information is an issue, not a warning.
-
-If the handoff is missing or incomplete, the CI summary includes a copyable blank
-handoff.
-
-Every run writes a GitHub step summary for maintainers.
-
-Installing this workflow does not make it a merge gate. Add `Corridor` and the
-repository's test jobs as required checks in branch protection or a GitHub
-ruleset; use strict/up-to-date checks when the base branch must be current.
-
-## Sticky PR Comment
-
-Set `comment: true` to upsert the same report as a sticky PR comment.
-
-```yaml
-permissions:
-  contents: read
-  pull-requests: write
-
-steps:
-  - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v13.0.0
-    with:
-      comment: true
-```
-
-Fork PRs can receive a read-only `GITHUB_TOKEN`, which may make the comment API
-return `403`. Corridor CI logs one line and continues; the step summary is still
-written.
+All artifact strings are Markdown-escaped before reporting. A sticky comment,
+when enabled, updates only a comment created by `github-actions[bot]`.
 
 ## Inputs
 
 | input | default | meaning |
 |---|---:|---|
 | `mode` | `fail` | `fail` exits non-zero on issues; `warn` only reports. |
-| `comment` | `false` | Upsert the report as a sticky PR comment. |
-| `agentcam_evidence` | `.agentcam/manifest.redacted.json` | Committed agentcam manifest (from `agentcam export --files`); its evidence, verification provenance, and capture coverage are appended. Unverified claims fail; manual and partial provenance remain visible. |
+| `comment` | `false` | Upsert the report as a bot-owned sticky PR comment. |
+| `review_artifact` | `.guardrails/review.json` | Checkout-relative schema-1 review artifact. |
 
-## Philosophy
+Sticky comments require `pull-requests: write`; the default action needs only
+`contents: read`.
 
-Corridor CI is a receiving-side triage aid. It helps maintainers decide whether
-a PR has enough review context and gives authors a small structure for handing
-work over.
+The schema and invariants are documented in
+[`docs/HANDOFF_SPEC.md`](docs/HANDOFF_SPEC.md). The name is retained so old
+links do not break; v14 has no PR-body handoff grammar.
 
-The rule is simple:
+## Boundary
 
-> If a PR wants review, it should say why it exists, where it meant to move, and
-> where the reviewer should start.
+The artifact is author-controlled local evidence, not third-party attestation.
+State binding makes stale or mismatched claims observable. The default-branch
+Policy Gate is the separate control that prevents a PR from replacing its own
+enforcement workflow and checker.
 
 ## License
 
-MIT
+MIT.
