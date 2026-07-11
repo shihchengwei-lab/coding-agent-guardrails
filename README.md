@@ -57,15 +57,30 @@ git clone https://github.com/shihchengwei-lab/coding-agent-guardrails $HOME\guar
 & $HOME\guardrails\install.ps1 -Project C:\path\to\your\project
 ```
 
-Re-running is safe. The installer wires the discipline block (rules plus
-the agentcam handoff loop) into `CLAUDE.md` and `AGENTS.md` (Claude Code
-reads the former; Codex and friends read the latter), installs the
-slime-coding hooks, installs a managed corridor-ci-v12 workflow (upgrading the
-exact official v11 template while preserving and warning on custom workflows),
-pip-installs agentcam from the checkout into your
-  current Python (3.11+ required), and wires automatic agentcam recording:
-  Claude Code sessions on the shell path, or Codex turns on the PowerShell path.
-  Codex project hooks must be reviewed once with `/hooks`.
+Both entrypoints call the same Python 3.11+ installer core. It creates a
+versioned runtime and virtual environment under `<git-dir>/guardrails/`, then
+atomically wires absolute hook commands for both Claude Code and Codex. The
+toolkit checkout can be moved or deleted after installation. Re-running is
+idempotent: user hooks are retained, `.slime/corridor.md` and `PRUNED.md` are
+create-if-absent, and a workflow is upgraded only when its managed marker and
+official hash both match. Custom content is preserved with a warning.
+
+The install also creates repo-local `guardrails` and `guardrails.cmd`
+launchers. Configure executable trusted checks as argv, inspect the installed
+runtime, or preview a safe uninstall with:
+
+```bash
+./guardrails check set primary -- python -m pytest -q
+./guardrails doctor
+./guardrails doctor --remote  # also inspect GitHub required contexts via gh
+./guardrails uninstall --dry-run
+./guardrails uninstall
+```
+
+Uninstall removes only content proven by `<git-dir>/guardrails/install.json`.
+It preserves `.slime/`, trusted check configuration, and recording history by
+default; `--purge-state` explicitly removes that retained state. Codex project
+hooks still need to be reviewed once with `/hooks`.
 
 ## The loop
 
@@ -102,7 +117,8 @@ Every tool also works standalone; each subdirectory has its own README.
 
 A workflow file is not a merge gate by itself. Repository administrators must
 make Corridor and the relevant test jobs required checks in branch protection
-or a ruleset. This repository requires all 13 stable checks on `main`.
+or a ruleset. This repository requires seven stable aggregate checks on `main`:
+Policy Gate, Corridor, and the five product test aggregates.
 
 This repository also runs `Policy Gate` from the default branch with
 `pull_request_target`; it treats the PR head as data and never executes PR
@@ -120,8 +136,8 @@ workflow maintenance, not an approval that PR content can grant itself.
 ## Versioning
 
 One repo, four tools, so release tags are prefixed per tool:
-`agentcam-v0.4.0`, `corridor-ci-v12.0.0`, and the floating major tag
-`corridor-ci-v12`. Earlier releases
+`agentcam-v0.5.0`, `corridor-ci-v13.0.0`, and the floating major tag
+`corridor-ci-v13`. Earlier releases
 (`v0.2.0`, `v10`, …) live in each tool's original repository.
 
 ## History

@@ -33,6 +33,19 @@ try {
   & $Installer -Project $Project -Python $Python | Out-Null
   & $Installer -Project $Project -Python $Python | Out-Null
 
+  $GitDir = (git -C $Project rev-parse --absolute-git-dir).Trim()
+  $Guardrails = Join-Path $GitDir "guardrails"
+  $ManifestPath = Join-Path $Guardrails "install.json"
+  if (-not (Test-Path -LiteralPath $ManifestPath)) { throw "install manifest missing" }
+  $Manifest = Get-Content -Raw -Encoding utf8 $ManifestPath | ConvertFrom-Json
+  if (-not (Test-Path -LiteralPath $Manifest.runtime)) { throw "versioned runtime missing" }
+  if (-not (Test-Path -LiteralPath $Manifest.python)) { throw "versioned Python missing" }
+  if (-not (Test-Path -LiteralPath (Join-Path $Project "guardrails.cmd"))) {
+    throw "repo-local guardrails launcher missing"
+  }
+  & (Join-Path $Project "guardrails.cmd") doctor | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "guardrails doctor failed after install" }
+
   foreach ($name in @("CLAUDE.md", "AGENTS.md")) {
     $text = Get-Content -Raw -Encoding utf8 (Join-Path $Project $name)
     if ([regex]::Matches($text, "coding-agent-guardrails:discipline:start").Count -ne 1) {
@@ -51,6 +64,12 @@ try {
   if ($allCommands -notmatch "hook-turn-start") { throw "Codex turn-start recorder missing" }
   if ($allCommands -notmatch "hook-turn-end") { throw "Codex turn-end recorder missing" }
   if ($allCommands -notmatch "user-existing-hook") { throw "existing user hook was overwritten" }
+  if ($allCommands -notmatch [regex]::Escape($Guardrails)) {
+    throw "hooks do not target the per-repo guardrails runtime"
+  }
+  if ($allCommands -match [regex]::Escape($Root)) {
+    throw "hooks still depend on the toolkit checkout"
+  }
   if ([regex]::Matches($allCommands, "hook-turn-start").Count -ne 2) {
     throw "turn-start hook duplicated or missing command/commandWindows"
   }
@@ -72,25 +91,44 @@ try {
     throw "installed Corridor workflow is not the managed v12 template"
   }
 
-  # The exact official v11 template upgrades; user-authored workflow content
-  # is preserved and gets an explicit stale-version warning.
+  # Upgrade requires both the managed marker and an official hash. An old
+  # unmarked template and user-authored workflow are both preserved.
   Copy-Item -LiteralPath (Join-Path $Root "tests/fixtures/corridor-v11-workflow.yml") `
     -Destination (Join-Path $Project ".github/workflows/corridor.yml") -Force
-  & $Installer -Project $Project -Python $Python | Out-Null
+  $legacyOutput = (& $Installer -Project $Project -Python $Python 3>&1 | Out-String)
   $workflow = Get-Content -Raw -Encoding utf8 (Join-Path $Project ".github/workflows/corridor.yml")
-  if ($workflow -notmatch "corridor-ci@corridor-ci-v13\.0\.0") {
-    throw "official v11 workflow was not upgraded"
+  if ($workflow -notmatch "corridor-ci@corridor-ci-v11") {
+    throw "unmarked legacy workflow was overwritten"
+  }
+  if ($legacyOutput -notmatch "custom workflow preserved") {
+    throw "preserved legacy workflow did not produce a warning"
   }
   "# custom corridor workflow" | Set-Content -Encoding utf8 (Join-Path $Project ".github/workflows/corridor.yml")
   $customOutput = (& $Installer -Project $Project -Python $Python 3>&1 | Out-String)
   $workflow = (Get-Content -Raw -Encoding utf8 (Join-Path $Project ".github/workflows/corridor.yml")).Trim()
   if ($workflow -ne "# custom corridor workflow") { throw "custom workflow was overwritten" }
-  if ($customOutput -notmatch "custom workflow is not overwritten") {
+  if ($customOutput -notmatch "custom workflow preserved") {
     throw "custom workflow did not produce a preservation warning"
   }
 
-  & $Python -m agentcam.cli version | Out-Null
+  & $Manifest.python -m agentcam.cli version | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "agentcam not installed into selected Python" }
+
+  if (Get-ChildItem -LiteralPath $Project -Recurse -Force -Filter "*.bak-*" -ErrorAction SilentlyContinue) {
+    throw "successful install left permanent backup files"
+  }
+
+  # Dry-run and target validation do not mutate repositories.
+  $DryProject = Join-Path $Temp "dry-run"
+  New-Item -ItemType Directory -Force -Path $DryProject | Out-Null
+  git -C $DryProject init -q -b main
+  & $Installer -Project $DryProject -Python $Python -DryRun | Out-Null
+  if (Test-Path (Join-Path $DryProject "AGENTS.md")) { throw "dry-run mutated project" }
+  $Subdir = Join-Path $DryProject "subdir"
+  New-Item -ItemType Directory -Force -Path $Subdir | Out-Null
+  $failed = $false
+  try { & $Installer -Project $Subdir -Python $Python 2>$null | Out-Null } catch { $failed = $true }
+  if (-not $failed) { throw "subdirectory target unexpectedly succeeded" }
 
   # A pip preflight failure must not leave project files or hook directories.
   $FailProject = Join-Path $Temp "preflight-failure"
@@ -103,7 +141,7 @@ if "%1"=="-m" if "%2"=="pip" exit /b 77
 python %*
 '@ | Set-Content -Encoding ascii $FakePython
   $failed = $false
-  try { & $Installer -Project $FailProject -Python $FakePython | Out-Null }
+  try { & $Installer -Project $FailProject -Python $FakePython 2>$null | Out-Null }
   catch { $failed = $true }
   if (-not $failed) { throw "fake pip failure unexpectedly succeeded" }
   foreach ($relative in @("CLAUDE.md", "AGENTS.md", ".codex", ".agents", ".slime", ".github")) {
@@ -119,7 +157,7 @@ python %*
   "original instructions" | Set-Content -Encoding utf8 (Join-Path $RollbackProject "CLAUDE.md")
   "user-owned obstacle" | Set-Content -Encoding utf8 (Join-Path $RollbackProject ".codex")
   $failed = $false
-  try { & $Installer -Project $RollbackProject -Python $Python | Out-Null }
+  try { & $Installer -Project $RollbackProject -Python $Python 2>$null | Out-Null }
   catch { $failed = $true }
   if (-not $failed) { throw "post-mutation obstacle unexpectedly succeeded" }
   if ((Get-Content -Raw -Encoding utf8 (Join-Path $RollbackProject "CLAUDE.md")).Trim() -ne "original instructions") {
@@ -133,6 +171,36 @@ python %*
       throw "rollback left $relative behind"
     }
   }
+
+  # Dry-run uninstall changes nothing. Actual uninstall removes only proven
+  # managed content, preserving trusted config, .slime history, and user hooks.
+  "user pruned history" | Set-Content -Encoding utf8 (Join-Path $Project ".slime/PRUNED.md")
+  & (Join-Path $Project "guardrails.cmd") check set primary -- python -V | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "guardrails check set failed" }
+  $ConfigPath = Join-Path $Guardrails "config.json"
+  & (Join-Path $Project "guardrails.cmd") uninstall --dry-run | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "guardrails uninstall --dry-run failed" }
+  if (-not (Test-Path $ManifestPath)) { throw "uninstall dry-run removed manifest" }
+  $RuntimePath = $Manifest.runtime
+  $EnvironmentPath = $Manifest.environment
+  "user modified launcher" | Set-Content -Encoding utf8 (Join-Path $Project "guardrails")
+  & (Join-Path $Project "guardrails.cmd") uninstall | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "guardrails uninstall failed" }
+  if (Test-Path $ManifestPath) { throw "uninstall left install manifest" }
+  if (Test-Path $RuntimePath) { throw "uninstall left versioned runtime" }
+  if (Test-Path $EnvironmentPath) { throw "uninstall left versioned environment" }
+  if (-not (Test-Path $ConfigPath)) { throw "uninstall removed trusted config" }
+  if ((Get-Content -Raw -Encoding utf8 (Join-Path $Project ".slime/PRUNED.md")).Trim() -ne "user pruned history") {
+    throw "uninstall changed .slime history"
+  }
+  $hooksAfter = Get-Content -Raw -Encoding utf8 (Join-Path $Project ".codex/hooks.json")
+  if ($hooksAfter -notmatch "user-existing-hook") { throw "uninstall removed user hook" }
+  if ($hooksAfter -match "guardrails_managed") { throw "uninstall left managed hooks" }
+  if ((Get-Content -Raw -Encoding utf8 (Join-Path $Project "guardrails")).Trim() -ne "user modified launcher") {
+    throw "uninstall removed modified managed content"
+  }
+  Start-Sleep -Seconds 2
+  if (Test-Path (Join-Path $Project "guardrails.cmd")) { throw "uninstall left Windows launcher" }
 
   Write-Host "install.ps1 toolkit test OK"
 }

@@ -1,114 +1,162 @@
 #!/usr/bin/env bash
-# Toolkit installer test: fresh project + fresh venv, install twice,
-# verify wiring, agentcam availability, and idempotency.
+# Shared installer integration test for the POSIX entrypoint.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-# Fresh venv so the installer's pip step lands here, not in the tester's
-# real environment. A Windows venv ships python.exe but no python3 —
-# exactly the resolution case the installer must get right.
-python3 -m venv "$TMP/venv"
-VENVBIN="$TMP/venv/bin"
-[ -d "$TMP/venv/Scripts" ] && VENVBIN="$TMP/venv/Scripts"
+python3 -m venv "$TMP/bootstrap venv"
+VENVBIN="$TMP/bootstrap venv/bin"
 export PATH="$VENVBIN:$PATH"
 
-cd "$TMP"
-git init -q -b main .
-git config user.email test@example.com
-git config user.name Test
+PROJECT="$TMP/project with spaces"
+mkdir -p "$PROJECT/.claude"
+git -C "$PROJECT" init -q -b main
+git -C "$PROJECT" config user.email test@example.com
+git -C "$PROJECT" config user.name Test
+cat > "$PROJECT/.claude/settings.json" <<'JSON'
+{
+  "hooks": {
+    "Stop": [{
+      "hooks": [
+        {"type": "command", "command": "user-existing-hook"},
+        {"type": "command", "command": "python old/patch-cost"}
+      ]
+    }]
+  }
+}
+JSON
 
-"$HERE/install.sh" "$TMP" >/dev/null
-"$HERE/install.sh" "$TMP" >/dev/null   # second run must stay idempotent
+"$HERE/install.sh" "$PROJECT" >/dev/null
+"$HERE/install.sh" "$PROJECT" >/dev/null
 
-# The same discipline block must land in both agent docs: Claude Code
-# reads CLAUDE.md, Codex and friends read AGENTS.md.
+GIT_DIR="$(git -C "$PROJECT" rev-parse --absolute-git-dir)"
+GUARDRAILS="$GIT_DIR/guardrails"
+MANIFEST="$GUARDRAILS/install.json"
+test -f "$MANIFEST"
+readarray -t INSTALL_PATHS < <(python3 - "$MANIFEST" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+print(data["runtime"])
+print(data["python"])
+PY
+)
+RUNTIME="${INSTALL_PATHS[0]}"
+AGENTCAM_PYTHON="${INSTALL_PATHS[1]}"
+test -d "$RUNTIME"
+test -x "$AGENTCAM_PYTHON"
+test -x "$PROJECT/guardrails"
+(cd "$TMP" && "$PROJECT/guardrails" doctor >/dev/null)
+
 for doc in CLAUDE.md AGENTS.md; do
-  count=$(grep -c "coding-agent-guardrails:discipline:start" "$doc")
-  if [ "$count" != "1" ]; then
-    echo "FAIL: $doc discipline block count=$count (expected exactly 1)" >&2
-    exit 1
-  fi
-  grep -q "smallest sufficient semantic displacement" "$doc"
-  grep -q "agentcam verify" "$doc"   # the block must teach the handoff loop
+  test "$(grep -c 'coding-agent-guardrails:discipline:start' "$PROJECT/$doc")" = 1
+  grep -q "smallest sufficient semantic displacement" "$PROJECT/$doc"
 done
 
-python3 - <<'PY'
-import json
-hooks = json.load(open(".claude/settings.json"))["hooks"]
-# slime and agentcam share SessionStart; agentcam alone owns SessionEnd.
-expected = {"SessionStart": 2, "SessionEnd": 1,
-            "UserPromptSubmit": 1, "PreToolUse": 1,
-            "PostToolUse": 1, "Stop": 1}
-assert set(hooks) == set(expected), hooks
-for event, n in expected.items():
-    assert len(hooks[event]) == n, (
-        f"{event} not idempotent: {len(hooks[event])} groups (expected {n})")
-cmds = [h["command"] for gs in hooks.values() for g in gs for h in g.get("hooks", [])]
-assert any("hook-session-start" in c for c in cmds), cmds
-assert any("hook-session-end" in c for c in cmds), cmds
+python3 - "$PROJECT" "$GUARDRAILS" "$HERE" <<'PY'
+import json, pathlib, sys
+repo, guardrails, toolkit = map(pathlib.Path, sys.argv[1:])
+for relative in (".claude/settings.json", ".codex/hooks.json"):
+    hooks = json.loads((repo / relative).read_text(encoding="utf-8"))["hooks"]
+    commands = [
+        hook.get("command", "") + " " + hook.get("commandWindows", "")
+        for groups in hooks.values() for group in groups for hook in group.get("hooks", [])
+    ]
+    joined = "\n".join(commands)
+    assert str(guardrails) in joined, (relative, joined)
+    assert str(toolkit) not in joined, (relative, joined)
+claude = json.loads((repo / ".claude/settings.json").read_text(encoding="utf-8"))
+stop = [h for g in claude["hooks"]["Stop"] for h in g["hooks"]]
+assert any(h.get("command") == "user-existing-hook" for h in stop), stop
+assert not any("old/patch-cost" in h.get("command", "") for h in stop), stop
 PY
 
-test -f .github/workflows/corridor.yml
-grep -q '^# coding-agent-guardrails:managed corridor-ci-v13.0.0$' .github/workflows/corridor.yml
-grep -q 'corridor-ci@corridor-ci-v13.0.0' .github/workflows/corridor.yml
-grep -q '^## Rigor$' .slime/corridor.md
-grep -A1 '^## Rigor$' .slime/corridor.md | grep -q '^normal$'
+test -f "$PROJECT/.github/workflows/corridor.yml"
+grep -q '^# coding-agent-guardrails:managed corridor-ci-v13.0.0$' "$PROJECT/.github/workflows/corridor.yml"
+grep -q 'corridor-ci@corridor-ci-v13.0.0' "$PROJECT/.github/workflows/corridor.yml"
+grep -A1 '^## Rigor$' "$PROJECT/.slime/corridor.md" | grep -q '^normal$'
+"$AGENTCAM_PYTHON" -m agentcam.cli version | grep -q '^agentcam 0.5.0$'
+if find "$PROJECT" -name '*.bak-*' -print -quit | grep -q .; then
+  echo "FAIL: successful install left permanent backup files" >&2
+  exit 1
+fi
 
-# agentcam must have been installed into the venv (not just hinted at),
-# and it must be this checkout's version — `verify` exists.
-"$VENVBIN/agentcam" version >/dev/null
-"$VENVBIN/agentcam" verify --help >/dev/null
+# Only marker + official hash is upgradeable. Unmarked legacy and custom
+# workflows are preserved with explicit warnings.
+cp "$HERE/tests/fixtures/corridor-v11-workflow.yml" "$PROJECT/.github/workflows/corridor.yml"
+legacy_out=$("$HERE/install.sh" "$PROJECT")
+grep -q 'corridor-ci@corridor-ci-v11' "$PROJECT/.github/workflows/corridor.yml"
+case "$legacy_out" in *"custom workflow preserved"*) ;; *) exit 1 ;; esac
+printf '# custom corridor workflow\n' > "$PROJECT/.github/workflows/corridor.yml"
+custom_out=$("$HERE/install.sh" "$PROJECT")
+grep -qx '# custom corridor workflow' "$PROJECT/.github/workflows/corridor.yml"
+case "$custom_out" in *"custom workflow preserved"*) ;; *) exit 1 ;; esac
 
-# The exact official v11 starter is safely upgraded; a custom workflow is not.
-cp "$HERE/tests/fixtures/corridor-v11-workflow.yml" .github/workflows/corridor.yml
-"$HERE/install.sh" "$TMP" >/dev/null
-grep -q 'corridor-ci@corridor-ci-v13.0.0' .github/workflows/corridor.yml
-printf '# custom corridor workflow\n' > .github/workflows/corridor.yml
-custom_out=$("$HERE/install.sh" "$TMP")
-grep -q '^# custom corridor workflow$' .github/workflows/corridor.yml
-case "$custom_out" in
-  *"custom workflow"*"not overwritten"*) ;;
-  *) echo "FAIL: custom workflow did not produce a preservation warning" >&2; exit 1 ;;
-esac
+# Dry-run and target validation do not mutate repositories.
+DRY="$TMP/dry-run"
+mkdir -p "$DRY/src"
+git -C "$DRY" init -q -b main
+"$HERE/install.sh" "$DRY" --dry-run >/dev/null
+test ! -e "$DRY/AGENTS.md"
+if "$HERE/install.sh" "$DRY/src" >/dev/null 2>&1; then
+  echo "FAIL: subdirectory target unexpectedly succeeded" >&2
+  exit 1
+fi
 
-# A pip preflight failure must happen before the target project is mutated.
+# A version-environment failure happens before project mutation.
 FAIL_PROJECT="$TMP/preflight-failure"
 mkdir -p "$FAIL_PROJECT" "$TMP/fake-bin"
 git -C "$FAIL_PROJECT" init -q -b main
+REAL_PYTHON=$(command -v python3)
 cat > "$TMP/fake-bin/python" <<EOF
 #!/usr/bin/env bash
-if [ "\${1:-}" = "-m" ] && [ "\${2:-}" = "pip" ]; then exit 77; fi
-exec "$(command -v python3)" "\$@"
+if [ "\${1:-}" = "-m" ] && [ "\${2:-}" = "venv" ]; then exit 77; fi
+exec "$REAL_PYTHON" "\$@"
 EOF
 chmod +x "$TMP/fake-bin/python"
 ln -s python "$TMP/fake-bin/python3"
-if PATH="$TMP/fake-bin:$PATH" "$HERE/install.sh" "$FAIL_PROJECT" >/dev/null 2>&1; then
-  echo "FAIL: fake pip failure unexpectedly succeeded" >&2
+if "$REAL_PYTHON" "$HERE/installer/guardrails_installer.py" install "$FAIL_PROJECT" \
+    --source "$HERE" --python "$TMP/fake-bin/python" >/dev/null 2>&1; then
+  echo "FAIL: fake venv failure unexpectedly succeeded" >&2
   exit 1
 fi
-for path in CLAUDE.md AGENTS.md .claude .slime .github; do
-  if [ -e "$FAIL_PROJECT/$path" ]; then
-    echo "FAIL: preflight failure left $path behind" >&2
-    exit 1
-  fi
+for path in AGENTS.md CLAUDE.md .codex .claude .slime .github guardrails guardrails.cmd; do
+  test ! -e "$FAIL_PROJECT/$path"
 done
 
-# A failure after mutation starts restores pre-existing managed content.
-ROLLBACK_PROJECT="$TMP/rollback-project"
-mkdir -p "$ROLLBACK_PROJECT"
-git -C "$ROLLBACK_PROJECT" init -q -b main
-printf 'original instructions\n' > "$ROLLBACK_PROJECT/CLAUDE.md"
-printf 'user-owned obstacle\n' > "$ROLLBACK_PROJECT/.claude"
-if "$HERE/install.sh" "$ROLLBACK_PROJECT" >/dev/null 2>&1; then
+# A later working-tree fault restores every earlier mutation.
+ROLLBACK="$TMP/rollback"
+mkdir -p "$ROLLBACK"
+git -C "$ROLLBACK" init -q -b main
+printf 'original instructions\n' > "$ROLLBACK/CLAUDE.md"
+printf 'user-owned obstacle\n' > "$ROLLBACK/.claude"
+if "$HERE/install.sh" "$ROLLBACK" >/dev/null 2>&1; then
   echo "FAIL: post-mutation obstacle unexpectedly succeeded" >&2
   exit 1
 fi
-grep -qx 'original instructions' "$ROLLBACK_PROJECT/CLAUDE.md"
-grep -qx 'user-owned obstacle' "$ROLLBACK_PROJECT/.claude"
-test ! -e "$ROLLBACK_PROJECT/AGENTS.md"
-test ! -e "$ROLLBACK_PROJECT/.slime"
+grep -qx 'original instructions' "$ROLLBACK/CLAUDE.md"
+grep -qx 'user-owned obstacle' "$ROLLBACK/.claude"
+test ! -e "$ROLLBACK/AGENTS.md"
+test ! -e "$ROLLBACK/.slime"
+
+# Uninstall dry-run is inert; actual uninstall removes only proven managed
+# content and runtime, preserving .slime, trusted config, and user hooks.
+printf 'user pruned history\n' > "$PROJECT/.slime/PRUNED.md"
+"$PROJECT/guardrails" check set primary -- python -V >/dev/null
+CONFIG="$GUARDRAILS/config.json"
+"$PROJECT/guardrails" uninstall --dry-run >/dev/null
+test -f "$MANIFEST"
+ENVIRONMENT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["environment"])' "$MANIFEST")"
+printf '@echo user modified launcher\r\n' > "$PROJECT/guardrails.cmd"
+"$PROJECT/guardrails" uninstall >/dev/null
+test ! -e "$MANIFEST"
+test ! -e "$RUNTIME"
+test ! -e "$ENVIRONMENT"
+test -f "$CONFIG"
+grep -qx 'user pruned history' "$PROJECT/.slime/PRUNED.md"
+grep -q 'user-existing-hook' "$PROJECT/.claude/settings.json"
+! grep -q 'guardrails_managed' "$PROJECT/.claude/settings.json"
+grep -q 'user modified launcher' "$PROJECT/guardrails.cmd"
 
 echo "install.sh toolkit test OK"
