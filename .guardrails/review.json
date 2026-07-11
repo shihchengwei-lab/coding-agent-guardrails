@@ -5,7 +5,7 @@
     "terminal": "unavailable"
   },
   "delivery": {
-    "base_commit": "ee48dc0aa076aaa85f11e754ee2a722c1b4318ef",
+    "base_commit": "8aaad66d4c810700b278ab8c90f6729454fdfbf4",
     "changed_files": [
       {
         "path": "README.md",
@@ -14,17 +14,22 @@
       {
         "path": "README.zh-TW.md",
         "status": "modified"
+      },
+      {
+        "path": "tests/test_pr4_contract.py",
+        "status": "modified"
       }
     ],
     "outcomes": [
-      "Align release wording and repository positioning with the completed v14 rollout"
+      "Restore the author's disclosure and keep it visible ahead of operational documentation"
     ],
-    "product_fingerprint": "629577f0351c262985bbf41acb835598403ca0577fb8484f6dca285075539fa7",
+    "product_fingerprint": "9eb6cd131f8a6ca2c5529611fddb5667aadb14a0380daf7587e66f442126f3ed",
     "review_first": "README.md",
     "risk": "none-detected",
     "scope": [
       "README.md",
-      "README.zh-TW.md"
+      "README.zh-TW.md",
+      "tests/test_pr4_contract.py"
     ],
     "scope_changes": []
   },
@@ -44,7 +49,7 @@
         "duration_ms": 47,
         "exit_code": 0,
         "id": "structural",
-        "state_fingerprint": "629577f0351c262985bbf41acb835598403ca0577fb8484f6dca285075539fa7"
+        "state_fingerprint": "9eb6cd131f8a6ca2c5529611fddb5667aadb14a0380daf7587e66f442126f3ed"
       }
     ],
     "level": "structural-only"
