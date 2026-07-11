@@ -68,7 +68,7 @@ def execute_hooks(
     return "".join(outputs)
 
 
-def write_corridor(repo: Path) -> None:
+def write_corridor(repo: Path, python: Path) -> None:
     (repo / ".slime" / "corridor.md").write_text(
         """# Corridor: toolkit-e2e
 
@@ -101,8 +101,30 @@ The repository has a committed installation and fixture.
 - Would falsify: any hook, verification, export, or corridor check fails.
 
 ## Stop Condition
-- Command: python -c \"from pathlib import Path; assert 'changed' in Path('src/app.py').read_text()\"
+- Check: primary
 """,
+        encoding="utf-8",
+    )
+    git_dir = Path(git(repo, "rev-parse", "--absolute-git-dir").stdout.strip())
+    config = git_dir / "guardrails" / "config.json"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "checks": {
+                    "primary": {
+                        "argv": [
+                            str(python),
+                            "-c",
+                            "from pathlib import Path; assert 'changed' in "
+                            "Path('src/app.py').read_text()",
+                        ],
+                        "timeout_seconds": 60,
+                    }
+                },
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -151,7 +173,7 @@ def main() -> int:
             start_event, end_event = "UserPromptSubmit", "Stop"
 
         hooks = json.loads(hooks_path.read_text(encoding="utf-8-sig"))["hooks"]
-        write_corridor(repo)
+        write_corridor(repo, python)
         git(repo, "add", "-A")
         git(repo, "commit", "-qm", "installed baseline")
         git(repo, "switch", "-qc", "feature/e2e")
