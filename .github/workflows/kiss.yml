@@ -22,6 +22,7 @@ defaults:
 jobs:
   test:
     name: Kiss tests
+    if: false # intentional Policy Gate probe; this branch will never merge
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
