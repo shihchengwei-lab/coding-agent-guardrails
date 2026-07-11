@@ -119,7 +119,15 @@ def collect_git_state(cwd: Path, *, is_after: bool = False) -> GitState:
     )
 
 
-def compute_diff_fingerprint(cwd: Path) -> str:
+EVIDENCE_OUTPUT_PATHS = {
+    ".agentcam/AGENT_RUN_REPORT.md",
+    ".agentcam/manifest.redacted.json",
+}
+
+
+def compute_diff_fingerprint(
+    cwd: Path, *, excluded_paths: set[str] | None = None
+) -> str:
     """sha256 hex digest of the working tree's git-visible state.
 
     Hashes:
@@ -134,12 +142,14 @@ def compute_diff_fingerprint(cwd: Path) -> str:
     of every untracked file's bytes, so it is non-trivial cost for
     repos with large unignored artifacts.
     """
+    excluded = excluded_paths or set()
+    pathspec = [".", *(f":(exclude){path}" for path in sorted(excluded))]
     fp = hashlib.sha256()
-    fp.update(_git(cwd, "diff", check=False).stdout)
+    fp.update(_git(cwd, "diff", "--", *pathspec, check=False).stdout)
     fp.update(b"\x00")
-    fp.update(_git(cwd, "diff", "--cached", check=False).stdout)
+    fp.update(_git(cwd, "diff", "--cached", "--", *pathspec, check=False).stdout)
     fp.update(b"\x00")
-    fp.update(_untracked_content_hash(cwd))
+    fp.update(_untracked_content_hash(cwd, excluded_paths=excluded))
     return fp.hexdigest()
 
 
@@ -148,7 +158,11 @@ def compute_final_state_fingerprint(cwd: Path) -> str:
     fp = hashlib.sha256()
     fp.update((_safe_head(cwd) or "<no-head>").encode("ascii", errors="replace"))
     fp.update(b"\x00")
-    fp.update(compute_diff_fingerprint(cwd).encode("ascii"))
+    fp.update(
+        compute_diff_fingerprint(
+            cwd, excluded_paths=EVIDENCE_OUTPUT_PATHS
+        ).encode("ascii")
+    )
     return fp.hexdigest()
 
 
@@ -276,7 +290,9 @@ def is_working_tree_dirty(state: GitState) -> bool:
 # Untracked content hashing (for the no-diff fingerprint)
 # ---------------------------------------------------------------------------
 
-def _untracked_content_hash(cwd: Path) -> bytes:
+def _untracked_content_hash(
+    cwd: Path, *, excluded_paths: set[str] | None = None
+) -> bytes:
     """Hash all untracked files (path + content bytes) for fingerprinting.
 
     Why: `git diff` and `git diff --cached` ignore untracked files. Without
@@ -302,7 +318,14 @@ def _untracked_content_hash(cwd: Path) -> bytes:
             b"<LS-FILES-FAILED rc=" + str(res.returncode).encode()
             + b" nonce=" + os.urandom(16).hex().encode() + b">"
         )
-    paths = sorted(p for p in res.stdout.split(b"\x00") if p)
+    excluded = excluded_paths or set()
+    paths = sorted(
+        path
+        for path in res.stdout.split(b"\x00")
+        if path
+        and path.decode("utf-8", errors="surrogateescape").replace("\\", "/")
+        not in excluded
+    )
     fp = hashlib.sha256()
     for path_bytes in paths:
         fp.update(path_bytes)

@@ -282,3 +282,20 @@ class TestVerifiedLineInHandoff:
         )
         checks = redacted["evidence"]["verifications"]
         assert checks and checks[0]["exit_code"] == 0
+
+    def test_exported_evidence_files_do_not_stale_handoff(
+        self, tmp_git_repo: Path
+    ):
+        rid = _make_one_run(tmp_git_repo)
+        assert _agentcam(
+            tmp_git_repo, "verify", "--", *PASS_CMD
+        ).returncode == 0
+        exported = _agentcam(
+            tmp_git_repo, "export", rid, "--files", str(tmp_git_repo / ".agentcam")
+        )
+        assert exported.returncode == 0, exported.stderr
+
+        handoff = _agentcam(tmp_git_repo, "handoff")
+
+        assert handoff.returncode == 0, handoff.stderr
+        assert b"[locally recorded by agentcam]" in handoff.stdout
