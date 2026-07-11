@@ -9,10 +9,6 @@ inputs:
     description: "fail blocks the check; warn only writes the report."
     required: false
     default: fail
-  allow_dependencies:
-    description: "Whether dependency manifest changes are allowed."
-    required: false
-    default: "false"
   comment:
     description: "Upsert the Corridor CI report as a sticky PR comment."
     required: false
@@ -33,7 +29,6 @@ runs:
       shell: bash
       env:
         INPUT_MODE: ${{ inputs.mode }}
-        INPUT_ALLOW_DEPENDENCIES: ${{ inputs.allow_dependencies }}
         INPUT_COMMENT: ${{ inputs.comment }}
         INPUT_AGENTCAM_EVIDENCE: ${{ inputs.agentcam_evidence }}
         GITHUB_TOKEN: ${{ github.token }}

@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
+import html
 import json
 import os
 import re
@@ -49,7 +51,14 @@ Risk: <fill in: high, medium, none-detected, or unknown>
 
 COMMENT_MARKER = "<!-- corridor-ci -->"
 WORKFLOW_APPROVAL_LABEL = "Guardrails-Workflow-Approval"
+DEPENDENCY_APPROVAL_LABEL = "Guardrails-Dependency-Approval"
 WORKFLOW_PREFIX = ".github/workflows/"
+SCOPE_METADATA_PATHS = {
+    ".agentcam/AGENT_RUN_REPORT.md",
+    ".agentcam/manifest.redacted.json",
+}
+MANIFEST_MAX_BYTES = 1024 * 1024
+RISK_VALUES = {"high", "medium", "none-detected", "unknown"}
 GITHUB_API_URL = "https://api.github.com"
 HttpTransport = Callable[[str, str, str, dict[str, str] | None], Any]
 
@@ -81,11 +90,28 @@ class WorkflowPolicyDecision:
     reason: str
 
 
+@dataclass(frozen=True)
+class DependencyPolicyDecision:
+    ok: bool
+    dependency_files: list[str]
+    approved_by: str | None
+    reason: str
+
+
 def normalize_path(path: str) -> str:
     cleaned = path.strip().replace("\\", "/")
     while cleaned.startswith("./"):
         cleaned = cleaned[2:]
     return cleaned
+
+
+def escape_markdown(value: Any) -> str:
+    """Render author-controlled scalar content without Markdown structure."""
+    text = html.escape(str(value), quote=False).replace("\r", " ").replace("\n", "<br>")
+    text = text.replace("`", "&#96;")
+    return re.sub(r"([\\*_{}\[\]|>])", r"\\\1", text).replace(
+        "@", "@\u200b"
+    )
 
 
 def truthy(value: str | bool | None) -> bool:
@@ -264,6 +290,29 @@ def extract_changed_files_between(repo: Path, base: str, head: str) -> list[str]
     return [normalize_path(p) for p in proc.stdout.splitlines() if p.strip()]
 
 
+def compute_current_product_fingerprint(repo: Path, changed_files: list[str]) -> str:
+    """Hash final delivered product paths/content, excluding fixed evidence files."""
+    fingerprint = hashlib.sha256()
+    for path in sorted(
+        {normalize_path(value) for value in changed_files} - SCOPE_METADATA_PATHS
+    ):
+        fingerprint.update(path.encode("utf-8", errors="surrogateescape"))
+        fingerprint.update(b"\x00")
+        absolute = repo / path
+        try:
+            if absolute.is_symlink():
+                content = b"symlink:" + os.readlink(absolute).encode(
+                    "utf-8", errors="surrogateescape"
+                )
+            else:
+                content = absolute.read_bytes()
+            fingerprint.update(hashlib.sha256(content).digest())
+        except OSError:
+            fingerprint.update(b"<missing>")
+        fingerprint.update(b"\x00")
+    return fingerprint.hexdigest()
+
+
 def evaluate_workflow_policy(
     *,
     changed_files: list[str],
@@ -325,6 +374,48 @@ def evaluate_workflow_policy(
             f"current head. Add an exact PR comment: {WORKFLOW_APPROVAL_LABEL}: "
             f"{normalized_head}"
         ),
+    )
+
+
+def evaluate_dependency_policy(
+    *,
+    dependency_files: list[str],
+    comments: list[Any],
+    head_sha: str,
+    pr_author: str,
+) -> DependencyPolicyDecision:
+    dependencies = sorted({normalize_path(path) for path in dependency_files})
+    if not dependencies:
+        return DependencyPolicyDecision(True, [], None, "No dependency files changed.")
+
+    normalized_head = head_sha.strip().lower()
+    pattern = re.compile(
+        rf"(?m)^{re.escape(DEPENDENCY_APPROVAL_LABEL)}:\s*"
+        rf"{re.escape(normalized_head)}\s*$"
+    )
+    normalized_author = pr_author.strip().lower()
+    for comment in comments if isinstance(comments, list) else []:
+        if not isinstance(comment, dict):
+            continue
+        body = comment.get("body")
+        user = comment.get("user")
+        login = str(user.get("login") or "") if isinstance(user, dict) else ""
+        association = str(comment.get("author_association") or "").upper()
+        if not isinstance(body, str) or not pattern.search(body):
+            continue
+        if association == "OWNER" or (
+            association == "MEMBER" and login.strip().lower() != normalized_author
+        ):
+            return DependencyPolicyDecision(
+                True, dependencies, login or association.lower(),
+                f"Dependency change approved for head {normalized_head}.",
+            )
+    return DependencyPolicyDecision(
+        False,
+        dependencies,
+        None,
+        f"Dependency files require an exact trusted PR comment: "
+        f"{DEPENDENCY_APPROVAL_LABEL}: {normalized_head}",
     )
 
 
@@ -416,7 +507,6 @@ def evaluate(
     *,
     changed_files: list[str],
     corridor_text: str | None,
-    allow_dependencies: bool = False,
 ) -> Report:
     changed = [normalize_path(p) for p in changed_files if normalize_path(p)]
     allowed_paths: list[str] = []
@@ -478,12 +568,15 @@ def evaluate(
 
     outside: list[str] = []
     if allowed_paths:
-        outside = [p for p in changed if not is_allowed(p, allowed_paths)]
+        outside = [
+            p for p in changed
+            if p not in SCOPE_METADATA_PATHS and not is_allowed(p, allowed_paths)
+        ]
         if outside:
             issues.append("changed files outside corridor paths: " + ", ".join(outside))
 
-    if deps and not allow_dependencies:
-        issues.append("dependency manifest changed without allow_dependencies=true: " + ", ".join(deps))
+    if deps:
+        issues.append("dependency files require head-bound trusted approval: " + ", ".join(deps))
 
     return Report(
         ok=not issues,
@@ -510,6 +603,10 @@ def read_agentcam_manifest(path: Path) -> tuple[dict | None, str | None]:
     if not path.is_file():
         return None, None
     try:
+        if path.stat().st_size > MANIFEST_MAX_BYTES:
+            return None, (
+                f"agentcam manifest at `{path.name}` exceeds the 1 MiB safety limit"
+            )
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         return None, f"agentcam manifest at `{path.name}` could not be read: {exc}"
@@ -529,6 +626,8 @@ LEGACY_RECORDED_MARKER = "[recorded by agentcam]"
 def classify_verification_provenance(
     verified: str | None,
     manifest: dict | None,
+    *,
+    current_product_fingerprint: str | None = None,
 ) -> VerificationProvenance:
     """Classify the verification source for policy and reporting.
 
@@ -545,16 +644,41 @@ def classify_verification_provenance(
     marker_present = local_marker_present or legacy_marker_present
     evidence = manifest.get("evidence") if isinstance(manifest, dict) else None
     checks = evidence.get("verifications") if isinstance(evidence, dict) else None
+    final_state = manifest.get("final_state_fingerprint") if isinstance(manifest, dict) else None
+    manifest_product = evidence.get("product_fingerprint") if isinstance(evidence, dict) else None
     passing_commands = []
     for check in checks if isinstance(checks, list) else []:
-        if not isinstance(check, dict) or check.get("exit_code") != 0:
+        if (
+            not isinstance(check, dict)
+            or type(check.get("exit_code")) is not int
+            or check.get("exit_code") != 0
+            or not isinstance(final_state, str)
+            or check.get("state_fingerprint") != final_state
+        ):
             continue
         command = check.get("command")
         if isinstance(command, str) and command.strip():
             passing_commands.append(command.strip())
 
-    matched = marker_present and any(
-        f"{command} (exit 0)" in value for command in passing_commands
+    grammar = re.fullmatch(
+        r"(?P<checks>.+ \(exit 0\)(?:; .+ \(exit 0\))*) "
+        r"\[locally recorded by agentcam\]",
+        value,
+    )
+    claimed = grammar.group("checks").split("; ") if grammar else []
+    expected = {f"{command} (exit 0)" for command in passing_commands}
+    product_matches = (
+        isinstance(current_product_fingerprint, str)
+        and bool(current_product_fingerprint)
+        and manifest_product == current_product_fingerprint
+    )
+    matched = (
+        local_marker_present
+        and not legacy_marker_present
+        and bool(claimed)
+        and len(claimed) == len(set(claimed))
+        and all(fragment in expected for fragment in claimed)
+        and product_matches
     )
     warnings = []
     placeholder = (
@@ -564,17 +688,17 @@ def classify_verification_provenance(
     )
     if matched:
         status = "local-recorded"
-        if legacy_marker_present:
-            warnings.append(
-                "legacy `[recorded by agentcam]` marker means locally recorded; "
-                "use `[locally recorded by agentcam]`"
-            )
     elif marker_present:
         status = "unverified"
-        warnings.append(
-            "Verified claims an agentcam recording marker, but no matching "
-            "passed locally recorded check was found"
-        )
+        if legacy_marker_present:
+            warnings.append("legacy `[recorded by agentcam]` marker is no longer accepted")
+        elif not product_matches:
+            warnings.append("locally recorded verification is stale for the current PR product")
+        else:
+            warnings.append(
+                "Verified claims an agentcam recording marker, but its exact grammar "
+                "or state-bound passed record did not match"
+            )
     elif not value or placeholder:
         status = "unverified"
         warnings.append("Verified has no completed check; verification is unverified")
@@ -612,6 +736,30 @@ def classify_verification_provenance(
     )
 
 
+def apply_manifest_policy(report: Report, manifest: dict | None) -> Report:
+    risk = str(report.handoff.get("Risk") or "").strip().lower()
+    issues = list(report.issues)
+    if risk not in RISK_VALUES:
+        issues.append("Risk must be one of: high, medium, none-detected, unknown")
+    evidence = manifest.get("evidence") if isinstance(manifest, dict) else None
+    overall = str(evidence.get("overall_risk") or "").strip().upper() if isinstance(evidence, dict) else ""
+    minimum = {"HIGH": "high", "MEDIUM": "medium", "NONE_DETECTED": "none-detected"}.get(overall)
+    ranks = {"none-detected": 0, "unknown": 1, "medium": 2, "high": 3}
+    if minimum and risk in ranks and ranks[risk] < ranks[minimum]:
+        issues.append(f"Risk `{risk}` underreports agentcam manifest risk `{overall}`")
+    return replace(report, ok=not issues, issues=issues)
+
+
+def apply_dependency_policy(
+    report: Report, decision: DependencyPolicyDecision
+) -> Report:
+    prefix = "dependency files require head-bound trusted approval:"
+    issues = [issue for issue in report.issues if not issue.startswith(prefix)]
+    if decision.dependency_files and not decision.ok:
+        issues.append(decision.reason)
+    return replace(report, ok=not issues, issues=issues)
+
+
 def apply_verification_policy(
     report: Report,
     provenance: VerificationProvenance | None,
@@ -629,7 +777,7 @@ def apply_verification_policy(
 
 
 def compact_markdown(value: str) -> list[str]:
-    return [line.rstrip() for line in value.splitlines() if line.strip()]
+    return [escape_markdown(line.rstrip()) for line in value.splitlines() if line.strip()]
 
 
 def should_show_handoff_template(report: Report) -> bool:
@@ -653,11 +801,11 @@ def render_agentcam_section(
         return []
     lines = ["", "## Recorded Evidence (agentcam)"]
     if note is not None:
-        lines.append(f"- {note}")
+        lines.append(f"- {escape_markdown(note)}")
         return lines
     overall = evidence.get("overall_risk")
     if overall:
-        lines.append(f"- overall risk: {overall}")
+        lines.append(f"- overall risk: {escape_markdown(overall)}")
     recorded = evidence.get("changed_files")
     if isinstance(recorded, list) and recorded:
         lines.append(f"- recorded changed files: {len(recorded)}")
@@ -668,7 +816,10 @@ def render_agentcam_section(
         level = flag.get("level", "?")
         rule = flag.get("rule", "?")
         found = flag.get("evidence", "")
-        lines.append(f"- {level} | {rule} | `{found}`")
+        lines.append(
+            f"- {escape_markdown(level)} | {escape_markdown(rule)} | "
+            f"`{escape_markdown(found)}`"
+        )
     checks = evidence.get("verifications")
     for check in checks if isinstance(checks, list) else []:
         if not isinstance(check, dict):
@@ -678,16 +829,18 @@ def render_agentcam_section(
         code_note = "?" if code is None else code
         dur = check.get("duration_seconds")
         dur_note = f" ({dur}s)" if isinstance(dur, (int, float)) else ""
-        lines.append(f"- recorded check: `{cmd}` | exit {code_note}{dur_note}")
+        lines.append(
+            f"- recorded check: `{escape_markdown(cmd)}` | exit "
+            f"{escape_markdown(code_note)}{escape_markdown(dur_note)}"
+        )
     raw_diff_stat = evidence.get("diff_stat")
     diff_stat = (
         raw_diff_stat.strip() if isinstance(raw_diff_stat, str) else ""
     )
     if diff_stat:
-        lines.append("")
-        lines.append("```text")
-        lines.extend(diff_stat.splitlines())
-        lines.append("```")
+        lines.append("- diff stat: " + "<br>".join(
+            escape_markdown(line) for line in diff_stat.splitlines()
+        ))
     return lines
 
 
@@ -730,22 +883,22 @@ def render_markdown(
     if report.allowed_paths:
         lines.append("")
         lines.append("## Declared Paths")
-        lines.extend(f"- `{p}`" for p in report.allowed_paths)
+        lines.extend(f"- `{escape_markdown(p)}`" for p in report.allowed_paths)
 
     if report.changed_files:
         lines.append("")
         lines.append("## Touched Files")
-        lines.extend(f"- `{p}`" for p in report.changed_files)
+        lines.extend(f"- `{escape_markdown(p)}`" for p in report.changed_files)
 
     if report.outside_files:
         lines.append("")
         lines.append("## Out Of Corridor")
-        lines.extend(f"- `{p}`" for p in report.outside_files)
+        lines.extend(f"- `{escape_markdown(p)}`" for p in report.outside_files)
 
     if report.dependency_files:
         lines.append("")
         lines.append("## Dependency Changes")
-        lines.extend(f"- `{p}`" for p in report.dependency_files)
+        lines.extend(f"- `{escape_markdown(p)}`" for p in report.dependency_files)
 
     lines.extend(render_agentcam_section(agentcam_evidence, agentcam_note))
     lines.extend(render_verification_provenance(verification_provenance))
@@ -753,7 +906,7 @@ def render_markdown(
     if report.issues:
         lines.append("")
         lines.append("## Issues")
-        lines.extend(f"- {issue}" for issue in report.issues)
+        lines.extend(f"- {escape_markdown(issue)}" for issue in report.issues)
     if should_show_handoff_template(report):
         lines.append("")
         lines.append("## Copyable Review Handoff")
@@ -767,7 +920,7 @@ def render_markdown(
     if warnings:
         lines.append("")
         lines.append("## Warnings")
-        lines.extend(f"- {warning}" for warning in warnings)
+        lines.extend(f"- {escape_markdown(warning)}" for warning in warnings)
     return "\n".join(lines) + "\n"
 
 
@@ -925,7 +1078,13 @@ def upsert_pr_comment(
             page_url = f"{comments_url}?per_page=100&page={page}"
             comments = transport("GET", page_url, token, None) or []
             for comment in comments:
-                if COMMENT_MARKER in str(comment.get("body", "")) and comment.get("id"):
+                user = comment.get("user")
+                login = str(user.get("login") or "") if isinstance(user, dict) else ""
+                if (
+                    COMMENT_MARKER in str(comment.get("body", ""))
+                    and comment.get("id")
+                    and login.lower() == "github-actions[bot]"
+                ):
                     update_url = f"{api_url}/repos/{repository}/issues/comments/{comment['id']}"
                     transport("PATCH", update_url, token, body)
                     return
@@ -950,7 +1109,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base", help="base revision for --policy-gate")
     parser.add_argument("--head", help="head revision for --policy-gate")
     parser.add_argument("--mode", choices=("fail", "warn"), default=os.environ.get("INPUT_MODE", "fail"))
-    parser.add_argument("--allow-dependencies", default=os.environ.get("INPUT_ALLOW_DEPENDENCIES", "false"))
     parser.add_argument("--comment", default=os.environ.get("INPUT_COMMENT", "false"))
     parser.add_argument(
         "--agentcam-evidence",
@@ -976,18 +1134,56 @@ def main(argv: list[str] | None = None) -> int:
     report = evaluate(
         changed_files=changed,
         corridor_text=corridor,
-        allow_dependencies=truthy(args.allow_dependencies),
     )
     manifest, evidence_note = read_agentcam_manifest(
         repo / args.agentcam_evidence
     )
     evidence = manifest.get("evidence") if isinstance(manifest, dict) else None
+    report = apply_manifest_policy(report, manifest)
+    current_product_fingerprint = compute_current_product_fingerprint(
+        repo, changed
+    )
     provenance = None
     if any(report.handoff.values()) or manifest is not None or evidence_note is not None:
         provenance = classify_verification_provenance(
-            report.handoff.get("Verified"), manifest
+            report.handoff.get("Verified"),
+            manifest,
+            current_product_fingerprint=current_product_fingerprint,
         )
     report = apply_verification_policy(report, provenance)
+
+    if report.dependency_files:
+        event = read_event_payload()
+        pull = event.get("pull_request") if isinstance(event, dict) else None
+        head_data = pull.get("head") if isinstance(pull, dict) else None
+        user_data = pull.get("user") if isinstance(pull, dict) else None
+        head_sha = str(head_data.get("sha") or "") if isinstance(head_data, dict) else ""
+        pr_author = str(user_data.get("login") or "") if isinstance(user_data, dict) else ""
+        comments: list[dict[str, Any]] = []
+        token = os.environ.get("GITHUB_TOKEN")
+        repository = os.environ.get("GITHUB_REPOSITORY")
+        pr_number = find_pr_number()
+        if token and repository and pr_number:
+            try:
+                comments = read_pr_comments(
+                    token=token, repository=repository, pr_number=pr_number
+                )
+            except Exception as exc:
+                report = replace(
+                    report,
+                    ok=False,
+                    issues=[
+                        *report.issues,
+                        f"dependency approval could not be read: {exc}",
+                    ],
+                )
+        decision = evaluate_dependency_policy(
+            dependency_files=report.dependency_files,
+            comments=comments,
+            head_sha=head_sha,
+            pr_author=pr_author,
+        )
+        report = apply_dependency_policy(report, decision)
     markdown = render_markdown(
         report,
         agentcam_evidence=evidence,

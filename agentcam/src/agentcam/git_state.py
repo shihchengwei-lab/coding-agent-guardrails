@@ -201,10 +201,6 @@ def compute_product_fingerprint(cwd: Path, changed_files: list[ChangedFile]) -> 
     for changed in sorted(changed_files, key=lambda item: item.path):
         fp.update(changed.path.encode("utf-8", errors="surrogateescape"))
         fp.update(b"\x00")
-        fp.update(changed.status.encode("ascii"))
-        fp.update(b"\x00")
-        fp.update((changed.rename_from or "").encode("utf-8", errors="surrogateescape"))
-        fp.update(b"\x00")
         absolute = cwd / changed.path
         try:
             if absolute.is_symlink():

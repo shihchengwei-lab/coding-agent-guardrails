@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 
 from cli_harness import _agentcam, _make_one_run, _run_dir
+from agentcam.git_state import compute_product_fingerprint
+from agentcam.models import ChangedFile
 
 
 # ---------------------------------------------------------------------------
@@ -18,6 +20,23 @@ from cli_harness import _agentcam, _make_one_run, _run_dir
 # ---------------------------------------------------------------------------
 
 class TestManifestEvidence:
+    def test_product_fingerprint_ignores_transient_git_status(
+        self, tmp_git_repo: Path
+    ):
+        product = tmp_git_repo / "same.txt"
+        product.write_text("same delivery", encoding="utf-8")
+
+        dirty = compute_product_fingerprint(
+            tmp_git_repo,
+            [ChangedFile(path="same.txt", status="unstaged_modified")],
+        )
+        committed = compute_product_fingerprint(
+            tmp_git_repo,
+            [ChangedFile(path="same.txt", status="committed")],
+        )
+
+        assert dirty == committed
+
     def test_manifest_contains_evidence_block(self, tmp_git_repo: Path):
         _make_one_run(tmp_git_repo)
         manifest = json.loads(

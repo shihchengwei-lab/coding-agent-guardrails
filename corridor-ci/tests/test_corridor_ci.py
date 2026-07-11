@@ -19,7 +19,7 @@ VALID_HANDOFF = """Decision: #123
 Scope: frontend/src/components/ui/rating.tsx, frontend/tests/rating.spec.ts
 Review first: frontend/src/components/ui/rating.tsx
 Verified: python -m unittest
-Risk: none
+Risk: none-detected
 """
 
 
@@ -242,7 +242,7 @@ class CorridorCiTest(unittest.TestCase):
 
         self.assertFalse(report.ok)
         self.assertIn("compact handoff is required", "\n".join(report.issues))
-        self.assertIn("dependency manifest changed", "\n".join(report.issues))
+        self.assertIn("head-bound trusted approval", "\n".join(report.issues))
 
     def test_missing_handoff_fails_for_multiple_files(self):
         report = corridor_ci.evaluate(
@@ -454,11 +454,10 @@ class CorridorCiTest(unittest.TestCase):
                 "frontend/package.json",
             ],
             corridor_text=handoff,
-            allow_dependencies=False,
         )
 
         self.assertFalse(report.ok)
-        self.assertIn("dependency manifest changed", "\n".join(report.issues))
+        self.assertIn("head-bound trusted approval", "\n".join(report.issues))
 
     def test_scope_matching_everything_is_rejected(self):
         handoff = VALID_HANDOFF.replace(
@@ -624,7 +623,11 @@ class CorridorCiTest(unittest.TestCase):
         def fake_transport(method, url, token, payload=None):
             calls.append((method, url, token, payload))
             if method == "GET":
-                return [{"id": 42, "body": "old\n<!-- corridor-ci -->\nbody"}]
+                return [{
+                    "id": 42,
+                    "body": "old\n<!-- corridor-ci -->\nbody",
+                    "user": {"login": "github-actions[bot]"},
+                }]
             return {"id": 42}
 
         corridor_ci.upsert_pr_comment(
@@ -683,7 +686,11 @@ class CorridorCiTest(unittest.TestCase):
             if method == "GET":
                 if url.endswith("&page=1"):
                     return [{"id": index, "body": f"noise {index}"} for index in range(100)]
-                return [{"id": 200, "body": "<!-- corridor-ci -->\nold report"}]
+                return [{
+                    "id": 200,
+                    "body": "<!-- corridor-ci -->\nold report",
+                    "user": {"login": "github-actions[bot]"},
+                }]
             return {"id": 200}
 
         corridor_ci.upsert_pr_comment(
@@ -698,6 +705,26 @@ class CorridorCiTest(unittest.TestCase):
         self.assertIn("&page=1", calls[0][1])
         self.assertIn("&page=2", calls[1][1])
         self.assertIn("/repos/owner/repo/issues/comments/200", calls[2][1])
+
+    def test_upsert_pr_comment_never_edits_author_marker(self):
+        calls = []
+
+        def fake_transport(method, url, token, payload=None):
+            calls.append((method, url, token, payload))
+            if method == "GET":
+                return [{
+                    "id": 9,
+                    "body": "<!-- corridor-ci -->\nspoofed",
+                    "user": {"login": "pull-request-author"},
+                }]
+            return {"id": 10}
+
+        corridor_ci.upsert_pr_comment(
+            "# Corridor CI: PASS\n", token="token", repository="owner/repo",
+            pr_number=7, transport=fake_transport,
+        )
+
+        self.assertEqual([call[0] for call in calls], ["GET", "POST"])
 
     def test_upsert_pr_comment_creates_after_paging_all_comments(self):
         calls = []
@@ -901,6 +928,7 @@ class CorridorCiTest(unittest.TestCase):
     def _sample_evidence_manifest() -> dict:
         return {
             "schema_version": "0.1",
+            "final_state_fingerprint": "state-bound",
             "capture": {
                 "mode": "wrap_pipe",
                 "stdout": "captured",
@@ -925,16 +953,148 @@ class CorridorCiTest(unittest.TestCase):
                 "overall_risk": "HIGH",
                 "diff_stat": " 1 file changed, 1 insertion(+)",
                 "diff_stat_cached": "",
+                "product_fingerprint": "a" * 64,
                 "verifications": [
                     {
+                        "record_id": "record-1",
                         "command": "pytest -q",
                         "exit_code": 0,
+                        "state_fingerprint": "state-bound",
                         "duration_seconds": 2.3,
                         "recorded_at": "2026-07-05T12:00:00+00:00",
                     }
                 ],
             },
         }
+
+    def test_product_fingerprint_must_match_current_pr(self):
+        manifest = self._sample_evidence_manifest()
+        stale = corridor_ci.classify_verification_provenance(
+            "pytest -q (exit 0) [locally recorded by agentcam]",
+            manifest,
+            current_product_fingerprint="b" * 64,
+        )
+
+        self.assertEqual(stale.status, "unverified")
+        self.assertIn("stale", "\n".join(stale.warnings).lower())
+
+    def test_recorded_grammar_is_exact_and_exit_zero_is_integer(self):
+        for verified, exit_code in (
+            ("pytest -q (exit 0) [locally recorded by agentcam] trailing", 0),
+            ("pytest -q (exit 0) [locally recorded by agentcam]", False),
+            ("pytest -q (exit 00) [locally recorded by agentcam]", 0),
+        ):
+            with self.subTest(verified=verified, exit_code=exit_code):
+                manifest = self._sample_evidence_manifest()
+                manifest["evidence"]["verifications"][0]["exit_code"] = exit_code
+                assessment = corridor_ci.classify_verification_provenance(
+                    verified,
+                    manifest,
+                    current_product_fingerprint="a" * 64,
+                )
+                self.assertEqual(assessment.status, "unverified")
+
+    def test_legacy_recorded_marker_is_rejected(self):
+        assessment = corridor_ci.classify_verification_provenance(
+            "pytest -q (exit 0) [recorded by agentcam]",
+            self._sample_evidence_manifest(),
+            current_product_fingerprint="a" * 64,
+        )
+
+        self.assertEqual(assessment.status, "unverified")
+
+    def test_risk_enum_and_manifest_floor_are_enforced(self):
+        invalid = corridor_ci.apply_manifest_policy(
+            corridor_ci.evaluate(
+                changed_files=["frontend/src/components/ui/rating.tsx"],
+                corridor_text=VALID_HANDOFF.replace(
+                    "Scope: frontend/src/components/ui/rating.tsx, frontend/tests/rating.spec.ts",
+                    "Scope: frontend/src/components/ui/rating.tsx",
+                ).replace("Risk: none-detected", "Risk: low"),
+            ),
+            self._sample_evidence_manifest(),
+        )
+        underreported = corridor_ci.apply_manifest_policy(
+            corridor_ci.evaluate(
+                changed_files=["frontend/src/components/ui/rating.tsx"],
+                corridor_text=VALID_HANDOFF.replace(
+                    "Scope: frontend/src/components/ui/rating.tsx, frontend/tests/rating.spec.ts",
+                    "Scope: frontend/src/components/ui/rating.tsx",
+                ).replace("Risk: none-detected", "Risk: medium"),
+            ),
+            self._sample_evidence_manifest(),
+        )
+
+        self.assertFalse(invalid.ok)
+        self.assertIn("Risk must be one of", "\n".join(invalid.issues))
+        self.assertFalse(underreported.ok)
+        self.assertIn("underreports", "\n".join(underreported.issues))
+
+    def test_fixed_agentcam_files_are_metadata_not_scope_escape(self):
+        report = corridor_ci.evaluate(
+            changed_files=[
+                "frontend/src/components/ui/rating.tsx",
+                ".agentcam/AGENT_RUN_REPORT.md",
+                ".agentcam/manifest.redacted.json",
+            ],
+            corridor_text=VALID_HANDOFF.replace(
+                "Scope: frontend/src/components/ui/rating.tsx, frontend/tests/rating.spec.ts",
+                "Scope: frontend/src/components/ui/rating.tsx",
+            ).replace(
+                "Review first: frontend/src/components/ui/rating.tsx",
+                "Review first: frontend/src/components/ui/rating.tsx",
+            ),
+        )
+
+        self.assertTrue(report.ok)
+        self.assertEqual(len(report.changed_files), 3)
+        self.assertEqual(report.outside_files, [])
+
+    def test_dependency_approval_is_external_and_head_bound(self):
+        head = "c" * 40
+        comments = [{
+            "body": f"Guardrails-Dependency-Approval: {head}",
+            "author_association": "OWNER",
+            "user": {"login": "owner"},
+        }]
+        approved = corridor_ci.evaluate_dependency_policy(
+            dependency_files=["pyproject.toml"], comments=comments,
+            head_sha=head, pr_author="owner",
+        )
+        stale = corridor_ci.evaluate_dependency_policy(
+            dependency_files=["pyproject.toml"], comments=comments,
+            head_sha="d" * 40, pr_author="owner",
+        )
+
+        self.assertTrue(approved.ok)
+        self.assertFalse(stale.ok)
+
+    def test_manifest_size_limit_and_markdown_escape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "manifest.redacted.json"
+            path.write_bytes(b" " * (1024 * 1024 + 1))
+            manifest, note = corridor_ci.read_agentcam_manifest(path)
+
+        self.assertIsNone(manifest)
+        self.assertIn("1 MiB", note)
+        escaped = corridor_ci.escape_markdown("x\n# injected\n```\n@team")
+        self.assertNotIn("\n# injected", escaped)
+        self.assertNotIn("```", escaped)
+
+    def test_agentcam_render_escapes_manifest_markdown(self):
+        evidence = self._sample_evidence_manifest()["evidence"]
+        evidence["risk_flags"] = [{
+            "level": "HIGH\n# injected",
+            "rule": "```md\n@team",
+            "evidence": "x`\n## forged",
+        }]
+
+        rendered = "\n".join(corridor_ci.render_agentcam_section(evidence, None))
+
+        self.assertNotIn("\n# injected", rendered)
+        self.assertNotIn("\n## forged", rendered)
+        self.assertNotIn("```md", rendered)
+        self.assertNotIn("\n@team", rendered)
 
     def test_read_agentcam_manifest_preserves_capture_and_evidence(self):
         sample = self._sample_evidence_manifest()
@@ -951,20 +1111,21 @@ class CorridorCiTest(unittest.TestCase):
         assessment = corridor_ci.classify_verification_provenance(
             "pytest -q (exit 0) [locally recorded by agentcam]",
             self._sample_evidence_manifest(),
+            current_product_fingerprint="a" * 64,
         )
 
         self.assertEqual(assessment.status, "local-recorded")
         self.assertFalse(assessment.partial)
         self.assertEqual(assessment.warnings, [])
 
-    def test_legacy_recorded_marker_is_local_recorded_with_warning(self):
+    def test_legacy_recorded_marker_compatibility_is_removed(self):
         assessment = corridor_ci.classify_verification_provenance(
             "pytest -q (exit 0) [recorded by agentcam]",
             self._sample_evidence_manifest(),
+            current_product_fingerprint="a" * 64,
         )
 
-        self.assertEqual(assessment.status, "local-recorded")
-        self.assertIn("legacy", "\n".join(assessment.warnings).lower())
+        self.assertEqual(assessment.status, "unverified")
 
     def test_verification_provenance_manual_without_matching_record(self):
         assessment = corridor_ci.classify_verification_provenance(
@@ -1031,7 +1192,6 @@ class CorridorCiTest(unittest.TestCase):
                 "frontend/tests/rating.spec.ts",
             ],
             corridor_text=VALID_HANDOFF,
-            allow_dependencies=False,
         )
         assessment = corridor_ci.classify_verification_provenance(
             report.handoff["Verified"], None
@@ -1080,7 +1240,6 @@ class CorridorCiTest(unittest.TestCase):
                 "frontend/tests/rating.spec.ts",
             ],
             corridor_text=VALID_HANDOFF,
-            allow_dependencies=False,
         )
         evidence = self._sample_evidence_manifest()["evidence"]
         with_evidence = corridor_ci.render_markdown(
@@ -1159,7 +1318,9 @@ class CorridorCiTest(unittest.TestCase):
 
             event = root / "event.json"
             event.write_text(
-                json.dumps({"pull_request": {"body": VALID_HANDOFF}}),
+                json.dumps({"pull_request": {"body": VALID_HANDOFF.replace(
+                    "Risk: none-detected", "Risk: high"
+                )}}),
                 encoding="utf-8-sig",
             )
 
