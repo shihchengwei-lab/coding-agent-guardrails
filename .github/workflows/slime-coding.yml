@@ -8,6 +8,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -81,3 +85,15 @@ jobs:
       - name: Run Codex installer tests
         shell: powershell
         run: ./tests/test-codex-install.ps1
+
+  result:
+    name: Slime tests
+    if: ${{ always() }}
+    needs: [test, test-windows-installer]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both platform results
+        env:
+          POSIX_RESULT: ${{ needs.test.result }}
+          WINDOWS_RESULT: ${{ needs.test-windows-installer.result }}
+        run: test "$POSIX_RESULT" = success && test "$WINDOWS_RESULT" = success

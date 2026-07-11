@@ -48,6 +48,8 @@ Risk: <fill in: high, medium, none-detected, or unknown>
 """
 
 COMMENT_MARKER = "<!-- corridor-ci -->"
+WORKFLOW_APPROVAL_LABEL = "Guardrails-Workflow-Approval"
+WORKFLOW_PREFIX = ".github/workflows/"
 GITHUB_API_URL = "https://api.github.com"
 HttpTransport = Callable[[str, str, str, dict[str, str] | None], Any]
 
@@ -69,6 +71,14 @@ class VerificationProvenance:
     status: str
     partial: bool
     warnings: list[str]
+
+
+@dataclass(frozen=True)
+class WorkflowPolicyDecision:
+    ok: bool
+    changed_workflows: list[str]
+    approved_by: str | None
+    reason: str
 
 
 def normalize_path(path: str) -> str:
@@ -231,6 +241,10 @@ def diff_base(repo: Path) -> str:
 
 def extract_changed_files(repo: Path) -> list[str]:
     base = diff_base(repo)
+    return extract_changed_files_between(repo, base, "HEAD")
+
+
+def extract_changed_files_between(repo: Path, base: str, head: str) -> list[str]:
     # core.quotepath=false: git's default C-quoting turns non-ASCII paths
     # into "src/caf\303\251.py", which can never match a declared Scope
     # pattern, so such files would always be flagged outside the corridor.
@@ -238,7 +252,7 @@ def extract_changed_files(repo: Path) -> list[str]:
     # with the locale codepage (e.g. cp936 on Chinese Windows), which turns
     # "caf\303\251" into mojibake and re-opens the same false-block.
     proc = subprocess.run(
-        ["git", "-c", "core.quotepath=false", "diff", "--name-only", f"{base}...HEAD"],
+        ["git", "-c", "core.quotepath=false", "diff", "--name-only", f"{base}...{head}"],
         cwd=repo,
         capture_output=True,
         text=True,
@@ -248,6 +262,70 @@ def extract_changed_files(repo: Path) -> list[str]:
     if proc.returncode != 0:
         raise SystemExit(f"failed to read changed files: {proc.stderr.strip()}")
     return [normalize_path(p) for p in proc.stdout.splitlines() if p.strip()]
+
+
+def evaluate_workflow_policy(
+    *,
+    changed_files: list[str],
+    comments: list[Any],
+    head_sha: str,
+    pr_author: str,
+) -> WorkflowPolicyDecision:
+    """Require an external, head-bound approval for active workflow edits.
+
+    The approval is GitHub state, not PR-controlled text.  OWNER may approve
+    their own PR for single-maintainer repositories; MEMBER approval must come
+    from someone other than the PR author.  Any new commit changes ``head_sha``
+    and invalidates the approval.
+    """
+    changed_workflows = sorted(
+        path
+        for path in {normalize_path(p) for p in changed_files}
+        if path.startswith(WORKFLOW_PREFIX)
+    )
+    if not changed_workflows:
+        return WorkflowPolicyDecision(
+            ok=True,
+            changed_workflows=[],
+            approved_by=None,
+            reason="No active workflow files changed.",
+        )
+
+    normalized_head = head_sha.strip().lower()
+    approval_pattern = re.compile(
+        rf"(?m)^{re.escape(WORKFLOW_APPROVAL_LABEL)}:\s*"
+        rf"({re.escape(normalized_head)})\s*$"
+    )
+    normalized_author = pr_author.strip().lower()
+    for comment in comments if isinstance(comments, list) else []:
+        if not isinstance(comment, dict):
+            continue
+        body = comment.get("body")
+        association = str(comment.get("author_association") or "").upper()
+        user = comment.get("user")
+        login = str(user.get("login") or "") if isinstance(user, dict) else ""
+        if not isinstance(body, str) or not approval_pattern.search(body):
+            continue
+        if association == "OWNER" or (
+            association == "MEMBER" and login.strip().lower() != normalized_author
+        ):
+            return WorkflowPolicyDecision(
+                ok=True,
+                changed_workflows=changed_workflows,
+                approved_by=login or association.lower(),
+                reason=f"Workflow change approved for head {normalized_head}.",
+            )
+
+    return WorkflowPolicyDecision(
+        ok=False,
+        changed_workflows=changed_workflows,
+        approved_by=None,
+        reason=(
+            "Active workflow files changed without a trusted approval for the "
+            f"current head. Add an exact PR comment: {WORKFLOW_APPROVAL_LABEL}: "
+            f"{normalized_head}"
+        ),
+    )
 
 
 def split_path_list(raw: str) -> list[str]:
@@ -721,6 +799,99 @@ def github_api_request(method: str, url: str, token: str, payload: dict[str, str
     return json.loads(body.decode("utf-8"))
 
 
+def read_pr_comments(
+    *,
+    token: str,
+    repository: str,
+    pr_number: str | int,
+    transport: HttpTransport | None = None,
+) -> list[dict[str, Any]]:
+    """Read every PR issue comment; malformed API shapes fail closed."""
+    api_url = os.environ.get("GITHUB_API_URL", GITHUB_API_URL).rstrip("/")
+    comments_url = f"{api_url}/repos/{repository}/issues/{pr_number}/comments"
+    transport = transport or github_api_request
+    collected: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        result = transport(
+            "GET", f"{comments_url}?per_page=100&page={page}", token, None
+        )
+        if not isinstance(result, list):
+            raise RuntimeError("GitHub comments response was not a list")
+        collected.extend(comment for comment in result if isinstance(comment, dict))
+        if len(result) < 100:
+            return collected
+        page += 1
+
+
+def _safe_policy_path(path: str) -> str:
+    return path.replace("`", "'").replace("\r", "\\r").replace("\n", "\\n")
+
+
+def render_workflow_policy(decision: WorkflowPolicyDecision) -> str:
+    status = "PASS" if decision.ok else "FAIL"
+    lines = [
+        f"# Policy Gate: {status}",
+        "",
+        f"- active workflow files changed: {len(decision.changed_workflows)}",
+        f"- approval: {decision.approved_by or 'none'}",
+        "",
+        decision.reason,
+    ]
+    if decision.changed_workflows:
+        lines.extend(
+            ["", "## Active Workflow Changes"]
+            + [f"- `{_safe_policy_path(path)}`" for path in decision.changed_workflows]
+        )
+    return "\n".join(lines) + "\n"
+
+
+def run_policy_gate(repo: Path, base: str, head: str) -> int:
+    event = read_event_payload()
+    pull = event.get("pull_request") if isinstance(event, dict) else None
+    if not isinstance(pull, dict):
+        raise SystemExit("policy gate requires a pull_request_target event payload")
+    head_data = pull.get("head")
+    user_data = pull.get("user")
+    head_sha = str(head_data.get("sha") or "") if isinstance(head_data, dict) else ""
+    pr_author = str(user_data.get("login") or "") if isinstance(user_data, dict) else ""
+    if re.fullmatch(r"[0-9a-fA-F]{40}", head_sha) is None or not pr_author:
+        raise SystemExit("policy gate event is missing a valid head SHA or PR author")
+
+    token = os.environ.get("GITHUB_TOKEN")
+    repository = os.environ.get("GITHUB_REPOSITORY")
+    pr_number = find_pr_number()
+    if not token or not repository or not pr_number:
+        raise SystemExit(
+            "policy gate requires GITHUB_TOKEN, GITHUB_REPOSITORY, and PR number"
+        )
+
+    changed = extract_changed_files_between(repo, base, head)
+    workflow_changed = any(
+        normalize_path(path).startswith(WORKFLOW_PREFIX) for path in changed
+    )
+    comments: list[dict[str, Any]] = []
+    if workflow_changed:
+        try:
+            comments = read_pr_comments(
+                token=token, repository=repository, pr_number=pr_number
+            )
+        except Exception as exc:
+            raise SystemExit(
+                f"policy gate could not read trusted approvals: {exc}"
+            ) from exc
+    decision = evaluate_workflow_policy(
+        changed_files=changed,
+        comments=comments,
+        head_sha=head_sha,
+        pr_author=pr_author,
+    )
+    markdown = render_workflow_policy(decision)
+    print(markdown)
+    write_step_summary(markdown)
+    return 0 if decision.ok else 1
+
+
 def upsert_pr_comment(
     markdown: str,
     *,
@@ -771,6 +942,13 @@ def upsert_pr_comment(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Validate a PR against a declared corridor.")
     parser.add_argument("--repo", default=".", help="repository checkout path")
+    parser.add_argument(
+        "--policy-gate",
+        action="store_true",
+        help="protect active workflow changes using default-branch policy",
+    )
+    parser.add_argument("--base", help="base revision for --policy-gate")
+    parser.add_argument("--head", help="head revision for --policy-gate")
     parser.add_argument("--mode", choices=("fail", "warn"), default=os.environ.get("INPUT_MODE", "fail"))
     parser.add_argument("--allow-dependencies", default=os.environ.get("INPUT_ALLOW_DEPENDENCIES", "false"))
     parser.add_argument("--comment", default=os.environ.get("INPUT_COMMENT", "false"))
@@ -789,6 +967,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     repo = Path(args.repo).resolve()
+    if args.policy_gate:
+        if not args.base or not args.head:
+            raise SystemExit("--policy-gate requires --base and --head")
+        return run_policy_gate(repo, args.base, args.head)
     corridor = find_pr_body()
     changed = extract_changed_files(repo)
     report = evaluate(

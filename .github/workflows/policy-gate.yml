@@ -1,0 +1,44 @@
+name: Guardrails policy
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  policy:
+    name: Policy Gate
+    runs-on: ubuntu-latest
+    steps:
+      # pull_request_target loads this workflow from the base branch. Checkout
+      # that same trusted revision; the PR tree is fetched only as Git data and
+      # none of its scripts, actions, or configuration are executed.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - name: Fetch PR head as data
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: git fetch --no-tags origin "pull/${PR_NUMBER}/head:refs/remotes/origin/guardrails-pr-head"
+
+      - name: Enforce base-branch workflow policy
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          POLICY_BASE: ${{ github.event.pull_request.base.sha }}
+          POLICY_HEAD: refs/remotes/origin/guardrails-pr-head
+        run: >-
+          python corridor-ci/bin/corridor_ci.py
+          --repo .
+          --policy-gate
+          --base "$POLICY_BASE"
+          --head "$POLICY_HEAD"

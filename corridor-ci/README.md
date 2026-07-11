@@ -152,16 +152,6 @@ Fork PRs can receive a read-only `GITHUB_TOKEN`, which may make the comment API
 return `403`. Corridor CI logs one line and continues; the step summary is still
 written.
 
-## Bots
-
-Skip bot PRs at the job or step level:
-
-```yaml
-jobs:
-  corridor:
-    if: github.actor != 'dependabot[bot]'
-```
-
 ## Inputs
 
 | input | default | meaning |
