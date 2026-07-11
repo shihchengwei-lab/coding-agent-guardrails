@@ -11,6 +11,20 @@ from agentcam import __version__
 
 def test_release_version_matches_product_closure_release():
     assert __version__ == "0.5.0"
+
+
+def test_release_workflow_uses_oidc_and_releases_only_after_pypi():
+    workflow = (
+        Path(__file__).resolve().parents[2]
+        / ".github" / "workflows" / "agentcam-publish.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "tags: ['agentcam-v*']" in workflow
+    assert "id-token: write" in workflow
+    assert "pypa/gh-action-pypi-publish@release/v1" in workflow
+    assert "needs: [build, publish-pypi]" in workflow
+    assert "gh release create" in workflow
+    assert "python -m build" in workflow
 from agentcam.models import (
     ExitDetail,
     GitState,
