@@ -7,18 +7,15 @@ configured typecheck/test commands pass, new dependencies are justified, all
 product changes remain inside the corridor, and trivial work changes at most one
 product file. PRUNED.md records rejected routes; it never waives a red gate.
 
-Environment overrides:
-  SLIME_TYPECHECK_CMD  optional typecheck command; if configured it must run and pass.
-  SLIME_TEST_CMD       optional completion command, overriding Stop Condition Command.
-  SLIME_TEST_TIMEOUT   seconds allowed for either command (default 600).
+Trusted checks are loaded from <git-dir>/guardrails/config.json and executed
+as argv with shell=False. SLIME_TEST_TIMEOUT may lower their timeout ceiling.
+Legacy SLIME_TYPECHECK_CMD and SLIME_TEST_CMD values are migration errors.
   SLIME_PUBSPEC        alternate pubspec path (default pubspec.yaml).
 """
 import json
 import hashlib
 import os
 import re
-import shlex
-import shutil
 import subprocess
 import sys
 
@@ -143,7 +140,7 @@ def section_has_labeled_item(sections, section, label):
     return any(pattern.match(line) for line in sections.get(section, []))
 
 
-def corridor_problem(cwd):
+def corridor_problem(cwd, require_migrated=False):
     """Return a reason string if the corridor is missing/invalid, else None.
 
     Only unambiguous signals block: missing file, missing header, the template
@@ -175,9 +172,11 @@ def corridor_problem(cwd):
     sections = corridor_sections(cwd)
     rigor = corridor_rigor(cwd, sections)
     if rigor == "legacy":
-        # Compatibility contract: an existing corridor with no explicit Rigor
-        # keeps the pre-rigor section shape; match-all Paths are still invalid
-        # because they erase the boundary rather than migrate its format.
+        if require_migrated:
+            return (
+                ".slime/corridor.md requires an explicit Rigor migration before "
+                "product work can continue"
+            )
         return None
     if rigor not in RIGOR_LEVELS:
         if rigor == "<empty>":
@@ -200,13 +199,33 @@ def corridor_problem(cwd):
             return ".slime/corridor.md Evidence requires a non-empty 'Would falsify:' item"
 
     if rigor == "high":
-        for label in ("Failure mode:", "Rollback:", "Independent check command:"):
+        for label in ("Failure mode:", "Rollback:", "Independent check:"):
             if not section_has_labeled_item(sections, "high-risk controls", label):
                 return (
                     ".slime/corridor.md High-risk Controls requires a non-empty '"
                     + label
                     + "' item"
                 )
+    for lines in sections.values():
+        if any(re.match(r"-\s*(?:Independent check )?Command:", line, re.IGNORECASE) for line in lines):
+            return (
+                "inline Command fields are disabled; migration requires Check IDs "
+                "from <git-dir>/guardrails/config.json"
+            )
+
+    primary = stop_check_ids(cwd)
+    manual = stop_manual(cwd)
+    if not primary and not manual:
+        return ".slime/corridor.md Stop Condition requires Check: or Manual:"
+    if rigor == "high" and not primary:
+        return ".slime/corridor.md high rigor requires at least one primary Check:"
+    if rigor == "high" and not independent_check_id(cwd):
+        return ".slime/corridor.md high rigor requires Independent check:"
+
+    if primary or rigor == "high":
+        _, config_error = load_trusted_checks(cwd)
+        if config_error:
+            return config_error
     return None
 
 
@@ -535,68 +554,89 @@ def dependency_package(record):
     return record.rsplit(": ", 1)[-1].lower()
 
 
-def stop_command(cwd):
+CHECK_ID_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
+
+
+def stop_check_ids(cwd):
+    result = []
     for line in corridor_sections(cwd).get("stop condition", []):
-        match = re.match(r"-\s*Command:\s*(.+)", line, re.IGNORECASE)
+        match = re.match(r"-\s*Check:\s*(\S+)\s*$", line, re.IGNORECASE)
         if match:
-            return match.group(1).strip().strip("`")
-    return None
+            result.append(match.group(1).lower())
+    return result
 
 
-def independent_check_command(cwd):
+def stop_manual(cwd):
+    for line in corridor_sections(cwd).get("stop condition", []):
+        if re.match(r"-\s*Manual:\s*\S", line, re.IGNORECASE):
+            return True
+    return False
+
+
+def independent_check_id(cwd):
     for line in corridor_sections(cwd).get("high-risk controls", []):
-        match = re.match(
-            r"-\s*Independent check command:\s*(.+)", line, re.IGNORECASE
-        )
+        match = re.match(r"-\s*Independent check:\s*(\S+)\s*$", line, re.IGNORECASE)
         if match:
-            return match.group(1).strip().strip("`")
+            return match.group(1).lower()
     return None
 
 
-def run_shell_check(cwd, cmd, label="check"):
-    if not cmd:
+def guardrails_config_path(cwd):
+    git_dir = git(cwd, "rev-parse", "--absolute-git-dir").strip()
+    if not git_dir:
         return None
+    return os.path.join(git_dir, "guardrails", "config.json")
+
+
+def load_trusted_checks(cwd):
+    path = guardrails_config_path(cwd)
+    if not path:
+        return {}, "could not resolve <git-dir>/guardrails/config.json"
     try:
-        timeout = int(os.environ.get("SLIME_TEST_TIMEOUT", "600"))
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError) as exc:
+        return {}, f"trusted check config.json could not be read: {exc}"
+    if not isinstance(data, dict) or type(data.get("schema")) is not int or data.get("schema") != 1:
+        return {}, "trusted check config.json requires integer schema 1"
+    raw_checks = data.get("checks")
+    if not isinstance(raw_checks, dict):
+        return {}, "trusted check config.json requires a checks object"
+    checks = {}
+    for check_id, value in raw_checks.items():
+        if not isinstance(check_id, str) or not CHECK_ID_RE.fullmatch(check_id):
+            return {}, f"trusted check ID {check_id!r} must match [a-z0-9_-] and be 1-64 characters"
+        if not isinstance(value, dict):
+            return {}, f"trusted check {check_id!r} must be an object"
+        argv = value.get("argv")
+        if (
+            not isinstance(argv, list)
+            or not argv
+            or any(not isinstance(item, str) or not item for item in argv)
+        ):
+            return {}, f"trusted check {check_id!r} argv must be a non-empty string array"
+        timeout = value.get("timeout_seconds", 600)
+        if type(timeout) is not int or not 1 <= timeout <= 3600:
+            return {}, f"trusted check {check_id!r} timeout_seconds must be an integer from 1 to 3600"
+        checks[check_id] = {"argv": list(argv), "timeout_seconds": timeout}
+    return checks, None
+
+
+def run_trusted_check(cwd, check, check_id):
+    try:
+        ceiling = int(os.environ.get("SLIME_TEST_TIMEOUT", "3600"))
+        if not 1 <= ceiling <= 3600:
+            raise ValueError("SLIME_TEST_TIMEOUT must be from 1 to 3600")
+        timeout = min(check["timeout_seconds"], ceiling)
         r = subprocess.run(
-            cmd, cwd=cwd, shell=True, capture_output=True, text=True, timeout=timeout
+            check["argv"], cwd=cwd, shell=False, capture_output=True, text=True,
+            timeout=timeout,
         )
         return r.returncode, (r.stdout or r.stderr or "")
     except subprocess.TimeoutExpired:
-        return 124, f"{label} timed out after {timeout} seconds: {cmd}"
+        return 124, f"trusted check {check_id} timed out after {timeout} seconds"
     except Exception as exc:
-        return 126, f"{label} could not run: {exc}"
-
-
-def run_check(cwd):
-    cmd = os.environ.get("SLIME_TEST_CMD") or stop_command(cwd)
-    return run_shell_check(cwd, cmd)
-
-
-def run_typecheck(cwd):
-    """Run the configured typecheck; configured means it must run and pass."""
-    cmd = os.environ.get("SLIME_TYPECHECK_CMD")
-    if not cmd:
-        return None
-    # Resolve the first token so a missing executable produces the same clear
-    # failure on POSIX and Windows instead of depending on shell exit codes.
-    try:
-        parts = shlex.split(cmd, posix=(os.name != "nt"))
-    except ValueError:
-        parts = cmd.split()
-    prog = parts[0] if parts else ""
-    if prog and not shutil.which(prog):
-        return 127, f"typecheck could not run: command not found: {prog}"
-    try:
-        timeout = int(os.environ.get("SLIME_TEST_TIMEOUT", "600"))
-        r = subprocess.run(
-            cmd, cwd=cwd, shell=True, capture_output=True, text=True, timeout=timeout
-        )
-        return r.returncode, (r.stdout or r.stderr or "")
-    except subprocess.TimeoutExpired:
-        return 124, f"typecheck timed out after {timeout} seconds: {cmd}"
-    except Exception as exc:
-        return 126, f"typecheck could not run: {exc}"
+        return 126, f"trusted check {check_id} could not run: {exc}"
 
 
 # --------------------------------------------------------------------------
@@ -914,15 +954,25 @@ def product_paths(cwd, baseline=None):
 
 def stop_blocks(cwd, baseline=None):
     blocks = []
-
-    typecheck = run_typecheck(cwd)
-    if typecheck is not None and typecheck[0] != 0:
+    products = product_paths(cwd, baseline)
+    problem = corridor_problem(cwd, require_migrated=bool(products))
+    legacy_env = [
+        name for name in ("SLIME_TEST_CMD", "SLIME_TYPECHECK_CMD")
+        if os.environ.get(name)
+    ]
+    if legacy_env and products:
         blocks.append(
-            "Typecheck failed or could not run (exit "
-            + str(typecheck[0])
-            + "). Fix the command or code before finishing; unresolved names "
-            "may be hallucinated attachment points.\n\n"
-            + typecheck[1][:1500]
+            "Legacy command environment migration required: "
+            + ", ".join(legacy_env)
+            + " is no longer executed; define trusted Check IDs in "
+            "<git-dir>/guardrails/config.json."
+        )
+    if problem and products:
+        blocks.append(
+            "Product code changed but "
+            + problem
+            + ". Restore or complete .slime/corridor.md before finishing: "
+            + ", ".join(products[:10])
         )
 
     allowed_dependencies = justified_dependencies(cwd)
@@ -939,34 +989,53 @@ def stop_blocks(cwd, baseline=None):
             ".slime/corridor.md Evidence."
         )
 
-    check = run_check(cwd)
-    if check is not None and check[0] != 0:
-        blocks.append(
-            "Configured Stop check failed or could not run (exit "
-            + str(check[0])
-            + "). Make it pass before finishing. PRUNED.md records rejected "
-            "routes; it never waives a failing check.\n\n"
-            + check[1][:1500]
+    if not problem and not legacy_env:
+        checks, config_error = load_trusted_checks(cwd)
+        primary_ids = stop_check_ids(cwd)
+        independent_id = (
+            independent_check_id(cwd) if corridor_rigor(cwd) == "high" else None
         )
-
-    if corridor_rigor(cwd) == "high":
-        independent_cmd = independent_check_command(cwd)
-        primary_cmd = os.environ.get("SLIME_TEST_CMD") or stop_command(cwd)
-        if independent_cmd and primary_cmd and independent_cmd == primary_cmd:
-            blocks.append(
-                "Independent check command must differ from the Stop Condition command."
-            )
+        referenced = primary_ids + ([independent_id] if independent_id else [])
+        if referenced and config_error:
+            blocks.append(config_error)
         else:
-            independent = run_shell_check(
-                cwd, independent_cmd, label="independent check"
-            )
-            if independent is not None and independent[0] != 0:
-                blocks.append(
-                    "Independent check failed or could not run (exit "
-                    + str(independent[0])
-                    + "). Fix the high-risk control before finishing.\n\n"
-                    + independent[1][:1500]
-                )
+            unknown = [check_id for check_id in referenced if check_id not in checks]
+            if unknown:
+                blocks.append("Unknown check ID in trusted config: " + ", ".join(unknown))
+            duplicate = independent_id in primary_ids if independent_id else False
+            if duplicate:
+                blocks.append("Independent check ID must differ from primary Check IDs.")
+            if independent_id and independent_id in checks:
+                independent_argv = tuple(checks[independent_id]["argv"])
+                if any(
+                    check_id in checks
+                    and tuple(checks[check_id]["argv"]) == independent_argv
+                    for check_id in primary_ids
+                ):
+                    blocks.append(
+                        "Independent check has the same argv as a primary check."
+                    )
+            if not unknown and not duplicate and not any(
+                "same argv" in block.lower() for block in blocks
+            ):
+                for check_id in primary_ids:
+                    result = run_trusted_check(cwd, checks[check_id], check_id)
+                    if result[0] != 0:
+                        blocks.append(
+                            f"Trusted check {check_id} failed or could not run "
+                            f"(exit {result[0]}).\n\n{result[1][:1500]}"
+                        )
+                if independent_id:
+                    result = run_trusted_check(
+                        cwd, checks[independent_id], independent_id
+                    )
+                    if result[0] != 0:
+                        blocks.append(
+                            "Independent check failed or could not run (exit "
+                            + str(result[0])
+                            + ").\n\n"
+                            + result[1][:1500]
+                        )
 
     outside = out_of_corridor_files(cwd, baseline)
     if outside:
@@ -975,16 +1044,6 @@ def stop_blocks(cwd, baseline=None):
             + ", ".join(outside[:10])
             + ". Move the change inside Paths or update the corridor with the "
             "new evidence before editing."
-        )
-
-    products = product_paths(cwd, baseline)
-    problem = corridor_problem(cwd)
-    if problem and products:
-        blocks.append(
-            "Product code changed but "
-            + problem
-            + ". Restore or complete .slime/corridor.md before finishing: "
-            + ", ".join(products[:10])
         )
 
     if corridor_rigor(cwd) == "trivial" and len(products) > 1:
@@ -1025,15 +1084,27 @@ def post_tool(data):
         return
     baseline = load_baseline(cwd, data)
     outside = out_of_corridor_files(cwd, baseline)
+    products = product_paths(cwd, baseline)
+    problem = corridor_problem(cwd, require_migrated=bool(products))
+    reasons = []
+    if problem and products:
+        reasons.append(
+            "Shell command produced product edits while " + problem + "."
+        )
     if outside:
+        reasons.append(
+            "Shell command produced out-of-corridor product edits: "
+            + ", ".join(outside[:10])
+            + "."
+        )
+    if reasons:
         print(
             json.dumps(
                 {
                     "decision": "block",
                     "reason": (
-                        "Shell command produced out-of-corridor product edits: "
-                        + ", ".join(outside[:10])
-                        + ". Revert them or update the corridor with new evidence. "
+                        " ".join(reasons)
+                        + " Revert them or update the corridor with new evidence. "
                         "The shell side effect already occurred; this hook cannot undo it."
                     ),
                 }

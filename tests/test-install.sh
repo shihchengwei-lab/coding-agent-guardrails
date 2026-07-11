@@ -52,8 +52,8 @@ assert any("hook-session-end" in c for c in cmds), cmds
 PY
 
 test -f .github/workflows/corridor.yml
-grep -q '^# coding-agent-guardrails:managed corridor-ci-v12$' .github/workflows/corridor.yml
-grep -q 'corridor-ci@corridor-ci-v12' .github/workflows/corridor.yml
+grep -q '^# coding-agent-guardrails:managed corridor-ci-v13.0.0$' .github/workflows/corridor.yml
+grep -q 'corridor-ci@corridor-ci-v13.0.0' .github/workflows/corridor.yml
 grep -q '^## Rigor$' .slime/corridor.md
 grep -A1 '^## Rigor$' .slime/corridor.md | grep -q '^normal$'
 
@@ -65,7 +65,7 @@ grep -A1 '^## Rigor$' .slime/corridor.md | grep -q '^normal$'
 # The exact official v11 starter is safely upgraded; a custom workflow is not.
 cp "$HERE/tests/fixtures/corridor-v11-workflow.yml" .github/workflows/corridor.yml
 "$HERE/install.sh" "$TMP" >/dev/null
-grep -q 'corridor-ci@corridor-ci-v12' .github/workflows/corridor.yml
+grep -q 'corridor-ci@corridor-ci-v13.0.0' .github/workflows/corridor.yml
 printf '# custom corridor workflow\n' > .github/workflows/corridor.yml
 custom_out=$("$HERE/install.sh" "$TMP")
 grep -q '^# custom corridor workflow$' .github/workflows/corridor.yml

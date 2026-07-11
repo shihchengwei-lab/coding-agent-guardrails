@@ -78,7 +78,7 @@ Verify:
 
 ```bash
 agentcam version
-# agentcam 0.4.0
+# agentcam 0.5.0
 ```
 
 ---

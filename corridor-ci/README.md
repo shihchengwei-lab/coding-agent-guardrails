@@ -55,7 +55,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v12
+      - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v13.0.0
         with:
           mode: fail
 ```
@@ -99,9 +99,9 @@ the diff instead of declaring where the change was meant to stop.
 
 `Verified` may describe a manual check. When a committed agentcam manifest is
 available, Corridor CI labels the line `local-recorded` only when its exact
-command and exit-0 result match the manifest and the handoff uses
-`[locally recorded by agentcam]`. The old marker remains compatible with a
-legacy warning. Otherwise it reports `manual` or
+grammar, integer exit-0 result, verification state fingerprint, and product
+fingerprint match the current PR and the handoff uses
+`[locally recorded by agentcam]`. The old marker is rejected. Otherwise it reports `manual` or
 `unverified`; hook-mode or legacy capture is also marked `partial`. Manual
 verification remains valid and visibly weaker. A placeholder or false recorded
 claim is `unverified` and fails the corridor.
@@ -116,7 +116,10 @@ more directories, so `pkg/**/*.py` covers both `pkg/top.py` and
 - Required handoff fields exist.
 - Explicit `Scope` paths or globs cover the changed files.
 - `Review first` points to a changed file.
-- Dependency manifest changes are blocked unless explicitly allowed.
+- Dependency manifest changes require an OWNER/MEMBER comment bound to the
+  current head SHA: `Guardrails-Dependency-Approval: <full-head-sha>`.
+- `Risk` must be `high`, `medium`, `none-detected`, or `unknown` and cannot
+  underreport the committed agentcam manifest.
 - `Verified` names a completed manual check or matches a passing agentcam check.
 
 Warnings never block. Corridor CI warns when `Decision` has no
@@ -143,7 +146,7 @@ permissions:
   pull-requests: write
 
 steps:
-  - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v12
+  - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v13.0.0
     with:
       comment: true
 ```
@@ -157,7 +160,6 @@ written.
 | input | default | meaning |
 |---|---:|---|
 | `mode` | `fail` | `fail` exits non-zero on issues; `warn` only reports. |
-| `allow_dependencies` | `false` | Allow dependency manifest changes. |
 | `comment` | `false` | Upsert the report as a sticky PR comment. |
 | `agentcam_evidence` | `.agentcam/manifest.redacted.json` | Committed agentcam manifest (from `agentcam export --files`); its evidence, verification provenance, and capture coverage are appended. Unverified claims fail; manual and partial provenance remain visible. |
 

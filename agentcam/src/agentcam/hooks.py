@@ -148,6 +148,7 @@ def _do_session_start(*, id_field: str = "session_id") -> int:
         NotAGitRepoError,
         collect_git_state,
         compute_diff_fingerprint,
+        read_declared_scope,
         resolve_git_dir,
         resolve_git_root,
     )
@@ -194,6 +195,7 @@ def _do_session_start(*, id_field: str = "session_id") -> int:
         "git_dir": str(git_dir),
         "state": state,
         "fingerprint": fingerprint,
+        "declared_scope": read_declared_scope(git_root),
     }
     # NOTE: pickle is acceptable here -- files live under .git/agentcam/
     # which is local-only and write-controlled by the user. Same trust
@@ -206,30 +208,6 @@ def _do_session_start(*, id_field: str = "session_id") -> int:
     os.replace(tmp_path, state_file)
 
     return 0
-
-
-def _load_pending_verifications(session_dir: Path) -> list[dict]:
-    """Checks stashed by `agentcam verify` during an in-progress
-    session (cli.py writes one JSON object per line). Tolerant: a
-    corrupt line loses that line, never the report."""
-    records: list[dict] = []
-    try:
-        with (session_dir / "verifications.jsonl").open(
-            encoding="utf-8"
-        ) as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    rec = json.loads(line)
-                except ValueError:
-                    continue
-                if isinstance(rec, dict):
-                    records.append(rec)
-    except OSError:
-        return []
-    return records
 
 
 def cmd_hook_session_end() -> int:
@@ -275,6 +253,8 @@ def _do_session_end(
         NotAGitRepoError,
         collect_git_state,
         compute_diff_fingerprint,
+        compute_final_state_fingerprint,
+        derive_turn_delta,
         resolve_git_dir,
     )
     from agentcam.models import capture_for_claude_hook, capture_for_codex_hook
@@ -345,6 +325,7 @@ def _do_session_end(
             )
         state_before = snapshot["state"]
         fingerprint_before = snapshot["fingerprint"]
+        declared_scope = snapshot.get("declared_scope", [])
         started_at = snapshot["started_at"]
         git_root_str = snapshot["git_root"]
         # Type checks for every field used downstream. Codex round-2
@@ -359,6 +340,10 @@ def _do_session_end(
             raise ValueError("snapshot['started_at'] is not a datetime")
         if not isinstance(fingerprint_before, str):
             raise ValueError("fingerprint not a str")
+        if not isinstance(declared_scope, list) or not all(
+            isinstance(value, str) for value in declared_scope
+        ):
+            raise ValueError("declared_scope not a list of strings")
         if not isinstance(git_root_str, str):
             raise ValueError("git_root not a str")
     except Exception:  # noqa: BLE001 — degrade gracefully
@@ -370,6 +355,7 @@ def _do_session_end(
 
     state_after = collect_git_state(cwd, is_after=True)
     fingerprint_after = compute_diff_fingerprint(cwd)
+    state_after = derive_turn_delta(Path(git_root_str), state_before, state_after)
 
     no_change = (
         state_before.head == state_after.head
@@ -446,24 +432,18 @@ def _do_session_end(
             platform_label=_platform.system().lower(),
             capture=capture,
             ruleset=provenance_for_builtin_ruleset(),
+            declared_scope=declared_scope,
+            final_state_fingerprint=compute_final_state_fingerprint(
+                Path(git_root_str)
+            ),
         )
-        # Load the stash only after the (slow) render above: checks
-        # appended by `agentcam verify` while the report was being
-        # built are still merged.
-        pending_verifications = _load_pending_verifications(session_dir)
-        if pending_verifications:
-            # Same append-to-manifest shape as `agentcam verify` itself
-            # (cli.py). A failure here re-raises: a report silently
-            # missing checks the user was told were recorded is worse
-            # than no report, and the except below cleans up.
-            manifest_path = Path(run_paths.manifest_json)
-            data = json.loads(manifest_path.read_text(encoding="utf-8"))
-            data["evidence"].setdefault("verifications", []).extend(
-                pending_verifications
-            )
-            manifest_path.write_text(
-                json.dumps(data, indent=2), encoding="utf-8"
-            )
+        # Transfer records only after the report exists. Each verify owns
+        # one atomic file, so concurrent checks never share a read-modify-write
+        # target. The manifest is a derived compatibility view.
+        from .verification import sync_manifest, transfer_records
+
+        transfer_records(session_dir, Path(run_paths.run_dir))
+        sync_manifest(Path(run_paths.run_dir))
     except Exception:
         # Half-written run dir is worse than no run dir — it confuses
         # the user (placeholder logs, no report, unclear what

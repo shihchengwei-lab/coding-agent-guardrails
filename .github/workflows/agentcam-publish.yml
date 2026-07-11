@@ -1,0 +1,72 @@
+name: agentcam publish
+
+on:
+  push:
+    tags: ['agentcam-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Require tag and package versions to match
+        working-directory: agentcam
+        shell: bash
+        run: |
+          expected="${GITHUB_REF_NAME#agentcam-v}"
+          actual="$(python -c 'from src.agentcam import __version__; print(__version__)')"
+          test "$actual" = "$expected"
+
+      - name: Build wheel and source distribution
+        working-directory: agentcam
+        run: |
+          python -m pip install --disable-pip-version-check build
+          python -m build --outdir dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentcam-dist
+          path: agentcam/dist/*
+          if-no-files-found: error
+
+  publish-pypi:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: agentcam-dist
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+
+  release:
+    needs: [build, publish-pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: agentcam-dist
+          path: dist
+
+      - name: Create immutable GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --latest

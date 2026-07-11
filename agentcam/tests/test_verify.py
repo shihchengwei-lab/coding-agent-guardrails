@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -34,6 +35,8 @@ class TestVerify:
         assert checks[0]["duration_seconds"] >= 0
         assert checks[0]["recorded_at"]
         assert "-c" in checks[0]["command"]
+        assert checks[0]["record_id"]
+        assert len(checks[0]["state_fingerprint"]) == 64
 
     def test_failing_check_passes_exit_code_through(
         self, tmp_git_repo: Path
@@ -145,10 +148,10 @@ class TestVerify:
     ):
         """A PATHEXT-only runner on PATH (the `npm` shape: npm.cmd)
         must work by bare name — `verify` resolves via shutil.which."""
-        _make_one_run(tmp_git_repo)
         (tmp_git_repo / "okcheck.cmd").write_text(
             "@exit /b 0\r\n", encoding="ascii"
         )
+        _make_one_run(tmp_git_repo)
         env = {
             **os.environ,
             "PATH": f"{tmp_git_repo}{os.pathsep}"
@@ -187,6 +190,83 @@ class TestVerifiedLineInHandoff:
         assert "<fill in" in verified
         assert "exit 3" in verified
 
+    def test_newer_failure_overrides_older_pass(self, tmp_git_repo: Path):
+        _make_one_run(tmp_git_repo)
+        same_command = (
+            sys.executable,
+            "-c",
+            "import os; raise SystemExit(int(os.environ['VERIFY_EXIT']))",
+        )
+        assert _agentcam(
+            tmp_git_repo,
+            "verify",
+            "--",
+            *same_command,
+            env={**os.environ, "VERIFY_EXIT": "0"},
+        ).returncode == 0
+        assert _agentcam(
+            tmp_git_repo,
+            "verify",
+            "--",
+            *same_command,
+            env={**os.environ, "VERIFY_EXIT": "3"},
+        ).returncode == 3
+
+        proc = _agentcam(tmp_git_repo, "handoff")
+
+        assert proc.returncode == 0, proc.stderr
+        verified = proc.stdout.decode("utf-8").strip().splitlines()[3]
+        assert "<fill in" in verified
+        assert "exit 3" in verified
+        assert "locally recorded" not in verified
+
+    def test_product_edit_after_verify_makes_handoff_stale(
+        self, tmp_git_repo: Path
+    ):
+        _make_one_run(tmp_git_repo)
+        assert _agentcam(tmp_git_repo, "verify", "--", *PASS_CMD).returncode == 0
+        (tmp_git_repo / "produced.txt").write_text("changed later", encoding="utf-8")
+
+        proc = _agentcam(tmp_git_repo, "handoff")
+
+        assert proc.returncode == 2
+        assert b"state changed after the recorded run" in proc.stderr
+
+    def test_verify_latest_rejects_multiple_active_sessions(
+        self, tmp_git_repo: Path
+    ):
+        _make_one_run(tmp_git_repo)
+        sessions = tmp_git_repo / ".git" / "agentcam" / "sessions"
+        for name in ("turn-a", "turn-b"):
+            session = sessions / name
+            session.mkdir(parents=True)
+            (session / "state_before.pickle").write_bytes(b"snapshot")
+
+        proc = _agentcam(tmp_git_repo, "verify", "--", *PASS_CMD)
+
+        assert proc.returncode == 2
+        assert b"multiple active sessions" in proc.stderr
+
+    def test_concurrent_verifications_are_all_preserved(
+        self, tmp_git_repo: Path
+    ):
+        _make_one_run(tmp_git_repo)
+
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            results = list(
+                pool.map(
+                    lambda _: _agentcam(tmp_git_repo, "verify", "--", *PASS_CMD),
+                    range(6),
+                )
+            )
+
+        assert all(proc.returncode == 0 for proc in results)
+        handoff = _agentcam(tmp_git_repo, "handoff")
+        assert handoff.returncode == 0, handoff.stderr
+        records = list((_run_dir(tmp_git_repo) / "verifications").glob("*.json"))
+        assert len(records) == 6
+        assert all(json.loads(path.read_text("utf-8")) for path in records)
+
     def test_export_files_carries_verifications(
         self, tmp_git_repo: Path
     ):
@@ -202,3 +282,20 @@ class TestVerifiedLineInHandoff:
         )
         checks = redacted["evidence"]["verifications"]
         assert checks and checks[0]["exit_code"] == 0
+
+    def test_exported_evidence_files_do_not_stale_handoff(
+        self, tmp_git_repo: Path
+    ):
+        rid = _make_one_run(tmp_git_repo)
+        assert _agentcam(
+            tmp_git_repo, "verify", "--", *PASS_CMD
+        ).returncode == 0
+        exported = _agentcam(
+            tmp_git_repo, "export", rid, "--files", str(tmp_git_repo / ".agentcam")
+        )
+        assert exported.returncode == 0, exported.stderr
+
+        handoff = _agentcam(tmp_git_repo, "handoff")
+
+        assert handoff.returncode == 0, handoff.stderr
+        assert b"[locally recorded by agentcam]" in handoff.stdout

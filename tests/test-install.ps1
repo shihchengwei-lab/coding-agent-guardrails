@@ -67,8 +67,8 @@ try {
     throw "Corridor workflow not installed"
   }
   $workflow = Get-Content -Raw -Encoding utf8 (Join-Path $Project ".github/workflows/corridor.yml")
-  if ($workflow -notmatch "coding-agent-guardrails:managed corridor-ci-v12" -or
-      $workflow -notmatch "corridor-ci@corridor-ci-v12") {
+  if ($workflow -notmatch "coding-agent-guardrails:managed corridor-ci-v13\.0\.0" -or
+      $workflow -notmatch "corridor-ci@corridor-ci-v13\.0\.0") {
     throw "installed Corridor workflow is not the managed v12 template"
   }
 
@@ -78,7 +78,7 @@ try {
     -Destination (Join-Path $Project ".github/workflows/corridor.yml") -Force
   & $Installer -Project $Project -Python $Python | Out-Null
   $workflow = Get-Content -Raw -Encoding utf8 (Join-Path $Project ".github/workflows/corridor.yml")
-  if ($workflow -notmatch "corridor-ci@corridor-ci-v12") {
+  if ($workflow -notmatch "corridor-ci@corridor-ci-v13\.0\.0") {
     throw "official v11 workflow was not upgraded"
   }
   "# custom corridor workflow" | Set-Content -Encoding utf8 (Join-Path $Project ".github/workflows/corridor.yml")

@@ -6,10 +6,13 @@ mirroring tests/test_export.py.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
 from cli_harness import _agentcam, _make_one_run, _run_dir
+from agentcam.git_state import compute_product_fingerprint
+from agentcam.models import ChangedFile
 
 
 # ---------------------------------------------------------------------------
@@ -17,6 +20,23 @@ from cli_harness import _agentcam, _make_one_run, _run_dir
 # ---------------------------------------------------------------------------
 
 class TestManifestEvidence:
+    def test_product_fingerprint_ignores_transient_git_status(
+        self, tmp_git_repo: Path
+    ):
+        product = tmp_git_repo / "same.txt"
+        product.write_text("same delivery", encoding="utf-8")
+
+        dirty = compute_product_fingerprint(
+            tmp_git_repo,
+            [ChangedFile(path="same.txt", status="unstaged_modified")],
+        )
+        committed = compute_product_fingerprint(
+            tmp_git_repo,
+            [ChangedFile(path="same.txt", status="committed")],
+        )
+
+        assert dirty == committed
+
     def test_manifest_contains_evidence_block(self, tmp_git_repo: Path):
         _make_one_run(tmp_git_repo)
         manifest = json.loads(
@@ -29,6 +49,99 @@ class TestManifestEvidence:
         assert isinstance(ev["risk_flags"], list)
         assert "diff_stat" in ev
         assert "diff_stat_cached" in ev
+
+    def test_committed_change_is_preserved_in_turn_delta(
+        self, tmp_git_repo: Path
+    ):
+        body = (
+            "import subprocess;"
+            "open('committed.txt','w').write('committed');"
+            "subprocess.run(['git','add','committed.txt'],check=True);"
+            "subprocess.run(['git','-c','user.email=test@example.com','-c',"
+            "'user.name=Test','commit','-qm','agent commit'],check=True)"
+        )
+
+        _make_one_run(tmp_git_repo, body)
+        manifest = json.loads(
+            (_run_dir(tmp_git_repo) / "manifest.json").read_text("utf-8")
+        )
+
+        assert [f["path"] for f in manifest["evidence"]["changed_files"]] == [
+            "committed.txt"
+        ]
+        assert manifest["evidence"]["changed_files"][0]["status"] == "committed"
+
+    def test_unchanged_preexisting_dirty_file_is_not_attributed_to_run(
+        self, tmp_git_repo: Path
+    ):
+        tracked = tmp_git_repo / "user-dirty.txt"
+        tracked.write_text("base", encoding="utf-8")
+        subprocess.run(["git", "add", "user-dirty.txt"], cwd=tmp_git_repo, check=True)
+        subprocess.run(
+            [
+                "git", "-c", "user.email=test@example.com", "-c",
+                "user.name=Test", "commit", "-qm", "base",
+            ],
+            cwd=tmp_git_repo,
+            check=True,
+        )
+        tracked.write_text("user dirt", encoding="utf-8")
+
+        _make_one_run(tmp_git_repo)
+        manifest = json.loads(
+            (_run_dir(tmp_git_repo) / "manifest.json").read_text("utf-8")
+        )
+
+        assert [f["path"] for f in manifest["evidence"]["changed_files"]] == [
+            "produced.txt"
+        ]
+
+    def test_modified_preexisting_dirty_file_is_attributed_to_run(
+        self, tmp_git_repo: Path
+    ):
+        tracked = tmp_git_repo / "user-dirty.txt"
+        tracked.write_text("base", encoding="utf-8")
+        subprocess.run(["git", "add", "user-dirty.txt"], cwd=tmp_git_repo, check=True)
+        subprocess.run(
+            [
+                "git", "-c", "user.email=test@example.com", "-c",
+                "user.name=Test", "commit", "-qm", "base",
+            ],
+            cwd=tmp_git_repo,
+            check=True,
+        )
+        tracked.write_text("user dirt", encoding="utf-8")
+
+        _make_one_run(
+            tmp_git_repo,
+            "open('user-dirty.txt','w').write('agent changed it')",
+        )
+        manifest = json.loads(
+            (_run_dir(tmp_git_repo) / "manifest.json").read_text("utf-8")
+        )
+
+        assert [f["path"] for f in manifest["evidence"]["changed_files"]] == [
+            "user-dirty.txt"
+        ]
+
+    def test_manifest_binds_final_state_product_and_declared_scope(
+        self, tmp_git_repo: Path
+    ):
+        slime = tmp_git_repo / ".slime"
+        slime.mkdir()
+        (slime / "corridor.md").write_text(
+            "# Corridor: test\n\n## Rigor\nnormal\n\n## Paths\n- src/**\n",
+            encoding="utf-8",
+        )
+
+        _make_one_run(tmp_git_repo)
+        manifest = json.loads(
+            (_run_dir(tmp_git_repo) / "manifest.json").read_text("utf-8")
+        )
+
+        assert manifest["declared_scope"] == ["src/**"]
+        assert len(manifest["final_state_fingerprint"]) == 64
+        assert len(manifest["evidence"]["product_fingerprint"]) == 64
 
 
 # ---------------------------------------------------------------------------
@@ -44,7 +157,7 @@ class TestHandoff:
         assert [line.split(":")[0] for line in lines] == [
             "Decision", "Scope", "Review first", "Verified", "Risk",
         ]
-        assert lines[1] == "Scope: produced.txt"
+        assert lines[1].startswith("Scope: <fill in:")
         assert lines[2] == "Review first: produced.txt"
         # Decision and Verified stay with the author.
         assert "<fill in" in lines[0]
@@ -64,9 +177,7 @@ class TestHandoff:
         assert proc.returncode == 0, proc.stderr
         assert proc.stdout.decode("utf-8").splitlines()[4] == "Risk: unknown"
 
-    def test_handoff_redacts_secret_like_filenames(self, tmp_git_repo: Path):
-        # The handoff is drafted for a PR body; a secret-like filename must
-        # not leave the machine through it (same rule as report/export).
+    def test_handoff_refuses_untracked_secret_like_filename(self, tmp_git_repo: Path):
         proc = _agentcam(
             tmp_git_repo, "run", "--",
             sys.executable, "-c",
@@ -74,10 +185,50 @@ class TestHandoff:
         )
         assert proc.returncode == 0, proc.stderr
         proc = _agentcam(tmp_git_repo, "handoff")
+        assert proc.returncode == 2
+        assert b"untracked secret-like" in proc.stderr
+
+    def test_handoff_uses_real_tracked_secret_like_path(self, tmp_git_repo: Path):
+        secret = tmp_git_repo / ".env.production"
+        secret.write_text("K=base", encoding="utf-8")
+        subprocess.run(["git", "add", ".env.production"], cwd=tmp_git_repo, check=True)
+        subprocess.run(
+            [
+                "git", "-c", "user.email=test@example.com", "-c",
+                "user.name=Test", "commit", "-qm", "track filename",
+            ],
+            cwd=tmp_git_repo,
+            check=True,
+        )
+        slime = tmp_git_repo / ".slime"
+        slime.mkdir()
+        (slime / "corridor.md").write_text(
+            "# Corridor: secret\n\n## Rigor\nnormal\n\n## Paths\n- .env.production\n",
+            encoding="utf-8",
+        )
+
+        _make_one_run(tmp_git_repo, "open('.env.production','w').write('K=changed')")
+        proc = _agentcam(tmp_git_repo, "handoff")
+
         assert proc.returncode == 0, proc.stderr
-        out = proc.stdout.decode("utf-8")
-        assert ".env.production" not in out
-        assert "<redacted-secret-filename>" in out
+        assert "Scope: .env.production" in proc.stdout.decode("utf-8")
+        assert "Review first: .env.production" in proc.stdout.decode("utf-8")
+
+    def test_handoff_uses_declared_scope_instead_of_observed_files(
+        self, tmp_git_repo: Path
+    ):
+        slime = tmp_git_repo / ".slime"
+        slime.mkdir()
+        (slime / "corridor.md").write_text(
+            "# Corridor: declared\n\n## Rigor\nnormal\n\n## Paths\n- src/**\n",
+            encoding="utf-8",
+        )
+
+        _make_one_run(tmp_git_repo)
+        proc = _agentcam(tmp_git_repo, "handoff")
+
+        assert proc.returncode == 0, proc.stderr
+        assert proc.stdout.decode("utf-8").splitlines()[1] == "Scope: src/**"
 
     def test_old_manifest_without_evidence_errors(self, tmp_git_repo: Path):
         _make_one_run(tmp_git_repo)

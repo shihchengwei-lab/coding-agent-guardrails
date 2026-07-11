@@ -23,12 +23,12 @@ Slime Coding 不是再寫一段「請不要過度實作」給 AI 看。那種文
 - **動手前先框範圍**：AI 要先寫出可觀察結果與允許路徑；Edit／Write／apply_patch 會在寫入前檢查，Bash 寫入則在工具完成後立即比對並要求復原。
 - **全 repo 與 repo 外都不是走廊**：match-all Paths 和 `../`／絕對路徑會被拒絕。
 - **先找反證再押路線**：normal／high 走廊除了支持證據，也要寫出什麼觀察會證明這條路錯了。
-- **負擔隨風險調整**：trivial 只留 Outcome／Paths／Stop Condition；normal 加支持與反證；high 再加入 failure mode、rollback 與可執行的 independent check command。
+- **負擔隨風險調整**：trivial 只留 Outcome／Paths／Stop Condition；normal 加支持與反證；high 再加入 failure mode、rollback 與 secondary trusted check ID。
 - **只算本輪改動**：SessionStart／UserPromptSubmit 在 `.git/slime/turns/` 保存 turn baseline；既有髒檔未變不歸給 agent，修改、stage、commit、rename、delete 或還原才算本輪 delta。
 - **範圍外的修改會被擋**：如果 AI 順手改了不在範圍內的程式碼，收工時會被擋下來。
 - **新增套件會被擋**：Flutter、npm、Python、Cargo、Go 的新增套件要在 Evidence 具名並說明理由，否則不能收工。
 - **引用不存在的接點會被擋**：可選。你可以接型別檢查或語法檢查，讓 AI 不能靠想像中的 helper / class / API 收工。
-- **紅燈不能假裝完成**：`SLIME_TEST_CMD` 或 Stop Condition 的 `Command:` 會在每次 Stop 重跑；high 的 `Independent check command:` 也必須存在、不同於主檢查並 exit 0。紅燈、timeout 或設定錯誤都持續阻擋。PRUNED 不能當 waiver。
+- **紅燈不能假裝完成**：Stop Condition 的 `Check:` 只從 `<git-dir>/guardrails/config.json` 取得 argv，並以 `shell=False` 重跑；high 的 `Independent check:` ID 與 argv 都必須不同於主檢查。紅燈、timeout、未知 ID 或壞設定都持續阻擋。repo Markdown 與舊 command 環境變數不會被當成 shell 執行，PRUNED 也不能當 waiver。
 
 簡單說就是：
 
@@ -85,6 +85,24 @@ Codex 安裝會做幾件事：
 - 建立 `.slime/corridor.md` 和 `.slime/PRUNED.md` 範本。
 
 需要 `python3` 和 `git`（解析 `pyproject.toml`／`Cargo.toml` 需要 Python 3.11+ 的 `tomllib`）。新安裝的 corridor 預設為 `normal`。安裝可以重跑，會備份既有設定，也不會覆蓋已存在的 corridor。
+
+可執行檢查放在 Git 外的 `<git-dir>/guardrails/config.json`，例如：
+
+```json
+{
+  "schema": 1,
+  "checks": {
+    "primary": {
+      "argv": ["python", "-m", "pytest", "-q"],
+      "timeout_seconds": 600
+    }
+  }
+}
+```
+
+Corridor 只寫 `- Check: primary`。check ID 限小寫英數、`-`、`_`，長度 1–64；
+`argv` 必須是非空字串陣列，timeout 合法範圍是 1–3600 秒。舊的 inline
+`Command:`、`SLIME_TEST_CMD`、`SLIME_TYPECHECK_CMD` 不再執行。
 
 紀律文本（含本套規則的用法）由根安裝器寫進 `CLAUDE.md` 與 `AGENTS.md`，單一來源是根目錄的 [`templates/DISCIPLINE.md`](../templates/DISCIPLINE.md)，不需要手動貼模板。
 Codex 版一樣自動更新 `AGENTS.md`；下次啟動 Codex 或開新 run 後生效。若 Codex 提示 project hooks 尚未 trust，進 `/hooks` 檢查後信任。

@@ -25,10 +25,10 @@ the compact execution contract. Keep it short — this is a map, not a spec.
   Outcome, Paths, and Stop Condition only.
 - **normal** — the default: Outcome, Paths, supporting/falsifying Evidence, and
   Stop Condition.
-- **high** — normal plus a failure mode, rollback, and an executable independent check command.
+- **high** — normal plus a failure mode, rollback, and a secondary trusted check ID.
 
-Existing corridors without a Rigor section remain legacy-compatible. New
-corridors must state `trivial`, `normal`, or `high` explicitly.
+Corridors with product changes must state `trivial`, `normal`, or `high`
+explicitly. A corridor without `Rigor` is a migration error at Stop.
 
 1. **Goal Frontier** — work *backwards* from the acceptance criteria. What
    behaviours are strictly necessary for the criteria to pass? List them. Each
@@ -57,9 +57,9 @@ corridors must state `trivial`, `normal`, or `high` explicitly.
    generality). Append these to `.slime/PRUNED.md` so the next round can't
    silently revive them. Use `/slime-prune`.
 
-6. **Stop Condition** — preferably `Command: <command>` so the Stop hook runs
-   it and blocks until exit 0. Use `Manual:` only when no command can observe
-   the outcome.
+6. **Stop Condition** — preferably `Check: <id>`. The ID resolves only through
+   `<git-dir>/guardrails/config.json`; repo Markdown never supplies shell.
+   Use `Manual:` only when no configured check can observe the outcome.
 
 ## Write the corridor down
 
@@ -68,8 +68,8 @@ Persist the selected tier's Outcome, Paths, Evidence, and Stop Condition to
 contain `Supports:` and `Would falsify:`. When adding a dependency, add
 `Dependency: <package> — <reason>` or the Stop gate rejects it. High additionally
 includes `## High-risk Controls` with `Failure mode:`, `Rollback:`, and
-`Independent check command:`. That command must differ from the Stop command;
-the Stop hook executes both and blocks unless both exit 0.
+`Independent check:`. Its ID and normalized argv must differ from every primary
+check; the Stop hook executes both with `shell=False` and blocks unless both exit 0.
 
 ## Before editing
 

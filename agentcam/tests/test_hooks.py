@@ -589,9 +589,10 @@ class TestVerifyDuringSession:
         assert b"in-progress session" in proc.stderr
 
         # Stashed with the session; the previous run stays untouched.
-        assert (
-            _session_dir(tmp_git_repo, sid) / "verifications.jsonl"
-        ).exists()
+        session_records = list(
+            (_session_dir(tmp_git_repo, sid) / "verifications").glob("*.json")
+        )
+        assert len(session_records) == 1
         old_manifest = json.loads(
             (old_run / "manifest.json").read_text(encoding="utf-8")
         )
@@ -655,7 +656,7 @@ class TestVerifyDuringSession:
 
         proc = _verify(tmp_git_repo, *PASS_CMD)
         assert proc.returncode == 0, proc.stderr
-        assert not (stale / "verifications.jsonl").exists()
+        assert not (stale / "verifications").exists()
         checks = json.loads(
             (run_dir / "manifest.json").read_text(encoding="utf-8")
         )["evidence"]["verifications"]
@@ -679,7 +680,7 @@ class TestVerifyDuringSession:
         runs = _runs_dir(tmp_git_repo)
         assert not runs.exists() or not any(runs.iterdir())
 
-    def test_corrupt_stash_line_does_not_break_the_report(
+    def test_corrupt_record_does_not_break_the_report(
         self, tmp_git_repo: Path
     ):
         sid = "corrupt-stash"
@@ -688,11 +689,8 @@ class TestVerifyDuringSession:
             _hook_payload(sid, tmp_git_repo, "SessionStart"),
         )
         assert _verify(tmp_git_repo, *PASS_CMD).returncode == 0
-        stash = _session_dir(tmp_git_repo, sid) / "verifications.jsonl"
-        stash.write_text(
-            stash.read_text(encoding="utf-8") + "not json\n",
-            encoding="utf-8",
-        )
+        records = _session_dir(tmp_git_repo, sid) / "verifications"
+        (records / "corrupt.json").write_text("not json\n", encoding="utf-8")
         (tmp_git_repo / "by_agent.txt").write_text("hi")
         _agentcam_hook(
             tmp_git_repo, "hook-session-end",
@@ -725,5 +723,5 @@ class TestVerifyDuringSession:
         proc = _verify(tmp_git_repo, *PASS_CMD)
         assert proc.returncode == 0, proc.stderr
         assert b"live-a" in proc.stderr
-        assert (live / "verifications.jsonl").exists()
-        assert not (ending / "verifications.jsonl").exists()
+        assert any((live / "verifications").glob("*.json"))
+        assert not (ending / "verifications").exists()

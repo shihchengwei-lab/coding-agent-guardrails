@@ -7,6 +7,26 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-11
+
+### Changed
+
+- Runs now record the before-to-after turn delta, declared corridor scope,
+  final state fingerprint, and product fingerprint.
+- Verification uses one atomic record file per check. A newer result for the
+  same command supersedes an older result, and any product edit makes the
+  previous verification stale.
+- `verify latest` rejects ambiguous active sessions instead of guessing.
+- Handoff uses the scope captured at turn start. It refuses untracked
+  secret-like paths rather than exporting a misleading redacted scope.
+
+### Migration
+
+- Runs created before 0.5.0 are `legacy-unbound` and cannot produce
+  `local-recorded` evidence; record a new run and verification.
+- Corridor CI consumers must use v13 for product-fingerprint binding. The old
+  `[recorded by agentcam]` marker is no longer accepted.
+
 ## [0.4.0] — 2026-07-11
 
 ### Changed
