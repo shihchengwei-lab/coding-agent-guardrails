@@ -1,0 +1,13 @@
+name: Guardrails probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  no-op:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "manual probe only"

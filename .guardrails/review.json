@@ -1,30 +1,25 @@
 {
-  "approval": {
-    "confirmation_id": "4622e123bd8893b473bf37ee4af74b8cd3997b7f9b697be7c5a4a020877cd82e",
-    "confirmed": true,
-    "product_fingerprint": "21f7789e99b79deb192ef391c26fe3de9e6f622b58e355138549a42307da7841",
-    "required": true
-  },
+  "approval": null,
   "capture": {
     "coverage": "partial",
     "terminal": "unavailable"
   },
   "delivery": {
-    "base_commit": "33a06a780e500e0383db16b58c881f9a808febc0",
+    "base_commit": "ee48dc0aa076aaa85f11e754ee2a722c1b4318ef",
     "changed_files": [
       {
-        "path": ".github/workflows/corridor.yml",
-        "status": "modified"
+        "path": ".github/workflows/guardrails-probe.yml",
+        "status": "untracked"
       }
     ],
     "outcomes": [
-      "Use the published Corridor CI v14 release for repository enforcement"
+      "Prove workflow changes need local confirmation and external head approval"
     ],
-    "product_fingerprint": "21f7789e99b79deb192ef391c26fe3de9e6f622b58e355138549a42307da7841",
-    "review_first": ".github/workflows/corridor.yml",
+    "product_fingerprint": "ca7248e2f5628e493ff44bec529eb9333aa40775986ea93f0dcec1210635cc5d",
+    "review_first": ".github/workflows/guardrails-probe.yml",
     "risk": "high",
     "scope": [
-      ".github/workflows/corridor.yml"
+      ".github/workflows/guardrails-probe.yml"
     ],
     "scope_changes": []
   },
@@ -41,10 +36,10 @@
           "diff",
           "--check"
         ],
-        "duration_ms": 78,
+        "duration_ms": 219,
         "exit_code": 0,
         "id": "structural",
-        "state_fingerprint": "21f7789e99b79deb192ef391c26fe3de9e6f622b58e355138549a42307da7841"
+        "state_fingerprint": "ca7248e2f5628e493ff44bec529eb9333aa40775986ea93f0dcec1210635cc5d"
       }
     ],
     "level": "structural-only"
