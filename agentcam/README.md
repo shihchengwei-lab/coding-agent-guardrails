@@ -78,7 +78,7 @@ Verify:
 
 ```bash
 agentcam version
-# agentcam 0.3.3
+# agentcam 0.4.0
 ```
 
 ---
@@ -296,7 +296,7 @@ agentcam handoff
 # Decision: <fill in: issue or decision link>
 # Scope: src/auth/login.py
 # Review first: src/auth/login.py
-# Verified: pytest -q (exit 0) [recorded by agentcam]
+# Verified: pytest -q (exit 0) [locally recorded by agentcam]
 # Risk: high
 ```
 
@@ -316,8 +316,9 @@ agentcam export latest --files .agentcam/
 
 `export --files` writes the redacted run record in committable form.
 Commit it with the PR and corridor-ci appends it to its report as
-recorded evidence. Corridor CI cross-checks the handoff command against
-passing recorded checks and labels verification `recorded`, `manual`, or
+locally recorded evidence. Corridor CI cross-checks the handoff command against
+passing recorded checks and labels matching author-controlled evidence
+`local-recorded`, otherwise `manual` or
 `unverified`; limited capture is marked `partial`. Manual and partial states
 remain visible; placeholders and false recorded claims fail the check.
 

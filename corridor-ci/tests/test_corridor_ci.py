@@ -762,6 +762,7 @@ class CorridorCiTest(unittest.TestCase):
         self.assertIsNotNone(readme_tag)
         self.assertIsNotNone(workflow_tag)
         self.assertEqual(readme_tag.group(1), workflow_tag.group(1))
+        self.assertEqual(readme_tag.group(1), "corridor-ci-v12")
 
     # -- agentcam verification evidence -------------------------------
 
@@ -815,15 +816,24 @@ class CorridorCiTest(unittest.TestCase):
         self.assertEqual(manifest["capture"]["mode"], "wrap_pipe")
         self.assertEqual(manifest["evidence"], sample["evidence"])
 
-    def test_verification_provenance_recorded_requires_matching_pass(self):
+    def test_verification_provenance_local_recorded_requires_matching_pass(self):
+        assessment = corridor_ci.classify_verification_provenance(
+            "pytest -q (exit 0) [locally recorded by agentcam]",
+            self._sample_evidence_manifest(),
+        )
+
+        self.assertEqual(assessment.status, "local-recorded")
+        self.assertFalse(assessment.partial)
+        self.assertEqual(assessment.warnings, [])
+
+    def test_legacy_recorded_marker_is_local_recorded_with_warning(self):
         assessment = corridor_ci.classify_verification_provenance(
             "pytest -q (exit 0) [recorded by agentcam]",
             self._sample_evidence_manifest(),
         )
 
-        self.assertEqual(assessment.status, "recorded")
-        self.assertFalse(assessment.partial)
-        self.assertEqual(assessment.warnings, [])
+        self.assertEqual(assessment.status, "local-recorded")
+        self.assertIn("legacy", "\n".join(assessment.warnings).lower())
 
     def test_verification_provenance_manual_without_matching_record(self):
         assessment = corridor_ci.classify_verification_provenance(

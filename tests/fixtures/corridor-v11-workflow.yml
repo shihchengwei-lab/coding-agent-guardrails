@@ -1,4 +1,3 @@
-# coding-agent-guardrails:managed corridor-ci-v12
 name: Corridor CI
 
 on:
@@ -13,6 +12,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v12
+      - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v11
         with:
-          mode: fail
+          mode: warn
+          small_change_max_files: 1
+          max_changed_files: 12

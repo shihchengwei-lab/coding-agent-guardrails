@@ -444,7 +444,8 @@ def read_agentcam_manifest(path: Path) -> tuple[dict | None, str | None]:
 
 
 UNVERIFIED_VALUES = {"n/a", "none", "not run", "unverified"}
-RECORDED_MARKER = "[recorded by agentcam]"
+LOCAL_RECORDED_MARKER = "[locally recorded by agentcam]"
+LEGACY_RECORDED_MARKER = "[recorded by agentcam]"
 
 
 def classify_verification_provenance(
@@ -454,13 +455,16 @@ def classify_verification_provenance(
     """Classify the verification source for policy and reporting.
 
     Both the PR body and committed manifest are author-controlled.  A handoff
-    earns ``recorded`` only when its stable marker and exact ``command (exit
-    0)`` fragment agree with a passed check in the manifest. Manual checks stay
+    earns ``local-recorded`` only when its stable marker and exact
+    ``command (exit 0)`` fragment agree with a passed check in the manifest.
+    Manual checks stay
     visible and valid; placeholders and false recorded claims are unverified.
     """
     value = verified.strip() if isinstance(verified, str) else ""
     normalized = value.lower()
-    marker_present = RECORDED_MARKER in normalized
+    local_marker_present = LOCAL_RECORDED_MARKER in normalized
+    legacy_marker_present = LEGACY_RECORDED_MARKER in normalized
+    marker_present = local_marker_present or legacy_marker_present
     evidence = manifest.get("evidence") if isinstance(manifest, dict) else None
     checks = evidence.get("verifications") if isinstance(evidence, dict) else None
     passing_commands = []
@@ -481,12 +485,17 @@ def classify_verification_provenance(
         or re.match(r"^(?:n/a|none|not\s+run|unverified)\b", normalized) is not None
     )
     if matched:
-        status = "recorded"
+        status = "local-recorded"
+        if legacy_marker_present:
+            warnings.append(
+                "legacy `[recorded by agentcam]` marker means locally recorded; "
+                "use `[locally recorded by agentcam]`"
+            )
     elif marker_present:
         status = "unverified"
         warnings.append(
-            "Verified claims `[recorded by agentcam]`, but no matching passed "
-            "recorded check was found"
+            "Verified claims an agentcam recording marker, but no matching "
+            "passed locally recorded check was found"
         )
     elif not value or placeholder:
         status = "unverified"

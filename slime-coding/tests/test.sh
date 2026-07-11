@@ -39,6 +39,9 @@ pre()    { printf '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_inp
 prepatch() { printf '{"hook_event_name":"PreToolUse","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\\n*** Update File: %s\\n*** End Patch"},"cwd":"%s"}' "$(hostpath "$2")" "$(hostpath "$1")"; }
 prompt() { printf '{"hook_event_name":"UserPromptSubmit","cwd":"%s"}' "$(hostpath "$1")"; }
 stop()   { printf '{"hook_event_name":"Stop","cwd":"%s"}' "$(hostpath "$1")"; }
+turn_start() { printf '{"hook_event_name":"UserPromptSubmit","turn_id":"%s","session_id":"session-test","cwd":"%s"}' "$2" "$(hostpath "$1")"; }
+turn_stop() { printf '{"hook_event_name":"Stop","turn_id":"%s","session_id":"session-test","cwd":"%s"}' "$2" "$(hostpath "$1")"; }
+post_bash() { printf '{"hook_event_name":"PostToolUse","turn_id":"%s","session_id":"session-test","tool_name":"Bash","tool_input":{"command":"%s"},"cwd":"%s"}' "$2" "$3" "$(hostpath "$1")"; }
 
 # --- PreToolUse corridor gate ----------------------------------------------
 D="$(mkrepo)"
@@ -642,15 +645,15 @@ The high-risk behavior changes while existing ownership remains stable.
 - Would falsify: the trace bypasses that seam.
 ## Stop Condition
 - The focused and full checks pass.
-## Controls
+## High-risk Controls
 - Failure mode: requests may be rejected.
 - Rollback: revert the feature flag.
-- Independent check: run the integration suite.
+- Independent check command: sh -c "exit 0"
 EOF
 out=$(pre "$R3" "$R3/lib/x.py" | python3 "$PATCH")
 [ -z "$out" ] && ok "40 complete high corridor -> allow" || bad "40 complete high corridor -> allow" "$out"
 
-for field in 'Failure mode:' 'Rollback:' 'Independent check:'; do
+for field in 'Failure mode:' 'Rollback:' 'Independent check command:'; do
   grep -v -- "$field" "$R3/.slime/corridor.md" > "$R3/.slime/corridor.tmp"
   mv "$R3/.slime/corridor.tmp" "$R3/.slime/corridor.missing.md"
   mv "$R3/.slime/corridor.md" "$R3/.slime/corridor.full.md"
@@ -663,6 +666,28 @@ for field in 'Failure mode:' 'Rollback:' 'Independent check:'; do
   mv "$R3/.slime/corridor.md" "$R3/.slime/corridor.missing.md"
   mv "$R3/.slime/corridor.full.md" "$R3/.slime/corridor.md"
 done
+
+# 41b: high independent check is an actual gate, not a prose placeholder.
+sed 's/Independent check command: sh -c "exit 0"/Independent check command: sh -c "exit 1"/' "$R3/.slime/corridor.md" > "$R3/.slime/corridor.tmp"
+mv "$R3/.slime/corridor.tmp" "$R3/.slime/corridor.md"
+mkdir -p "$R3/lib"
+printf 'changed\n' > "$R3/lib/x.py"
+out=$(stop "$R3" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*"Independent check"*) ok "41b failing high independent command -> block" ;;
+  *) bad "41b failing high independent command -> block" "$out" ;;
+esac
+
+# 41c: the independent command cannot merely duplicate the Stop command.
+sed 's/Independent check command: sh -c "exit 1"/Independent check command: sh -c "exit 0"/' "$R3/.slime/corridor.md" > "$R3/.slime/corridor.tmp"
+mv "$R3/.slime/corridor.tmp" "$R3/.slime/corridor.md"
+sed '/## Stop Condition/,+1c\## Stop Condition\n- Command: sh -c "exit 0"' "$R3/.slime/corridor.md" > "$R3/.slime/corridor.tmp"
+mv "$R3/.slime/corridor.tmp" "$R3/.slime/corridor.md"
+out=$(stop "$R3" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*"must differ"*) ok "41c duplicate independent command -> block" ;;
+  *) bad "41c duplicate independent command -> block" "$out" ;;
+esac
 
 # 42: trivial is an enforceable one-product-file tier.
 TIER="$(mkrepo)"
@@ -687,6 +712,198 @@ out=$(stop "$TIER" | python3 "$PATCH")
 case "$out" in
   *'"block"'*"trivial corridor"*) ok "42 trivial with multiple product files -> block" ;;
   *) bad "42 trivial with multiple product files -> block" "$out" ;;
+esac
+
+# === Turn baseline and shell coverage ======================================
+
+# 44: an unchanged pre-existing dirty file is not attributed to this turn.
+TURN="$(mkrepo)"
+mkdir -p "$TURN/.slime" "$TURN/lib" "$TURN/other"
+cat > "$TURN/.slime/corridor.md" <<'EOF'
+# Corridor: turn-delta
+## Rigor
+trivial
+## Outcome
+One file changes.
+## Paths
+- lib/**
+## Stop Condition
+- Focused check passes.
+EOF
+printf 'old\n' > "$TURN/lib/a.py"
+printf 'old\n' > "$TURN/other/user.py"
+git -C "$TURN" add -A && git -C "$TURN" commit -qm init
+printf 'user dirty\n' > "$TURN/other/user.py"
+turn_start "$TURN" turn-44 | python3 "$PATCH" >/dev/null
+printf 'agent change\n' > "$TURN/lib/a.py"
+out=$(turn_stop "$TURN" turn-44 | python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "44 unchanged pre-existing dirty file is ignored" "$out" ;;
+  *systemMessage*) ok "44 unchanged pre-existing dirty file is ignored" ;;
+  *) bad "44 unchanged pre-existing dirty file is ignored" "$out" ;;
+esac
+
+# 45: modifying that pre-existing file during the turn is detected.
+git -C "$TURN" checkout -q -- lib/a.py
+turn_start "$TURN" turn-45 | python3 "$PATCH" >/dev/null
+printf 'agent overwrote user file\n' > "$TURN/other/user.py"
+out=$(turn_stop "$TURN" turn-45 | python3 "$PATCH")
+case "$out" in
+  *'"block"'*"other/user.py"*) ok "45 changed pre-existing dirty file -> block" ;;
+  *) bad "45 changed pre-existing dirty file -> block" "$out" ;;
+esac
+
+# 46: a duplicate start cannot launder edits made after the first baseline.
+git -C "$TURN" checkout -q -- other/user.py
+turn_start "$TURN" turn-46 | python3 "$PATCH" >/dev/null
+printf 'outside\n' > "$TURN/other/user.py"
+turn_start "$TURN" turn-46 | python3 "$PATCH" >/dev/null
+out=$(turn_stop "$TURN" turn-46 | python3 "$PATCH")
+case "$out" in
+  *'"block"'*"other/user.py"*) ok "46 duplicate start preserves first baseline" ;;
+  *) bad "46 duplicate start preserves first baseline" "$out" ;;
+esac
+
+# 47: committed changes remain part of the turn delta even with a clean tree.
+git -C "$TURN" reset -q --hard HEAD
+turn_start "$TURN" turn-47 | python3 "$PATCH" >/dev/null
+printf 'committed outside\n' > "$TURN/other/user.py"
+git -C "$TURN" add other/user.py && git -C "$TURN" commit -qm outside
+out=$(turn_stop "$TURN" turn-47 | python3 "$PATCH")
+case "$out" in
+  *'"block"'*"other/user.py"*) ok "47 committed out-of-corridor delta -> block" ;;
+  *) bad "47 committed out-of-corridor delta -> block" "$out" ;;
+esac
+
+# 48: Bash PostToolUse is silent without a delta and reports one immediately.
+git -C "$TURN" reset -q --hard HEAD^
+turn_start "$TURN" turn-48 | python3 "$PATCH" >/dev/null
+out=$(post_bash "$TURN" turn-48 "git status" | python3 "$PATCH")
+[ -z "$out" ] && ok "48 Bash without writes -> silent" || bad "48 Bash without writes -> silent" "$out"
+printf 'shell outside\n' > "$TURN/other/user.py"
+out=$(post_bash "$TURN" turn-48 "write outside" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*"other/user.py"*) ok "48b Bash outside write -> immediate block" ;;
+  *) bad "48b Bash outside write -> immediate block" "$out" ;;
+esac
+
+# 49: a pre-existing dependency and product file do not inflate this turn.
+DELTAS="$(mkrepo)"
+mkdir -p "$DELTAS/.slime" "$DELTAS/lib"
+cat > "$DELTAS/.slime/corridor.md" <<'EOF'
+# Corridor: scoped-deps
+## Rigor
+trivial
+## Outcome
+One product file changes.
+## Paths
+- lib/**
+## Stop Condition
+- Focused check passes.
+EOF
+printf '{"dependencies":{"base":"1"}}\n' > "$DELTAS/package.json"
+printf 'old\n' > "$DELTAS/lib/a.py"
+printf 'old\n' > "$DELTAS/lib/user.py"
+git -C "$DELTAS" add -A && git -C "$DELTAS" commit -qm init
+printf '{"dependencies":{"base":"1","user-added":"1"}}\n' > "$DELTAS/package.json"
+printf 'user dirty\n' > "$DELTAS/lib/user.py"
+turn_start "$DELTAS" turn-49 | python3 "$PATCH" >/dev/null
+printf 'agent\n' > "$DELTAS/lib/a.py"
+out=$(turn_stop "$DELTAS" turn-49 | python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "49 dependency and trivial gates use turn delta" "$out" ;;
+  *systemMessage*) ok "49 dependency and trivial gates use turn delta" ;;
+  *) bad "49 dependency and trivial gates use turn delta" "$out" ;;
+esac
+
+# 50: staged, deleted and untracked paths are classified from the turn delta.
+git -C "$DELTAS" reset -q --hard HEAD
+turn_start "$DELTAS" turn-50-stage | python3 "$PATCH" >/dev/null
+printf 'staged\n' > "$DELTAS/lib/a.py"
+git -C "$DELTAS" add lib/a.py
+out=$(turn_stop "$DELTAS" turn-50-stage | python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "50 staged in-corridor delta -> allow" "$out" ;;
+  *systemMessage*) ok "50 staged in-corridor delta -> allow" ;;
+  *) bad "50 staged in-corridor delta -> allow" "$out" ;;
+esac
+git -C "$DELTAS" reset -q --hard HEAD
+turn_start "$DELTAS" turn-50-delete | python3 "$PATCH" >/dev/null
+rm "$DELTAS/lib/a.py"
+out=$(turn_stop "$DELTAS" turn-50-delete | python3 "$PATCH")
+case "$out" in
+  *'"block"'*) bad "50b deleted in-corridor delta -> allow" "$out" ;;
+  *systemMessage*) ok "50b deleted in-corridor delta -> allow" ;;
+  *) bad "50b deleted in-corridor delta -> allow" "$out" ;;
+esac
+git -C "$DELTAS" reset -q --hard HEAD
+turn_start "$DELTAS" turn-50-new | python3 "$PATCH" >/dev/null
+mkdir -p "$DELTAS/other" && printf 'new\n' > "$DELTAS/other/new.py"
+out=$(turn_stop "$DELTAS" turn-50-new | python3 "$PATCH")
+case "$out" in
+  *'"block"'*"other/new.py"*) ok "50c untracked out-of-corridor delta -> block" ;;
+  *) bad "50c untracked out-of-corridor delta -> block" "$out" ;;
+esac
+
+# 51: renamed paths include the destination, so moving outside cannot hide it.
+rm -rf "$DELTAS/other"
+git -C "$DELTAS" reset -q --hard HEAD
+turn_start "$DELTAS" turn-51 | python3 "$PATCH" >/dev/null
+mkdir -p "$DELTAS/other" && git -C "$DELTAS" mv lib/a.py other/a.py
+out=$(turn_stop "$DELTAS" turn-51 | python3 "$PATCH")
+case "$out" in
+  *'"block"'*"other/a.py"*) ok "51 renamed destination outside corridor -> block" ;;
+  *) bad "51 renamed destination outside corridor -> block" "$out" ;;
+esac
+
+# 52: turn ids are isolated; a later baseline cannot overwrite an earlier one.
+git -C "$DELTAS" reset -q --hard HEAD
+rm -rf "$DELTAS/other"
+turn_start "$DELTAS" turn-52-a | python3 "$PATCH" >/dev/null
+mkdir -p "$DELTAS/other" && printf 'outside\n' > "$DELTAS/other/a.py"
+turn_start "$DELTAS" turn-52-b | python3 "$PATCH" >/dev/null
+out_b=$(turn_stop "$DELTAS" turn-52-b | python3 "$PATCH")
+out_a=$(turn_stop "$DELTAS" turn-52-a | python3 "$PATCH")
+case "$out_b|$out_a" in
+  *systemMessage*'|'*'"block"'*"other/a.py"*) ok "52 turn baselines are isolated" ;;
+  *) bad "52 turn baselines are isolated" "$out_b | $out_a" ;;
+esac
+
+# 53: missing baseline keeps the strict HEAD fallback and says coverage partial.
+out=$(turn_stop "$DELTAS" missing-53 | python3 "$PATCH")
+case "$out" in
+  *'"block"'*"other/a.py"*"coverage partial"*) ok "53 missing baseline -> strict partial fallback" ;;
+  *) bad "53 missing baseline -> strict partial fallback" "$out" ;;
+esac
+
+# 54: high independent checks time out and report the independent gate.
+HIGH_TIMEOUT="$(mkrepo)"
+mkdir -p "$HIGH_TIMEOUT/.slime" "$HIGH_TIMEOUT/lib"
+cat > "$HIGH_TIMEOUT/.slime/corridor.md" <<'EOF'
+# Corridor: high-timeout
+## Rigor
+high
+## Outcome
+The risky path is checked independently.
+## Paths
+- lib/**
+## Evidence
+- Supports: the focused trace reaches this path.
+- Would falsify: the trace bypasses this path.
+## Stop Condition
+- Focused check passes.
+## High-risk Controls
+- Failure mode: requests fail.
+- Rollback: revert the commit.
+- Independent check command: python3 -c "import time; time.sleep(5)"
+EOF
+printf 'old\n' > "$HIGH_TIMEOUT/lib/a.py"
+git -C "$HIGH_TIMEOUT" add -A && git -C "$HIGH_TIMEOUT" commit -qm init
+printf 'new\n' > "$HIGH_TIMEOUT/lib/a.py"
+out=$(stop "$HIGH_TIMEOUT" | SLIME_TEST_TIMEOUT=1 python3 "$PATCH")
+case "$out" in
+  *'"block"'*"Independent check"*"timed out"*) ok "54 independent check timeout -> block" ;;
+  *) bad "54 independent check timeout -> block" "$out" ;;
 esac
 
 # 43: normal has no arbitrary file-count threshold when every file is in scope.

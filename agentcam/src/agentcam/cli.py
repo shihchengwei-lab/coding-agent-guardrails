@@ -375,7 +375,7 @@ def _verified_line(verifications: list) -> str:
         checks = "; ".join(
             f"{v.get('command', '?')} (exit 0)" for v in passing
         )
-        return f"{checks} [recorded by agentcam]"
+        return f"{checks} [locally recorded by agentcam]"
     if recorded:
         last = recorded[-1]
         return (

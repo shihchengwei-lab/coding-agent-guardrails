@@ -37,7 +37,8 @@ Process (uses the slime-coding hooks installed in this project):
    existing code to that outcome. Write Outcome, Paths, and Stop Condition to
    `.slime/corridor.md` with `/slime-corridor` before editing. Choose `trivial`,
    `normal`, or `high` rigor. Normal/high add supporting and falsifying evidence;
-   high adds failure, rollback, and an independent check. A dependency must be
+   high adds failure, rollback, and an executable independent check command
+   distinct from the Stop command. A dependency must be
    named with its reason in Evidence. Leaving the corridor requires new evidence
    and an update.
 3. **Before editing, read `.slime/PRUNED.md`.** Do not revive a rejected

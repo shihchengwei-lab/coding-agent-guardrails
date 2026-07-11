@@ -7,16 +7,18 @@ on:
     paths: ['install.sh', 'install.ps1', 'templates/**', 'tests/**']
   pull_request:
     branches: [main]
-    paths: ['install.sh', 'install.ps1', 'templates/**', 'tests/**']
 
 jobs:
   test-posix:
+    name: Toolkit POSIX
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: bash tests/test-install.sh
+      - run: python3 tests/toolkit_e2e.py --platform posix
 
   test-windows:
+    name: Toolkit Windows
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -25,3 +27,4 @@ jobs:
           python-version: "3.12"
       - shell: powershell
         run: powershell -ExecutionPolicy Bypass -File tests/test-install.ps1
+      - run: python tests/toolkit_e2e.py --platform windows

@@ -26,13 +26,59 @@ done
 PROJECT="${ARGS[0]:-$PWD}"
 PROJECT="$(cd "$PROJECT" && pwd)"
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "error: python3 is required (the hooks are python3 stdlib scripts)." >&2
+PY="${SLIME_PYTHON:-python3}"
+if ! command -v "$PY" >/dev/null 2>&1; then
+  echo "error: Python 3.11 or newer is required (the hooks are stdlib scripts)." >&2
   exit 1
 fi
+"$PY" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null || {
+  echo "error: Python 3.11 or newer is required." >&2
+  exit 1
+}
+command -v git >/dev/null 2>&1 || { echo "error: git is required" >&2; exit 1; }
+git -C "$PROJECT" rev-parse --git-dir >/dev/null 2>&1 || {
+  echo "error: target must be a git repository: $PROJECT" >&2
+  exit 1
+}
+for source in "$SLIME_HOME/hooks/hooks.template.json" \
+              "$SLIME_HOME/templates/.slime/corridor.md" \
+              "$SLIME_HOME/templates/.slime/PRUNED.md" \
+              "$SLIME_HOME/skills/slime-navigate/SKILL.md"; do
+  [ -f "$source" ] || { echo "error: required installer source is missing: $source" >&2; exit 1; }
+done
+TEMPLATE="$SLIME_HOME/hooks/hooks.template.json" "$PY" - <<'PY'
+import json, os
+json.load(open(os.environ["TEMPLATE"], encoding="utf-8"))
+PY
 
 echo "Slime Coding home : $SLIME_HOME"
 echo "Target project    : $PROJECT"
+
+JOURNAL="$(mktemp -d)"
+COMMITTED=0
+MANAGED=(".claude" ".slime")
+for relative in "${MANAGED[@]}"; do
+  if [ -e "$PROJECT/$relative" ] || [ -L "$PROJECT/$relative" ]; then
+    mkdir -p "$JOURNAL/backup"
+    cp -a "$PROJECT/$relative" "$JOURNAL/backup/$relative"
+    printf '%s\n' "$relative" >> "$JOURNAL/existed"
+  fi
+done
+restore_project() {
+  status=$?
+  if [ "$COMMITTED" -eq 0 ]; then
+    for relative in "${MANAGED[@]}"; do rm -rf "$PROJECT/$relative"; done
+    if [ -f "$JOURNAL/existed" ]; then
+      while IFS= read -r relative; do
+        cp -a "$JOURNAL/backup/$relative" "$PROJECT/$relative"
+      done < "$JOURNAL/existed"
+    fi
+    echo "error: Slime installation failed; project files were restored" >&2
+  fi
+  rm -rf "$JOURNAL"
+  exit "$status"
+}
+trap restore_project EXIT
 
 mkdir -p "$PROJECT/.claude/commands" "$PROJECT/.claude/skills"
 SETTINGS="$PROJECT/.claude/settings.json"
@@ -40,7 +86,7 @@ SETTINGS="$PROJECT/.claude/settings.json"
 # 1. Merge hooks into settings.json (the two scripts run via `python3`, so the
 #    install does not depend on the clone keeping its executable bit).
 SLIME_HOME="$SLIME_HOME" SETTINGS="$SETTINGS" TEMPLATE="$SLIME_HOME/hooks/hooks.template.json" \
-python3 - <<'PY'
+"$PY" - <<'PY'
 import json, os, re, shutil, time
 
 home = os.environ["SLIME_HOME"]
@@ -105,6 +151,8 @@ if [ ! -e "$PROJECT/.slime/corridor.md" ]; then
 else
   echo "  .slime/ already present — left untouched"
 fi
+
+COMMITTED=1
 
 cat <<EOF
 

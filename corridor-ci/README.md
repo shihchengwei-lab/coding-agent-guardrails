@@ -55,7 +55,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v11
+      - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v12
         with:
           mode: fail
 ```
@@ -98,8 +98,10 @@ the diff instead of declaring where the change was meant to stop.
 `Review first` must be one of the changed files.
 
 `Verified` may describe a manual check. When a committed agentcam manifest is
-available, Corridor CI labels the line `recorded` only when its exact command
-and exit-0 result match the manifest. Otherwise it reports `manual` or
+available, Corridor CI labels the line `local-recorded` only when its exact
+command and exit-0 result match the manifest and the handoff uses
+`[locally recorded by agentcam]`. The old marker remains compatible with a
+legacy warning. Otherwise it reports `manual` or
 `unverified`; hook-mode or legacy capture is also marked `partial`. Manual
 verification remains valid and visibly weaker. A placeholder or false recorded
 claim is `unverified` and fails the corridor.
@@ -127,6 +129,10 @@ handoff.
 
 Every run writes a GitHub step summary for maintainers.
 
+Installing this workflow does not make it a merge gate. Add `Corridor` and the
+repository's test jobs as required checks in branch protection or a GitHub
+ruleset; use strict/up-to-date checks when the base branch must be current.
+
 ## Sticky PR Comment
 
 Set `comment: true` to upsert the same report as a sticky PR comment.
@@ -137,7 +143,7 @@ permissions:
   pull-requests: write
 
 steps:
-  - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v11
+  - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v12
     with:
       comment: true
 ```

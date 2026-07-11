@@ -7,6 +7,15 @@ cloning, so "versions" track the git history rather than published releases.
 ## [Unreleased]
 
 ### Changed
+- Turn-scoped baselines now separate pre-existing dirty state from changes made
+  during the current turn, including staged and committed paths. Direct edits
+  remain write-before gates; Bash is checked immediately after execution and
+  again at Stop, without claiming sandbox semantics.
+- High rigor now requires `## High-risk Controls` with an executable
+  `Independent check command:` distinct from the primary Stop command.
+- POSIX and Windows standalone installers preflight git, Python 3.11, source
+  files, and hook JSON before mutation, then restore managed paths if a later
+  step fails.
 - Fused into the coding-agent-guardrails monorepo. The discipline text now
   has a single source — the root `templates/DISCIPLINE.md` — written into
   both `CLAUDE.md` and `AGENTS.md` by the root installer; `install-codex.ps1`
