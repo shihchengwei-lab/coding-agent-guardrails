@@ -9,6 +9,13 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ### Removed
 
+- **Unimplemented custom-rules substrate.** `RuleSet`, `PathMatchers`, scanner
+  injection parameters, and future-only provenance fields are gone. The scanner
+  records a hash of the built-in rules that actually run.
+- **Legacy report shapes.** `render_report` now accepts `ReportBundle` only,
+  and production manifests require capture and ruleset metadata. The report's
+  permanent `Tests observed: unknown` placeholder was removed; verification
+  evidence lives in the manifest and handoff where it is actually updated.
 - **`known_manifest_basenames()` (dead code).** The public accessor in
   `dependency_probe.py` had no caller anywhere in the repo; removed.
 - **`ROADMAP.md`.** The standalone pre-1.0 planning file is gone; the
@@ -19,6 +26,10 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ### Fixed
 
+- **No-flags is no longer mislabeled LOW.** Full wrap capture reports
+  `none-detected`; partial hook capture reports `unknown`. Codex can now record
+  every turn through `UserPromptSubmit` / `Stop` hooks installed by the root
+  PowerShell installer.
 - **PTY-mode reports get their Capture Visibility note back.** The
   report's notes table keyed the mode row on `wrap_pty`, but the
   factories emit `wrap_pty_posix` / `wrap_pty_windows`, so reports

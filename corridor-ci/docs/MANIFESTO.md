@@ -27,7 +27,7 @@ Decision: #123
 Scope: pkg/parser/*, tests/parser/*
 Review first: pkg/parser/links.py
 Verified: pytest tests/parser
-Risk: low
+Risk: none-detected
 ```
 
 Thirty seconds for the author. It hands the maintainer the boundary instead

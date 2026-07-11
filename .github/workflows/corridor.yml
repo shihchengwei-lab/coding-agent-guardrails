@@ -19,6 +19,4 @@ jobs:
       - uses: ./corridor-ci
         with:
           mode: fail
-          small_change_max_files: 1
-          max_changed_files: 12
           comment: true

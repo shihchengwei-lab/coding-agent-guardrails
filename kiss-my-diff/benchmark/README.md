@@ -34,6 +34,14 @@ The runner creates a fresh worktree under `runs-local/`, gives the agent only `t
 
 Generated run folders are ignored by git.
 
+The maintained fused-discipline measurement keeps its 32 scoring records under
+[`results/discipline-fusion-20260705/`](results/discipline-fusion-20260705/).
+Recompute its committed summary without a model call:
+
+```powershell
+python benchmark_runner.py summary --run-root results/discipline-fusion-20260705
+```
+
 `calibrate` checks baseline capability ordering only. It is a sanity check for the task pool, not the main benchmark claim.
 
 See [`context-weighting-experiment.md`](context-weighting-experiment.md) for the extra prompt-strength experiment behind the experimental KISS variants.

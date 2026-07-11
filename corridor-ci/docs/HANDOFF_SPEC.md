@@ -21,8 +21,11 @@ Decision: #123
 Scope: pkg/parser/*, tests/parser/*
 Review first: pkg/parser/links.py
 Verified: pytest tests/parser
-Risk: low
+Risk: none-detected
 ```
+
+`<fill in...>`, `n/a`, `tbd`, `todo`, and `not set` are still incomplete and
+fail the corridor.
 
 Headings, bold labels, and bullet labels are not fields. For example,
 `### Decision`, `**Decision:** #123`, and `- Decision: #123` are invalid.
@@ -33,11 +36,13 @@ Headings, bold labels, and bullet labels are not fields. For example,
 check is accepted and labeled `manual`. When an agentcam manifest is committed,
 Corridor CI labels it `recorded` only if the handoff contains
 `[recorded by agentcam]` and an exact `command (exit 0)` match from that
-manifest. Placeholders, `n/a`, and unmatched recorded claims are `unverified`.
-Legacy or hook capture can additionally be labeled `partial`.
+manifest. Placeholders, `n/a`, and unmatched recorded claims are `unverified`
+and fail the corridor. Manual checks remain valid and labeled `manual`. Legacy
+or hook capture can additionally be labeled `partial` without changing the
+verdict.
 
-These labels produce warnings only. They never change the pass conditions or
-the action exit code.
+`manual` and `partial` produce warnings only. `unverified` is an issue and fails
+the default action mode.
 
 ## Scope
 
@@ -46,8 +51,9 @@ to forward slashes. Glob matching uses git-style semantics: `*` and `?` never
 cross `/`, `**/` spans zero or more directories, and `dir/**` means the
 directory and the whole subtree.
 
-`Scope: auto` is also accepted. It uses the changed files as the declared review
-boundary.
+`Scope: auto` is rejected. A declared boundary must be independent of the diff
+it checks. Match-everything patterns such as `**/*` are rejected for the same
+reason.
 
 ## Pass Conditions
 
@@ -56,16 +62,15 @@ the changed files, every changed file is covered by the declared scope, the
 changed-file limit is not exceeded, and dependency manifest changes are allowed
 or absent.
 
-If no handoff was attempted, small PRs can pass only when
-`small_change_max_files` is enabled, the changed-file count is within that
-limit, and no dependency manifest changed.
+All changes require all five fields. File count is not a proxy for semantic
+risk: a one-file policy, authentication, migration, or workflow change still
+needs a review boundary.
 
 ## Warnings
 
 Warnings never block. Corridor CI warns when:
 
-- A declared scope pattern is `*`, `**`, or `**/*`, because the corridor carries
-  no information.
 - `Decision` has no `#123`-style reference and no `http://` or `https://` URL.
 - The PR body is more than 60 lines, because the compact handoff is harder to
   find.
+- Verification is manual or observation coverage is partial.

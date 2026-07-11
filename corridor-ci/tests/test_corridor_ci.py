@@ -36,22 +36,21 @@ class CorridorCiTest(unittest.TestCase):
 
     def test_fenced_example_does_not_shadow_real_handoff(self):
         # The PR template seeds a fenced example; first-non-empty-value
-        # wins, so without fence-awareness "Scope: auto" in the example
-        # would disable the corridor check for the real handoff below.
+        # wins, so fenced fields must never shadow the real handoff below.
         body = (
             "```md\n"
-            "Decision: #123 or small fix\n"
-            "Scope: auto\n"
-            "Review first: path/to/file\n"
-            "Verified: test command or manual check\n"
-            "Risk: none\n"
+            "Decision: <fill in: issue, discussion, or short decision>\n"
+            "Scope: <fill in: repo-relative path or glob>\n"
+            "Review first: <fill in: changed file>\n"
+            "Verified: <fill in: completed command or manual check>\n"
+            "Risk: <fill in: high, medium, none-detected, or unknown>\n"
             "```\n"
             "\n"
             "Decision: #456\n"
             "Scope: src/real.py\n"
             "Review first: src/real.py\n"
             "Verified: pytest\n"
-            "Risk: low\n"
+            "Risk: none-detected\n"
         )
         handoff = corridor_ci.extract_compact_handoff(body)
         self.assertEqual(handoff["Scope"], "src/real.py")
@@ -63,7 +62,7 @@ class CorridorCiTest(unittest.TestCase):
             "Some prose.\n"
             "```\n"
             "Decision: #123\n"
-            "Scope: auto\n"
+            "Scope: <fill in: repo-relative path or glob>\n"
             "```\n"
         )
         handoff = corridor_ci.extract_compact_handoff(body)
@@ -73,7 +72,7 @@ class CorridorCiTest(unittest.TestCase):
     def test_tilde_fence_is_also_skipped(self):
         body = (
             "~~~\n"
-            "Scope: auto\n"
+            "Scope: <fill in: repo-relative path or glob>\n"
             "~~~\n"
             "Scope: src/x.py\n"
         )
@@ -167,77 +166,97 @@ class CorridorCiTest(unittest.TestCase):
         markdown = corridor_ci.render_markdown(report)
         self.assertIn("## Copyable Review Handoff", markdown)
         self.assertIn("Decision:", markdown)
-        self.assertIn("Scope: path/or/glob", markdown)
+        self.assertIn("Scope: <fill in: repo-relative path or glob>", markdown)
 
-    def test_small_change_without_handoff_can_pass(self):
+    def test_small_change_without_handoff_still_fails(self):
         report = corridor_ci.evaluate(
             changed_files=["README.md"],
             corridor_text=None,
-            small_change_max_files=1,
-        )
-
-        self.assertTrue(report.ok)
-        self.assertIn("small change fast path", "\n".join(report.warnings))
-
-    def test_small_change_with_plain_prose_body_can_pass(self):
-        report = corridor_ci.evaluate(
-            changed_files=["README.md"],
-            corridor_text="Fix typo in docs.",
-            small_change_max_files=1,
-        )
-
-        self.assertTrue(report.ok)
-        self.assertIn("small change fast path", "\n".join(report.warnings))
-
-    def test_small_change_with_context_heading_body_can_pass(self):
-        report = corridor_ci.evaluate(
-            changed_files=["README.md"],
-            corridor_text="## Context\nJust fixing a typo.",
-            small_change_max_files=1,
-        )
-
-        self.assertTrue(report.ok)
-        self.assertIn("small change fast path", "\n".join(report.warnings))
-
-    def test_partial_handoff_does_not_use_small_change_fast_path(self):
-        report = corridor_ci.evaluate(
-            changed_files=["README.md"],
-            corridor_text="Risk: low",
-            small_change_max_files=1,
-        )
-
-        self.assertFalse(report.ok)
-        self.assertNotIn("small change fast path", "\n".join(report.warnings))
-        self.assertIn("compact handoff is missing `Decision`", "\n".join(report.issues))
-        self.assertIn("compact handoff is missing `Scope`", "\n".join(report.issues))
-        self.assertIn("compact handoff is missing `Review first`", "\n".join(report.issues))
-        self.assertIn("compact handoff is missing `Verified`", "\n".join(report.issues))
-
-    def test_small_change_fast_path_does_not_allow_dependencies(self):
-        report = corridor_ci.evaluate(
-            changed_files=["package.json"],
-            corridor_text=None,
-            small_change_max_files=1,
-        )
-
-        self.assertFalse(report.ok)
-        self.assertIn("dependency manifest changed", "\n".join(report.issues))
-
-    def test_missing_handoff_fails_above_small_change_limit(self):
-        report = corridor_ci.evaluate(
-            changed_files=["README.md", "docs/setup.md"],
-            corridor_text=None,
-            small_change_max_files=1,
         )
 
         self.assertFalse(report.ok)
         self.assertIn("compact handoff is required", "\n".join(report.issues))
 
-    def test_prose_without_fast_path_reports_no_handoff_fields(self):
+    def test_small_change_with_plain_prose_body_still_fails(self):
+        report = corridor_ci.evaluate(
+            changed_files=["README.md"],
+            corridor_text="Fix typo in docs.",
+        )
+
+        self.assertFalse(report.ok)
+        self.assertIn("no handoff fields were found", "\n".join(report.issues))
+
+    def test_small_change_with_context_heading_body_still_fails(self):
+        report = corridor_ci.evaluate(
+            changed_files=["README.md"],
+            corridor_text="## Context\nJust fixing a typo.",
+        )
+
+        self.assertFalse(report.ok)
+        self.assertIn("no handoff fields were found", "\n".join(report.issues))
+
+    def test_partial_handoff_requires_every_field(self):
+        report = corridor_ci.evaluate(
+            changed_files=["README.md"],
+            corridor_text="Risk: none-detected",
+        )
+
+        self.assertFalse(report.ok)
+        self.assertIn("compact handoff is missing `Decision`", "\n".join(report.issues))
+        self.assertIn("compact handoff is missing `Scope`", "\n".join(report.issues))
+        self.assertIn("compact handoff is missing `Review first`", "\n".join(report.issues))
+        self.assertIn("compact handoff is missing `Verified`", "\n".join(report.issues))
+
+    def test_fill_in_placeholders_do_not_complete_required_fields(self):
+        base = (
+            "Decision: #123\n"
+            "Scope: src/a.py\n"
+            "Review first: src/a.py\n"
+            "Verified: manual check passed\n"
+            "Risk: none-detected\n"
+        )
+        for label, placeholder in (
+            ("Decision", "<fill in>"),
+            ("Risk", "<fill in>"),
+            ("Decision", "n/a"),
+            ("Risk", "tbd"),
+        ):
+            body = re.sub(
+                rf"(?m)^{label}: .+$",
+                f"{label}: {placeholder}",
+                base,
+            )
+            with self.subTest(label=label, placeholder=placeholder):
+                report = corridor_ci.evaluate(
+                    changed_files=["src/a.py"],
+                    corridor_text=body,
+                )
+                self.assertFalse(report.ok)
+                self.assertIn("placeholder", "\n".join(report.issues))
+
+    def test_missing_handoff_and_dependency_change_both_fail(self):
+        report = corridor_ci.evaluate(
+            changed_files=["package.json"],
+            corridor_text=None,
+        )
+
+        self.assertFalse(report.ok)
+        self.assertIn("compact handoff is required", "\n".join(report.issues))
+        self.assertIn("dependency manifest changed", "\n".join(report.issues))
+
+    def test_missing_handoff_fails_for_multiple_files(self):
+        report = corridor_ci.evaluate(
+            changed_files=["README.md", "docs/setup.md"],
+            corridor_text=None,
+        )
+
+        self.assertFalse(report.ok)
+        self.assertIn("compact handoff is required", "\n".join(report.issues))
+
+    def test_prose_without_handoff_fields_reports_missing_handoff(self):
         report = corridor_ci.evaluate(
             changed_files=["README.md", "docs/setup.md"],
             corridor_text="Fix typo in docs.",
-            small_change_max_files=1,
         )
 
         self.assertFalse(report.ok)
@@ -399,13 +418,13 @@ class CorridorCiTest(unittest.TestCase):
                 "Decision: #1\n"
                 "Scope: src/*.py\n"
                 "Review first: src/café.py\n"
-                "Verified: n/a\n"
+                "Verified: manual filename check passed\n"
                 "Risk: none\n"
             ),
         )
         self.assertTrue(report.ok, report.issues)
 
-    def test_scope_auto_uses_changed_files(self):
+    def test_scope_auto_is_rejected_because_it_declares_no_boundary(self):
         handoff = VALID_HANDOFF.replace(
             "Scope: frontend/src/components/ui/rating.tsx, frontend/tests/rating.spec.ts",
             "Scope: auto",
@@ -419,14 +438,9 @@ class CorridorCiTest(unittest.TestCase):
             corridor_text=handoff,
         )
 
-        self.assertTrue(report.ok)
-        self.assertEqual(
-            report.allowed_paths,
-            [
-                "frontend/src/components/ui/rating.tsx",
-                "frontend/tests/rating.spec.ts",
-            ],
-        )
+        self.assertFalse(report.ok)
+        self.assertEqual(report.allowed_paths, [])
+        self.assertIn("Scope must declare explicit paths", "\n".join(report.issues))
 
     def test_dependency_manifests_are_flagged_by_default(self):
         handoff = VALID_HANDOFF.replace(
@@ -446,7 +460,7 @@ class CorridorCiTest(unittest.TestCase):
         self.assertFalse(report.ok)
         self.assertIn("dependency manifest changed", "\n".join(report.issues))
 
-    def test_scope_matching_everything_warns_without_blocking(self):
+    def test_scope_matching_everything_is_rejected(self):
         handoff = VALID_HANDOFF.replace(
             "Scope: frontend/src/components/ui/rating.tsx, frontend/tests/rating.spec.ts",
             "Scope: **/*",
@@ -460,8 +474,8 @@ class CorridorCiTest(unittest.TestCase):
             corridor_text=handoff,
         )
 
-        self.assertTrue(report.ok)
-        self.assertIn("carries no information", "\n".join(report.warnings))
+        self.assertFalse(report.ok)
+        self.assertIn("carries no information", "\n".join(report.issues))
 
     def test_decision_without_reference_warns_without_blocking(self):
         handoff = VALID_HANDOFF.replace("Decision: #123", "Decision: small fix")
@@ -501,7 +515,7 @@ class CorridorCiTest(unittest.TestCase):
         self.assertEqual(corridor_ci.exit_code(report, mode="warn"), 0)
         self.assertEqual(corridor_ci.exit_code(report, mode="fail"), 1)
 
-    def test_cli_defaults_to_warn_mode(self):
+    def test_cli_defaults_to_fail_mode(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             subprocess.run(["git", "init", "-b", "main"], cwd=root, check=True, capture_output=True, text=True)
@@ -521,17 +535,14 @@ class CorridorCiTest(unittest.TestCase):
                 if old_base_ref is not None:
                     os.environ["GITHUB_BASE_REF"] = old_base_ref
 
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 1)
 
-    def test_parser_default_max_changed_files_is_12_when_unset(self):
-        old_max_changed_files = os.environ.pop("INPUT_MAX_CHANGED_FILES", None)
-        try:
-            args = corridor_ci.build_parser().parse_args([])
-        finally:
-            if old_max_changed_files is not None:
-                os.environ["INPUT_MAX_CHANGED_FILES"] = old_max_changed_files
-
-        self.assertEqual(args.max_changed_files, 12)
+    def test_parser_does_not_expose_file_count_escape_hatches(self):
+        parser = corridor_ci.build_parser()
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["--max-changed-files", "12"])
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["--small-change-max-files", "1"])
 
     def test_cli_reads_pr_body_and_git_diff(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -752,7 +763,7 @@ class CorridorCiTest(unittest.TestCase):
         self.assertIsNotNone(workflow_tag)
         self.assertEqual(readme_tag.group(1), workflow_tag.group(1))
 
-    # -- agentcam recorded evidence (display-only) --------------------
+    # -- agentcam verification evidence -------------------------------
 
     @staticmethod
     def _sample_evidence_manifest() -> dict:
@@ -793,18 +804,16 @@ class CorridorCiTest(unittest.TestCase):
             },
         }
 
-    def test_read_agentcam_manifest_preserves_capture_and_compat_wrapper(self):
+    def test_read_agentcam_manifest_preserves_capture_and_evidence(self):
         sample = self._sample_evidence_manifest()
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "manifest.redacted.json"
             path.write_text(json.dumps(sample), encoding="utf-8")
             manifest, note = corridor_ci.read_agentcam_manifest(path)
-            evidence, compatibility_note = corridor_ci.read_agentcam_evidence(path)
 
         self.assertIsNone(note)
         self.assertEqual(manifest["capture"]["mode"], "wrap_pipe")
-        self.assertEqual(evidence, sample["evidence"])
-        self.assertIsNone(compatibility_note)
+        self.assertEqual(manifest["evidence"], sample["evidence"])
 
     def test_verification_provenance_recorded_requires_matching_pass(self):
         assessment = corridor_ci.classify_verification_provenance(
@@ -830,8 +839,11 @@ class CorridorCiTest(unittest.TestCase):
             "<fill in: agentcam did not observe a test run>",
             "n/a",
             "none",
+            "none - documentation only",
             "not run",
+            "not run: environment unavailable",
             "unverified",
+            "unverified pending CI",
             "ruff check . (exit 0) [recorded by agentcam]",
         ):
             with self.subTest(value=value):
@@ -871,7 +883,7 @@ class CorridorCiTest(unittest.TestCase):
         self.assertEqual(assessment.status, "manual")
         self.assertTrue(assessment.partial)
 
-    def test_provenance_warnings_never_change_verdict(self):
+    def test_manual_verification_remains_valid_but_visible(self):
         report = corridor_ci.evaluate(
             changed_files=[
                 "frontend/src/components/ui/rating.tsx",
@@ -879,49 +891,46 @@ class CorridorCiTest(unittest.TestCase):
             ],
             corridor_text=VALID_HANDOFF,
             allow_dependencies=False,
-            max_changed_files=12,
-            small_change_max_files=0,
         )
-        before = corridor_ci.exit_code(report, mode="fail")
         assessment = corridor_ci.classify_verification_provenance(
             report.handoff["Verified"], None
         )
+        enforced = corridor_ci.apply_verification_policy(report, assessment)
         rendered = corridor_ci.render_markdown(
-            report, verification_provenance=assessment
+            enforced, verification_provenance=assessment
         )
 
-        self.assertEqual(before, 0)
-        self.assertEqual(corridor_ci.exit_code(report, mode="fail"), 0)
+        self.assertTrue(enforced.ok)
+        self.assertEqual(corridor_ci.exit_code(enforced, mode="fail"), 0)
         self.assertIn("# Corridor CI: PASS", rendered)
         self.assertIn("## Verification Provenance", rendered)
         self.assertIn("status: manual", rendered)
         self.assertIn("## Warnings", rendered)
 
-    def test_read_agentcam_evidence_missing_file_is_silent(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            evidence, note = corridor_ci.read_agentcam_evidence(
-                Path(tmp) / "nope" / "manifest.redacted.json"
-            )
-        self.assertIsNone(evidence)
-        self.assertIsNone(note)
+    def test_unverified_or_fake_recorded_claim_blocks(self):
+        for verified in (
+            "<fill in: test command>",
+            "not run",
+            "ruff check . (exit 0) [recorded by agentcam]",
+        ):
+            with self.subTest(verified=verified):
+                handoff = VALID_HANDOFF.replace(
+                    "Verified: python -m unittest", f"Verified: {verified}"
+                )
+                report = corridor_ci.evaluate(
+                    changed_files=[
+                        "frontend/src/components/ui/rating.tsx",
+                        "frontend/tests/rating.spec.ts",
+                    ],
+                    corridor_text=handoff,
+                )
+                assessment = corridor_ci.classify_verification_provenance(
+                    report.handoff["Verified"], self._sample_evidence_manifest()
+                )
+                enforced = corridor_ci.apply_verification_policy(report, assessment)
 
-    def test_read_agentcam_evidence_malformed_yields_note(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "manifest.redacted.json"
-            path.write_text("{not json", encoding="utf-8")
-            evidence, note = corridor_ci.read_agentcam_evidence(path)
-        self.assertIsNone(evidence)
-        self.assertIn("could not be read", note)
-
-    def test_read_agentcam_evidence_without_evidence_key_yields_note(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "manifest.redacted.json"
-            path.write_text(
-                json.dumps({"schema_version": "0.1"}), encoding="utf-8"
-            )
-            evidence, note = corridor_ci.read_agentcam_evidence(path)
-        self.assertIsNone(evidence)
-        self.assertIn("no evidence section", note)
+                self.assertFalse(enforced.ok)
+                self.assertIn("verification is unverified", "\n".join(enforced.issues))
 
     def test_render_markdown_includes_recorded_evidence(self):
         report = corridor_ci.evaluate(
@@ -931,8 +940,6 @@ class CorridorCiTest(unittest.TestCase):
             ],
             corridor_text=VALID_HANDOFF,
             allow_dependencies=False,
-            max_changed_files=12,
-            small_change_max_files=0,
         )
         evidence = self._sample_evidence_manifest()["evidence"]
         with_evidence = corridor_ci.render_markdown(
@@ -964,8 +971,8 @@ class CorridorCiTest(unittest.TestCase):
         self.assertNotIn("not-a-dict", rendered)
 
     def test_render_evidence_never_raises_on_adversarial_shapes(self):
-        # Committed manifests are author-controlled; display-only means
-        # no shape may crash the renderer before the verdict is set.
+        # Committed manifests are author-controlled; no shape may crash the
+        # renderer before policy and reporting complete.
         evidence = self._sample_evidence_manifest()["evidence"]
         evidence["risk_flags"] = ["not-a-dict", {"level": "HIGH"}]
         evidence["verifications"] = 42

@@ -40,21 +40,27 @@ git clone https://github.com/shihchengwei-lab/coding-agent-guardrails ~/guardrai
 ~/guardrails/install.sh /path/to/your/project
 ```
 
+```powershell
+git clone https://github.com/shihchengwei-lab/coding-agent-guardrails $HOME\guardrails
+& $HOME\guardrails\install.ps1 -Project C:\path\to\your\project
+```
+
 重跑安全。安裝器會把紀律區塊（規則＋agentcam 交接循環）接進
 `CLAUDE.md` 與 `AGENTS.md`（Claude Code 讀前者、Codex 等讀後者）、
 裝好 slime-coding 的 hooks、放一份 corridor-ci 起手 workflow（你已有
 的不會被覆蓋）、把 agentcam 從這份 checkout 直接 pip 裝進你目前的
-Python（需 3.11 以上），並接好 agentcam 的 session 掛鉤，Claude Code
-的 session 不用打 `agentcam run` 也會自動錄。
+  Python（需 3.11 以上），並接好 agentcam 自動錄製：shell 安裝路徑錄 Claude Code
+  session，PowerShell 安裝路徑錄 Codex 每一回合。Codex 專案 hooks 需先用 `/hooks`
+  檢視並信任一次。
 
 ## 閉環
 
 四個工具會接成一個流程。這就是打包的意義：
 
-1. **實錄**：`agentcam run -- <agent 指令>`（或直接在 Claude Code 裡
-   工作：安裝器接好的 agentcam session 掛鉤會自動錄）。agent 改的一切
+1. **實錄**：`agentcam run -- <agent 指令>`（或使用安裝器接好的 Claude Code
+   session／Codex turn 掛鉤）。agent 改的一切
    記錄在 `.git/agentcam/runs/`。取捨先講明：hook 模式的證據比較薄，
-   Claude Code 不會把終端輸出餵給掛鉤，所以輸出樣式型的風險旗標
+   lifecycle 掛鉤看不到終端輸出，所以輸出樣式型的風險旗標
    （`rm -rf` 之類）抓不到；要最完整的實錄，用 `agentcam run` 包著跑。
 2. **驗證**：`agentcam verify -- pytest -q`。由 agentcam 親自執行測試，
    記下指令、退出碼、耗時：是儀器量到的事實，不是 agent 的自述。
@@ -66,8 +72,8 @@ Python（需 3.11 以上），並接好 agentcam 的 session 掛鉤，Claude Cod
    實錄寫成可 commit 的檔案，隨 PR 一起提交。
 5. **關卡**：corridor-ci 在 PR 上用實際 diff 驗證交接單，並把實錄證據
    （風險旗標、驗證紀錄、diff 統計）附進報告。它會把驗證標成
-   recorded、manual 或 unverified，也會指出 partial observation。這些來源
-   警告只給 reviewer 看，永遠不影響檢查過不過。
+   recorded、manual 或 unverified，也會指出 partial observation。manual 與
+   partial 會保持可見；placeholder 或假的 recorded 聲明會讓 corridor 失敗。
 
 每個工具都可以單獨使用；各子目錄有自己的 README。
 

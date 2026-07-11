@@ -37,60 +37,18 @@ from agentcam.scanner import (
 # Public entry points
 # ---------------------------------------------------------------------------
 
-def render_report(
-    bundle_or_manifest: ReportBundle | RunManifest,
-    state_before: GitState | None = None,
-    state_after: GitState | None = None,
-    risk_flags: list[RiskFlag] | None = None,
-    dependency_changes: list[DependencyChange] | None = None,
-) -> str:
-    """Render the full ``AGENT_RUN_REPORT.md`` as a string.
-
-    Two call shapes are accepted:
-
-    1. **Bundle form (preferred for new code)** —
-       ``render_report(bundle)`` where ``bundle`` is a
-       :class:`ReportBundle`. New renderers (SARIF, PR-comment) will
-       take a Bundle too, so consolidating on this shape keeps the
-       producer/consumer contract narrow.
-
-    2. **Legacy positional form** —
-       ``render_report(manifest, state_before, state_after,
-       risk_flags, dependency_changes=None)``. Kept so existing tests
-       and any external callers don't break in one big-bang change;
-       internally it just builds a Bundle and dispatches to the same
-       code path.
-    """
-    if isinstance(bundle_or_manifest, ReportBundle):
-        bundle = bundle_or_manifest
-    else:
-        # Legacy positional path. Use a proper TypeError instead of
-        # `assert` so the requirement survives ``python -O`` and
-        # surfaces clearly rather than as a downstream NoneType crash.
-        if state_before is None or state_after is None:
-            raise TypeError(
-                "render_report: legacy positional form requires both "
-                "state_before and state_after"
-            )
-        bundle = ReportBundle(
-            manifest=bundle_or_manifest,
-            state_before=state_before,
-            state_after=state_after,
-            risk_flags=list(risk_flags or []),
-            dependency_changes=list(dependency_changes or []),
-        )
-
+def render_report(bundle: ReportBundle) -> str:
+    """Render the full ``AGENT_RUN_REPORT.md`` from one explicit input."""
     manifest = bundle.manifest
     sections: list[str] = [
         _render_header(manifest),
         _render_capture_visibility(manifest.capture),
-        _render_verdict(bundle.risk_flags),
+        _render_verdict(bundle.risk_flags, manifest.capture),
         _render_risk_flags(bundle.risk_flags),
         _render_changed_files(bundle.state_after),
         _render_dependency_changes(bundle.dependency_changes, manifest),
         _render_diff_stat(bundle.state_after),
         _render_exit_detail(manifest.exit_detail),
-        _render_verification_placeholder(),
         _render_rollback(manifest, bundle.state_after),
         _render_logs(manifest),
         _render_scanner_ruleset(manifest.ruleset),
@@ -117,8 +75,8 @@ def write_run_artifacts(
     shell_used: bool,
     terminal_forward_degraded: bool,
     platform_label: str,
-    capture: CaptureCapability | None = None,
-    ruleset: RulesetProvenance | None = None,
+    capture: CaptureCapability,
+    ruleset: RulesetProvenance,
 ) -> ReportBundle:
     """Build manifest + Bundle, render report, write both artifacts.
 
@@ -266,13 +224,8 @@ def serialize_manifest(m: RunManifest) -> dict:
         "agentcam_version": m.agentcam_version,
         "paths": paths_dict,
     }
-    if m.capture is not None:
-        # Block is omitted (not set to null) for legacy manifests so
-        # JSON consumers can use `"capture" in data` to detect schema
-        # presence cleanly. New production manifests always carry it.
-        out["capture"] = _serialize_capture(m.capture)
-    if m.ruleset is not None:
-        out["ruleset"] = _serialize_ruleset(m.ruleset)
+    out["capture"] = _serialize_capture(m.capture)
+    out["ruleset"] = _serialize_ruleset(m.ruleset)
     return out
 
 
@@ -280,10 +233,7 @@ def _serialize_ruleset(p: RulesetProvenance) -> dict:
     return {
         "builtin_ruleset_id": p.builtin_ruleset_id,
         "builtin_ruleset_version": p.builtin_ruleset_version,
-        "custom_rules_path": p.custom_rules_path,
-        "custom_rules_sha256": p.custom_rules_sha256,
-        "merged_rules_sha256": p.merged_rules_sha256,
-        "load_status": p.load_status,
+        "rules_sha256": p.rules_sha256,
     }
 
 
@@ -305,12 +255,12 @@ def _serialize_capture(c: CaptureCapability) -> dict:
 
 
 def overall_risk_level(flags: list[RiskFlag]) -> str:
-    """Overall risk from individual flags: HIGH > MEDIUM > LOW."""
+    """Overall scanner result: HIGH > MEDIUM > no flag detected."""
     if any(f.level == "HIGH" for f in flags):
         return "HIGH"
     if any(f.level == "MEDIUM" for f in flags):
         return "MEDIUM"
-    return "LOW"
+    return "NONE_DETECTED"
 
 
 def serialize_evidence(
@@ -319,9 +269,7 @@ def serialize_evidence(
     """Machine-readable run evidence for the manifest "evidence" block.
 
     Downstream consumers (`agentcam handoff`, corridor-ci) read this
-    instead of parsing the rendered Markdown report. Like "capture",
-    the block is omitted from legacy manifests so JSON consumers can
-    use `"evidence" in data` to detect schema presence cleanly.
+    instead of parsing the rendered Markdown report.
     """
     return {
         "changed_files": [
@@ -397,6 +345,8 @@ _CAPTURE_NOTE: dict[str, str] = {
                         "stderr merge into one stream.",
     "claude_hook": "Recorded via Claude Code SessionStart / SessionEnd hooks; "
                    "no subprocess wrapping, no terminal output.",
+    "codex_hook": "Recorded via Codex UserPromptSubmit / Stop turn hooks; "
+                  "no subprocess wrapping, no terminal output.",
     # stdout / stderr
     "captured": "Streamed bytes preserved to raw log.",
     "not_available": "Not piped through agentcam in this mode.",
@@ -408,7 +358,7 @@ _CAPTURE_NOTE: dict[str, str] = {
     # transcript
     "not_supported": "Mode has no transcript concept.",
     "available_not_ingested": "Hook payload exposed a transcript_path; "
-                              "agentcam does not parse it yet (v0.3+ work).",
+                              "agentcam records its availability but does not parse it.",
     "ingested_redacted": "Transcript text was parsed and redacted into the report.",
     # visibility (internal calls / file reads / network)
     "not_visible": "Outside agentcam's observation surface in this mode.",
@@ -425,17 +375,8 @@ _CAPTURE_NOTE: dict[str, str] = {
 }
 
 
-def _render_capture_visibility(c: CaptureCapability | None) -> str:
-    """Render the `## Capture Visibility` section.
-
-    Returns "" when ``c`` is None — legacy callers / fixtures that don't
-    set capture continue producing the previous report shape. New
-    production reports (wrap mode + hook mode) always include this
-    block.
-    """
-    if c is None:
-        return ""
-
+def _render_capture_visibility(c: CaptureCapability) -> str:
+    """Render the required `## Capture Visibility` section."""
     def row(signal: str, status: str) -> str:
         note = _CAPTURE_NOTE.get(status, "")
         return f"| {signal} | `{status}` | {note} |"
@@ -465,15 +406,27 @@ def _render_capture_visibility(c: CaptureCapability | None) -> str:
     return "\n".join(lines)
 
 
-def _render_verdict(flags: list[RiskFlag]) -> str:
+def _capture_is_partial(capture: CaptureCapability) -> bool:
+    return not (
+        capture.git_before_after == "captured"
+        and capture.path_risk_scan == "enabled"
+        and capture.output_risk_scan == "enabled"
+    )
+
+
+def _render_verdict(
+    flags: list[RiskFlag], capture: CaptureCapability
+) -> str:
     level = overall_risk_level(flags)
-    if level == "LOW":
-        overall, review = "LOW (no risk flags)", "no"
+    if level == "NONE_DETECTED" and _capture_is_partial(capture):
+        overall, review = "**UNKNOWN** (partial capture; no flags detected)", "yes"
+    elif level == "NONE_DETECTED":
+        overall, review = "No heuristic risk flags detected", "no"
     else:
-        overall, review = level, "yes"
+        overall, review = f"**{level}**", "yes"
     return (
         "## Verdict\n\n"
-        f"- Overall risk: **{overall}**\n"
+        f"- Overall risk: {overall}\n"
         f"- Human review required: {review}\n\n"
         "> Risk flags are heuristics, not verdicts. They indicate where to "
         "look, not what happened. agentcam cannot judge intent or context."
@@ -662,16 +615,6 @@ def _render_exit_detail(d: ExitDetail | None) -> str:
     return "\n".join(lines)
 
 
-def _render_verification_placeholder() -> str:
-    return (
-        "## Verification\n\n"
-        "- Tests observed: unknown (this report does not detect checks; "
-        "`agentcam verify` records them into the manifest evidence)\n"
-        "- Build observed: unknown\n"
-        "- Lint observed: unknown"
-    )
-
-
 def _render_rollback(manifest: RunManifest, state: GitState) -> str:
     has_changes = any(not _is_internal(cf.path) for cf in state.changed_files)
     failed = (
@@ -751,25 +694,12 @@ def _render_logs(m: RunManifest) -> str:
     )
 
 
-def _render_scanner_ruleset(p: RulesetProvenance | None) -> str:
-    """Render the `## Scanner Ruleset` section.
-
-    Compact: 4-5 lines, placed near the bottom of the report so it
-    doesn't compete with risk flags for attention. Returns "" when
-    ``p`` is None (legacy callers).
-    """
-    if p is None:
-        return ""
-    custom_path = p.custom_rules_path or "none"
-    custom_hash = p.custom_rules_sha256 or "—"
-    merged_hash = p.merged_rules_sha256 or "—"
+def _render_scanner_ruleset(p: RulesetProvenance) -> str:
+    """Render the built-in scanner identity and behavior hash."""
     return (
         "## Scanner Ruleset\n\n"
         f"- Built-in ruleset: `{p.builtin_ruleset_id}` / `{p.builtin_ruleset_version}`\n"
-        f"- Custom rules: {custom_path}\n"
-        f"- Custom rules hash: `{custom_hash}`\n"
-        f"- Merged rules hash: `{merged_hash}`\n"
-        f"- Load status: `{p.load_status}`"
+        f"- Rules hash: `{p.rules_sha256}`"
     )
 
 

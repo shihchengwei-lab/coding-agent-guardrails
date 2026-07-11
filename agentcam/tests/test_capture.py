@@ -2,8 +2,7 @@
 
 Two angles:
  - factory functions produce the right enum values per mode
- - serialize_manifest + render_report flow the metadata into JSON + Markdown
-   without breaking the legacy ``capture=None`` path
+ - serialize_manifest + render_report flow the required metadata into JSON + Markdown
 """
 from __future__ import annotations
 
@@ -23,11 +22,13 @@ from agentcam.models import (
     RunManifest,
     RunPaths,
     capture_for_claude_hook,
+    capture_for_codex_hook,
     capture_for_wrap_pipe,
     capture_for_wrap_pty_posix,
     capture_for_wrap_pty_windows,
 )
 from agentcam.report import render_report, serialize_manifest, write_manifest
+from agentcam.scanner import provenance_for_builtin_ruleset
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +66,7 @@ def _paths(tmp_path: Path) -> RunPaths:
     )
 
 
-def _manifest(tmp_path: Path, *, capture: CaptureCapability | None) -> RunManifest:
+def _manifest(tmp_path: Path, *, capture: CaptureCapability) -> RunManifest:
     ed = ExitDetail(
         wrapper_exit=0,
         raw_returncode=0,
@@ -98,6 +99,7 @@ def _manifest(tmp_path: Path, *, capture: CaptureCapability | None) -> RunManife
         agentcam_version="0.1.0",
         paths=_paths(tmp_path),
         capture=capture,
+        ruleset=provenance_for_builtin_ruleset(),
     )
 
 
@@ -147,6 +149,16 @@ class TestFactories:
         )
         assert c.transcript == "unknown"
 
+    def test_codex_hook_is_partial_and_named_honestly(self):
+        c = capture_for_codex_hook(
+            transcript_available=True,
+            empty_run_policy="auto_delete_clean_no_diff",
+        )
+        assert c.mode == "codex_hook"
+        assert c.git_before_after == "captured"
+        assert c.path_risk_scan == "enabled"
+        assert c.output_risk_scan == "disabled_no_output_stream"
+
     def test_capture_capability_is_frozen(self):
         c = capture_for_wrap_pipe(empty_run_policy="auto_delete_clean_no_diff")
         # Frozen dataclass refuses field rebinding so renderers can't
@@ -170,15 +182,6 @@ class TestSerializeManifest:
         assert cap["stdout"] == "captured"
         assert cap["output_risk_scan"] == "enabled"
         assert cap["empty_run_policy"] == "auto_delete_clean_no_diff"
-
-    def test_capture_block_omitted_when_none(self, tmp_path: Path):
-        # Legacy callers (existing tests, test fixtures) that build a
-        # RunManifest without setting `capture` must still serialize.
-        m = _manifest(tmp_path, capture=None)
-        data = serialize_manifest(m)
-        # Either absent OR explicit None — both signal "legacy / unknown".
-        # We pick "absent" so JSON consumers can use `"capture" in data`.
-        assert data.get("capture") is None or "capture" not in data
 
     def test_manifest_round_trips_via_write_manifest(self, tmp_path: Path):
         c = capture_for_claude_hook(
@@ -212,16 +215,6 @@ class TestRenderReport:
         # Network egress line must NOT be omitted — that's the whole point
         # of Feature 1 + Feature 2 working together.
         assert "network_egress" in report or "Network egress" in report
-
-    def test_capture_visibility_section_absent_when_none(self, tmp_path: Path):
-        m = _manifest(tmp_path, capture=None)
-        bundle = ReportBundle(
-            manifest=m,
-            state_before=_empty_state(),
-            state_after=_empty_state(),
-        )
-        report = render_report(bundle)
-        assert "## Capture Visibility" not in report
 
     @pytest.mark.parametrize(
         "factory",
@@ -267,18 +260,4 @@ class TestRenderReport:
         # The user must be able to see that output scanning was off here.
         assert "disabled_no_output_stream" in report
         assert "not_available" in report  # stdout / stderr lines
-
-
-# ---------------------------------------------------------------------------
-# Legacy positional render_report still works (back-compat: no capture arg)
-# ---------------------------------------------------------------------------
-
-class TestLegacySignatureBackCompat:
-    def test_legacy_positional_call_does_not_require_capture(
-        self, tmp_path: Path,
-    ):
-        m = _manifest(tmp_path, capture=None)
-        report = render_report(m, _empty_state(), _empty_state(), [])
-        # Legacy callers should not lose existing sections.
-        assert "## Verdict" in report
-        assert "## Capture Visibility" not in report
+        assert "Overall risk: **UNKNOWN**" in report

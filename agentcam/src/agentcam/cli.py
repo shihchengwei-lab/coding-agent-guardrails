@@ -61,6 +61,14 @@ def build_parser() -> argparse.ArgumentParser:
             "a git-visible diff. Reads JSON payload from stdin."
         ),
     )
+    sub.add_parser(
+        "hook-turn-start",
+        help="Codex UserPromptSubmit hook: snapshot git state for one turn.",
+    )
+    sub.add_parser(
+        "hook-turn-end",
+        help="Codex Stop hook: record the turn's git-visible changes.",
+    )
 
     run = sub.add_parser(
         "run",
@@ -252,6 +260,14 @@ def main(argv: list[str] | None = None) -> int:
         from agentcam.hooks import cmd_hook_session_end
         return cmd_hook_session_end()
 
+    if args.cmd == "hook-turn-start":
+        from agentcam.hooks import cmd_hook_turn_start
+        return cmd_hook_turn_start()
+
+    if args.cmd == "hook-turn-end":
+        from agentcam.hooks import cmd_hook_turn_end
+        return cmd_hook_turn_end()
+
     if args.cmd == "export":
         return _export_command(args)
 
@@ -426,7 +442,17 @@ def _handoff_command(args) -> int:
     review_first = _pick_review_first(
         paths, evidence.get("risk_flags") or []
     )
-    risk = str(evidence.get("overall_risk") or "low").lower()
+    scanner_result = str(evidence.get("overall_risk") or "").upper()
+    if scanner_result in {"HIGH", "MEDIUM"}:
+        risk = scanner_result.lower()
+    else:
+        capture = data.get("capture")
+        full_capture = isinstance(capture, dict) and (
+            capture.get("git_before_after") == "captured"
+            and capture.get("path_risk_scan") == "enabled"
+            and capture.get("output_risk_scan") == "enabled"
+        )
+        risk = "none-detected" if full_capture else "unknown"
 
     # The handoff is drafted to be pasted into a PR body: secret-like
     # filenames must not leave the machine here any more than they do in

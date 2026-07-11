@@ -1,10 +1,8 @@
-"""Claude Code hooks: SessionStart / SessionEnd integration.
+"""Lifecycle-hook recording for Claude Code sessions and Codex turns.
 
-The wrapping path (``agentcam run -- ...``) records one session per
-invocation; the user has to remember to type ``cr "task"`` for every
-recording. The hooks path records every Claude Code session
-automatically via ``~/.claude/settings.json`` wiring, with no command
-memorization required.
+The wrapping path (``agentcam run -- ...``) records one subprocess. Hook
+recording removes that manual wrapper step while preserving honest partial
+capture metadata.
 
 Settings.json wiring (one-time setup, e.g. ``~/.claude/settings.json``)::
 
@@ -23,6 +21,10 @@ Both hook commands read the Claude Code hook payload JSON from stdin
 and extract ``session_id`` + ``cwd``. Both exit 0 unconditionally
 (never block Claude Code, even on internal errors).
 
+Codex uses ``hook-turn-start`` on UserPromptSubmit and ``hook-turn-end`` on
+Stop. Those commands key snapshots by ``turn_id`` because Codex has no
+SessionEnd event. All four commands share the same snapshot/report pipeline.
+
 State storage:
 ``<git_dir>/agentcam/sessions/<sanitized-session-id>/state_before.pickle``
 — pickle is used because :class:`GitState` contains bytes and nested
@@ -31,8 +33,8 @@ local-only under ``.git/`` (same trust model as the rest of agentcam's
 artifacts: if the attacker can write here, they already own the user).
 
 The session dir is removed on SessionEnd whether or not a report is
-generated. If SessionEnd never fires (Claude Code crash), the session
-dir is left orphaned — orphan cleanup is a future improvement.
+generated. If SessionEnd never fires (Claude Code crash), verify ignores the
+leftover after its stale-session threshold.
 """
 from __future__ import annotations
 
@@ -83,13 +85,15 @@ def _read_hook_input() -> dict | None:
     return parsed
 
 
-def _extract_session(payload: dict) -> tuple[str, Path] | None:
-    """Extract (session_id, cwd) from a hook payload.
+def _extract_session(
+    payload: dict, *, id_field: str = "session_id"
+) -> tuple[str, Path] | None:
+    """Extract a recording id and cwd from a hook payload.
 
     Returns None if either is missing or empty. The session_id is kept
     raw (sanitization happens at the filesystem boundary, not here).
     """
-    sid = payload.get("session_id")
+    sid = payload.get(id_field)
     cwd_str = payload.get("cwd")
     if not isinstance(sid, str) or not sid:
         return None
@@ -131,7 +135,15 @@ def cmd_hook_session_start() -> int:
         return 0
 
 
-def _do_session_start() -> int:
+def cmd_hook_turn_start() -> int:
+    """Codex UserPromptSubmit hook: snapshot one turn by turn_id."""
+    try:
+        return _do_session_start(id_field="turn_id")
+    except Exception:  # noqa: BLE001 — observation must not block Codex
+        return 0
+
+
+def _do_session_start(*, id_field: str = "session_id") -> int:
     from agentcam.git_state import (
         NotAGitRepoError,
         collect_git_state,
@@ -143,7 +155,7 @@ def _do_session_start() -> int:
     payload = _read_hook_input()
     if payload is None:
         return 0
-    extracted = _extract_session(payload)
+    extracted = _extract_session(payload, id_field=id_field)
     if extracted is None:
         return 0
     session_id, cwd = extracted
@@ -241,14 +253,31 @@ def cmd_hook_session_end() -> int:
         return 0
 
 
-def _do_session_end() -> int:
+def cmd_hook_turn_end() -> int:
+    """Codex Stop hook: finish one turn recording by turn_id."""
+    try:
+        return _do_session_end(id_field="turn_id", recorder="codex-turn")
+    except Exception:  # noqa: BLE001
+        try:
+            print(
+                "agentcam: hook-turn-end failed silently (internal error)",
+                file=sys.stderr,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return 0
+
+
+def _do_session_end(
+    *, id_field: str = "session_id", recorder: str = "claude-session"
+) -> int:
     from agentcam.git_state import (
         NotAGitRepoError,
         collect_git_state,
         compute_diff_fingerprint,
         resolve_git_dir,
     )
-    from agentcam.models import capture_for_claude_hook
+    from agentcam.models import capture_for_claude_hook, capture_for_codex_hook
     from agentcam.paths import create_run_dir
     from agentcam.report import write_run_artifacts
     from agentcam.scanner import provenance_for_builtin_ruleset, scan_paths
@@ -256,13 +285,12 @@ def _do_session_end() -> int:
     payload = _read_hook_input()
     if payload is None:
         return 0
-    extracted = _extract_session(payload)
+    extracted = _extract_session(payload, id_field=id_field)
     if extracted is None:
         return 0
     session_id, cwd = extracted
     # transcript_path is the only currently-documented richer-visibility
-    # signal Claude Code exposes to hooks; ingestion itself is a v0.3+
-    # roadmap item -- we just record whether the path was advertised.
+    # signal Claude Code exposes to hooks; record whether it was advertised.
     transcript_available = isinstance(payload.get("transcript_path"), str)
 
     if not cwd.exists():
@@ -358,7 +386,7 @@ def _do_session_end() -> int:
     ended_at = datetime.now(timezone.utc).astimezone()
     run_id, run_paths = create_run_dir(
         git_dir, started_at,
-        name=f"claude-session-{_short_sid(session_id)}",
+        name=f"{recorder}-{_short_sid(session_id)}",
     )
 
     # Codex review MEDIUM #5: from here until the report is written,
@@ -389,10 +417,13 @@ def _do_session_end() -> int:
         # Shared post-run pipeline: dep probe + manifest + bundle +
         # render + write. Same helper called from wrap mode (cli.py).
         # `capture` records that hook mode has no stdout/stderr stream
-        # and that transcript ingestion is a v0.3+ item -- so report
-        # readers don't confuse "no output flags" with "no risk" --
-        # see docs/design.md #28.
-        capture = capture_for_claude_hook(
+        # so report readers don't confuse "no output flags" with "no risk".
+        capture_factory = (
+            capture_for_codex_hook
+            if recorder == "codex-turn"
+            else capture_for_claude_hook
+        )
+        capture = capture_factory(
             transcript_available=transcript_available,
             empty_run_policy="auto_delete_clean_no_diff",
         )
@@ -407,8 +438,8 @@ def _do_session_end() -> int:
             run_id=run_id.text,
             started_at=started_at,
             ended_at=ended_at,
-            command_argv_raw=["(claude code session)", session_id],
-            command_argv_redacted=["(claude code session)", session_id],
+            command_argv_raw=[f"({recorder})", session_id],
+            command_argv_redacted=[f"({recorder})", session_id],
             exit_detail=None,  # no subprocess in hook mode
             shell_used=False,
             terminal_forward_degraded=False,

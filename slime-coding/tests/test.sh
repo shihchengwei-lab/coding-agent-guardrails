@@ -36,6 +36,7 @@ trap cleanup EXIT
 hostpath() { cygpath -m "$1" 2>/dev/null || printf '%s' "$1"; }
 
 pre()    { printf '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"%s"},"cwd":"%s"}' "$(hostpath "$2")" "$(hostpath "$1")"; }
+prepatch() { printf '{"hook_event_name":"PreToolUse","tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\\n*** Update File: %s\\n*** End Patch"},"cwd":"%s"}' "$(hostpath "$2")" "$(hostpath "$1")"; }
 prompt() { printf '{"hook_event_name":"UserPromptSubmit","cwd":"%s"}' "$(hostpath "$1")"; }
 stop()   { printf '{"hook_event_name":"Stop","cwd":"%s"}' "$(hostpath "$1")"; }
 
@@ -62,6 +63,15 @@ esac
 printf '# Corridor: real\n## Paths\n- lib/**\n' > "$D/.slime/corridor.md"
 out=$(pre "$D" "$D/lib/x.dart" | python3 "$PATCH")
 [ -z "$out" ] && ok "4  valid corridor + edit allowed file -> allow" || bad "4  valid corridor + edit allowed file -> allow" "$out"
+
+out=$(prepatch "$D" "$D/lib/x.dart" | python3 "$PATCH")
+[ -z "$out" ] && ok "4b Codex apply_patch inside corridor -> allow" || bad "4b Codex apply_patch inside corridor -> allow" "$out"
+
+out=$(prepatch "$D" "$D/other/x.dart" | python3 "$PATCH")
+case "$out" in
+  *'"deny"'*"outside the corridor"*) ok "4c Codex apply_patch outside corridor -> deny" ;;
+  *) bad "4c Codex apply_patch outside corridor -> deny" "$out" ;;
+esac
 
 # --- prune-inject env handling ---------------------------------------------
 printf '# Pruned\n## [2026-01-01] corridor:other\n**Pruned:** y\n' > "$D/.slime/PRUNED.md"
@@ -128,15 +138,30 @@ case "$out" in
   *) bad "11 template example glob -> deny" "$out" ;;
 esac
 
-# A3: valid corridor + edit a file OUTSIDE the corridor ->
-#     PreToolUse allows (gate only checks corridor validity), and Stop blocks
-#     by default because out-of-corridor product code is semantic displacement.
+printf '# Corridor: real-task\n## Paths\n- **/*\n' > "$F/.slime/corridor.md"
+out=$(pre "$F" "$F/lib/x.dart" | python3 "$PATCH")
+case "$out" in
+  *'"deny"'*"match-all"*) ok "11b match-all corridor -> deny" ;;
+  *) bad "11b match-all corridor -> deny" "$out" ;;
+esac
+
+printf '# Corridor: real-task\n## Paths\n- ../**\n' > "$F/.slime/corridor.md"
+out=$(pre "$F" "$(dirname "$F")/outside.py" | python3 "$PATCH")
+case "$out" in
+  *'"deny"'*"outside the repository"*) ok "11c parent-path corridor cannot authorize external edit" ;;
+  *) bad "11c parent-path corridor cannot authorize external edit" "$out" ;;
+esac
+
+# A3: valid corridor + edit a file OUTSIDE the corridor -> deny before writing.
 G="$(mkrepo)"
 mkdir -p "$G/.slime"
 printf '# Corridor: real\n## Paths\n- lib/**\n' > "$G/.slime/corridor.md"
 git -C "$G" add -A && git -C "$G" commit -qm init
 out=$(pre "$G" "$G/other/y.py" | python3 "$PATCH")
-[ -z "$out" ] && ok "12 out-of-corridor edit -> PreToolUse allow" || bad "12 out-of-corridor edit -> PreToolUse allow" "$out"
+case "$out" in
+  *'"deny"'*"outside the corridor"*) ok "12 out-of-corridor edit -> PreToolUse deny" ;;
+  *) bad "12 out-of-corridor edit -> PreToolUse deny" "$out" ;;
+esac
 mkdir -p "$G/other"; printf 'x\n' > "$G/other/y.py"
 out=$(stop "$G" | python3 "$PATCH")
 case "$out" in
@@ -144,12 +169,11 @@ case "$out" in
   *) bad "13 out-of-corridor product code blocks by default" "$out" ;;
 esac
 
-# A3b: report-only escape hatch keeps the cost report visible without blocking.
+# A3b: the core boundary cannot be disabled by an environment escape hatch.
 out=$(stop "$G" | SLIME_STRICT_CORRIDOR=0 python3 "$PATCH")
 case "$out" in
-  *'"block"'*) bad "13b SLIME_STRICT_CORRIDOR=0 -> report only" "$out" ;;
-  *"out-of-corridor files: 1"*) ok "13b SLIME_STRICT_CORRIDOR=0 -> report only" ;;
-  *) bad "13b SLIME_STRICT_CORRIDOR=0 -> report only" "$out" ;;
+  *'"block"'*"out-of-corridor"*) ok "13b strict corridor cannot be disabled" ;;
+  *) bad "13b strict corridor cannot be disabled" "$out" ;;
 esac
 
 # A3c: git-style glob semantics — a single * must not cross directories, so
@@ -220,12 +244,11 @@ case "$out" in
   *) bad "14 missing pubspec -> dependency gate degrades" "$out" ;;
 esac
 
-# A5: SLIME_TEST_CMD timing out -> degrades, does not crash or block
+# A5: a configured check timing out is not verification and must block.
 out=$(stop "$H" | SLIME_TEST_CMD='sleep 5' SLIME_TEST_TIMEOUT=1 python3 "$PATCH")
 case "$out" in
-  *'"block"'*) bad "15 SLIME_TEST_CMD timeout -> degrade (no block)" "$out" ;;
-  *systemMessage*) ok "15 SLIME_TEST_CMD timeout -> degrade (no block)" ;;
-  *) bad "15 SLIME_TEST_CMD timeout -> degrade (no block)" "$out" ;;
+  *'"block"'*"timed out"*) ok "15 SLIME_TEST_CMD timeout -> block" ;;
+  *) bad "15 SLIME_TEST_CMD timeout -> block" "$out" ;;
 esac
 
 # A6: multiple PRUNED records -> inject only matching-corridor + recent N
@@ -301,12 +324,11 @@ case "$out" in
   *) bad "21 SLIME_TYPECHECK_CMD exit 1 -> block (remedy text)" "$out" ;;
 esac
 
-# AC4: command not found -> degrade (no false block)
+# AC4: a configured command that cannot run is a broken gate and must block.
 out=$(stop "$M" | SLIME_TYPECHECK_CMD='this-cmd-does-not-exist-xyz' python3 "$PATCH")
 case "$out" in
-  *'"block"'*) bad "22 missing typecheck cmd -> degrade" "$out" ;;
-  *systemMessage*) ok "22 missing typecheck cmd -> degrade (no block)" ;;
-  *) bad "22 missing typecheck cmd -> degrade" "$out" ;;
+  *'"block"'*Typecheck*"could not run"*) ok "22 missing typecheck cmd -> block" ;;
+  *) bad "22 missing typecheck cmd -> block" "$out" ;;
 esac
 
 # AC5: typecheck fail + new dependency -> both blocks present
@@ -322,12 +344,11 @@ else
   bad "23 typecheck + dependency -> both blocks in reason" "$out"
 fi
 
-# AC6: stop_hook_active -> no block even if typecheck fails
+# AC6: a second Stop re-runs the gate; red does not become green by retrying Stop.
 out=$(printf '{"hook_event_name":"Stop","stop_hook_active":true,"cwd":"%s"}' "$(hostpath "$M")" | SLIME_TYPECHECK_CMD='sh -c "exit 1"' python3 "$PATCH")
 case "$out" in
-  *'"block"'*) bad "24 stop_hook_active + typecheck fail -> no block" "$out" ;;
-  *systemMessage*) ok "24 stop_hook_active + typecheck fail -> no block" ;;
-  *) bad "24 stop_hook_active + typecheck fail -> no block" "$out" ;;
+  *'"block"'*Typecheck*) ok "24 stop_hook_active + typecheck fail -> still block" ;;
+  *) bad "24 stop_hook_active + typecheck fail -> still block" "$out" ;;
 esac
 
 # === Repo-meta files exempt from corridor gate ==============================
@@ -381,13 +402,12 @@ case "$out" in
   *) bad "30 untracked template PRUNED.md does not disarm red-check gate" "$out" ;;
 esac
 
-# 30b: a real record appended to the still-untracked log re-arms the exit.
+# 30b: recording a pruned route does not turn a failing check into completion.
 printf '\n## [2026-07-06] corridor:real\n**Pruned:** the abandoned design\n' >> "$Q/.slime/PRUNED.md"
 out=$(stop "$Q" | SLIME_TEST_CMD='exit 1' python3 "$PATCH")
 case "$out" in
-  *'"block"'*) bad "30b untracked PRUNED.md with real record -> may stop on red" "$out" ;;
-  *systemMessage*) ok "30b untracked PRUNED.md with real record -> may stop on red" ;;
-  *) bad "30b untracked PRUNED.md with real record -> may stop on red" "$out" ;;
+  *'"block"'*"failing check"*) ok "30b PRUNED record does not waive red check" ;;
+  *) bad "30b PRUNED record does not waive red check" "$out" ;;
 esac
 
 # 31: emptying corridor.md after editing product code must not launder the
@@ -404,12 +424,11 @@ case "$out" in
   *) bad "31 emptied corridor + product change -> block" "$out" ;;
 esac
 
-# 31b: report-only mode still escapes (no false-block training).
+# 31b: invalid corridor cannot be laundered through an environment override.
 out=$(stop "$R2" | SLIME_STRICT_CORRIDOR=0 python3 "$PATCH")
 case "$out" in
-  *'"block"'*) bad "31b emptied corridor + STRICT=0 -> report only" "$out" ;;
-  *systemMessage*) ok "31b emptied corridor + STRICT=0 -> report only" ;;
-  *) bad "31b emptied corridor + STRICT=0 -> report only" "$out" ;;
+  *'"block"'*"Restore or complete"*) ok "31b invalid corridor cannot be disabled" ;;
+  *) bad "31b invalid corridor cannot be disabled" "$out" ;;
 esac
 
 # 32: dependency gate survives 4-space pubspec indentation.
@@ -423,6 +442,93 @@ out=$(stop "$P6" | python3 "$PATCH")
 case "$out" in
   *'"block"'*http*) ok "32 4-space pubspec + new dep -> block (names it)" ;;
   *) bad "32 4-space pubspec + new dep -> block (names it)" "$out" ;;
+esac
+
+# 32b: npm dependency additions are detected without Flutter-specific config.
+NPM="$(mkrepo)"
+printf '{"dependencies":{"left-pad":"1.0.0"}}\n' > "$NPM/package.json"
+mkdir -p "$NPM/.slime"
+printf '# Corridor: npm\n## Paths\n- package.json\n' > "$NPM/.slime/corridor.md"
+git -C "$NPM" add -A && git -C "$NPM" commit -qm init
+printf '{"dependencies":{"left-pad":"1.0.0","react":"19.0.0"}}\n' > "$NPM/package.json"
+out=$(stop "$NPM" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*package.json*react*) ok "32b npm new dep -> block" ;;
+  *) bad "32b npm new dep -> block" "$out" ;;
+esac
+
+cat > "$NPM/.slime/corridor.md" <<'EOF'
+# Corridor: npm-justified
+## Rigor
+normal
+## Outcome
+The requested UI uses the project-standard React runtime.
+## Paths
+- package.json
+## Evidence
+- Supports: the existing application is already React-based.
+- Would falsify: the target package is not used by the application runtime.
+- Dependency: react — required by the requested UI and existing framework.
+## Stop Condition
+- Manual: dependency manifest contains only the justified package.
+EOF
+out=$(stop "$NPM" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*"New dependency"*) bad "32b2 justified npm dep -> allow" "$out" ;;
+  *systemMessage*) ok "32b2 justified npm dep -> allow" ;;
+  *) bad "32b2 justified npm dep -> allow" "$out" ;;
+esac
+
+# 32c: Python requirements and pyproject additions are detected.
+PYDEPS="$(mkrepo)"
+printf 'requests==2.0\n' > "$PYDEPS/requirements.txt"
+printf '[project]\ndependencies = ["requests>=2"]\n' > "$PYDEPS/pyproject.toml"
+mkdir -p "$PYDEPS/.slime"
+printf '# Corridor: python-deps\n## Paths\n- requirements.txt\n- pyproject.toml\n' > "$PYDEPS/.slime/corridor.md"
+git -C "$PYDEPS" add -A && git -C "$PYDEPS" commit -qm init
+printf 'requests==2.0\nflask==3.0\n' > "$PYDEPS/requirements.txt"
+printf '[project]\ndependencies = ["requests>=2", "httpx>=0.27"]\n' > "$PYDEPS/pyproject.toml"
+out=$(stop "$PYDEPS" | python3 "$PATCH")
+if grep -q requirements.txt <<<"$out" && grep -q flask <<<"$out" && grep -q pyproject.toml <<<"$out" && grep -q httpx <<<"$out"; then
+  ok "32c Python new deps -> block and name both manifests"
+else
+  bad "32c Python new deps -> block and name both manifests" "$out"
+fi
+
+# 32d: Cargo and Go module additions are detected.
+SYSDEPS="$(mkrepo)"
+printf '[package]\nname="x"\nversion="0.1.0"\n[dependencies]\nserde="1"\n' > "$SYSDEPS/Cargo.toml"
+printf 'module example.com/x\n\ngo 1.22\n\nrequire example.com/a v1.0.0\n' > "$SYSDEPS/go.mod"
+mkdir -p "$SYSDEPS/.slime"
+printf '# Corridor: systems-deps\n## Paths\n- Cargo.toml\n- go.mod\n' > "$SYSDEPS/.slime/corridor.md"
+git -C "$SYSDEPS" add -A && git -C "$SYSDEPS" commit -qm init
+printf '[package]\nname="x"\nversion="0.1.0"\n[dependencies]\nserde="1"\nanyhow="1"\n' > "$SYSDEPS/Cargo.toml"
+printf 'module example.com/x\n\ngo 1.22\n\nrequire (\nexample.com/a v1.0.0\nexample.com/b v1.2.0\n)\n' > "$SYSDEPS/go.mod"
+out=$(stop "$SYSDEPS" | python3 "$PATCH")
+if grep -q Cargo.toml <<<"$out" && grep -q anyhow <<<"$out" && grep -q go.mod <<<"$out" && grep -q example.com/b <<<"$out"; then
+  ok "32d Cargo and Go new deps -> block"
+else
+  bad "32d Cargo and Go new deps -> block" "$out"
+fi
+
+# 32e: an explicit Stop Condition command runs without extra environment setup.
+AUTOCHK="$(mkrepo)"
+mkdir -p "$AUTOCHK/.slime"
+cat > "$AUTOCHK/.slime/corridor.md" <<'EOF'
+# Corridor: automatic-check
+## Rigor
+trivial
+## Outcome
+The focused behavior is correct.
+## Paths
+- lib/x.py
+## Stop Condition
+- Command: sh -c "exit 1"
+EOF
+out=$(stop "$AUTOCHK" | python3 "$PATCH")
+case "$out" in
+  *'"block"'*"failing check"*) ok "32e Stop Condition command is enforced" ;;
+  *) bad "32e Stop Condition command is enforced" "$out" ;;
 esac
 
 # === Rigor-aware corridor validation =======================================
@@ -464,13 +570,13 @@ case "$out" in
   *) bad "34b empty explicit rigor -> deny" "$out" ;;
 esac
 
-# 35: trivial requires only Scope, Paths, and Stop Condition.
+# 35: trivial requires only Outcome, Paths, and Stop Condition.
 cat > "$R3/.slime/corridor.md" <<'EOF'
 # Corridor: tiny-fix
 ## Rigor
 trivial
-## Scope
-Correct one local typo.
+## Outcome
+The typo is corrected without changing behavior.
 ## Paths
 - lib/x.py
 ## Stop Condition
@@ -493,19 +599,10 @@ cat > "$R3/.slime/corridor.md" <<'EOF'
 # Corridor: normal-fix
 ## Rigor
 normal
-## Scope
-Change one observable behavior.
-## Semantic Delta
-- This task changes: the requested behavior.
-- This task preserves: existing APIs.
-## Non-goals
-- No unrelated refactor.
+## Outcome
+The requested observable behavior changes while existing APIs remain stable.
 ## Paths
 - lib/**
-## Goal Frontier
-- The acceptance criterion passes.
-## Start Frontier
-- lib/x.py:run
 ## Evidence
 - Supports: the failing test reaches lib/x.py:run.
 - Would falsify: the stack trace points to another owner.
@@ -536,25 +633,16 @@ cat > "$R3/.slime/corridor.md" <<'EOF'
 # Corridor: risky-change
 ## Rigor
 high
-## Scope
-Change a high-risk behavior.
-## Semantic Delta
-- This task changes: the requested behavior.
-- This task preserves: existing ownership.
-## Non-goals
-- No unrelated migration.
+## Outcome
+The high-risk behavior changes while existing ownership remains stable.
 ## Paths
 - lib/**
-## Goal Frontier
-- The acceptance criterion passes.
-## Start Frontier
-- lib/x.py:run
 ## Evidence
 - Supports: the runtime trace reaches lib/x.py:run.
 - Would falsify: the trace bypasses that seam.
 ## Stop Condition
 - The focused and full checks pass.
-## High-risk Controls
+## Controls
 - Failure mode: requests may be rejected.
 - Rollback: revert the feature flag.
 - Independent check: run the integration suite.
@@ -576,14 +664,14 @@ for field in 'Failure mode:' 'Rollback:' 'Independent check:'; do
   mv "$R3/.slime/corridor.full.md" "$R3/.slime/corridor.md"
 done
 
-# 42: rigor mismatch signals are report-only and do not create a Stop block.
+# 42: trivial is an enforceable one-product-file tier.
 TIER="$(mkrepo)"
 mkdir -p "$TIER/.slime" "$TIER/lib"
 cat > "$TIER/.slime/corridor.md" <<'EOF'
 # Corridor: under-scoped
 ## Rigor
 trivial
-## Scope
+## Outcome
 One local change.
 ## Paths
 - lib/**
@@ -597,31 +685,21 @@ printf 'class A:\n    pass\n' > "$TIER/lib/a.py"
 printf 'new\n' > "$TIER/lib/b.py"
 out=$(stop "$TIER" | python3 "$PATCH")
 case "$out" in
-  *'"block"'*) bad "42 trivial mismatch stays warning-only" "$out" ;;
-  *"rigor mismatch"*"consider normal/high"*) ok "42 trivial mismatch stays warning-only" ;;
-  *) bad "42 trivial mismatch stays warning-only" "$out" ;;
+  *'"block"'*"trivial corridor"*) ok "42 trivial with multiple product files -> block" ;;
+  *) bad "42 trivial with multiple product files -> block" "$out" ;;
 esac
 
-# 43: normal above the existing 12-file review default suggests high, not block.
+# 43: normal has no arbitrary file-count threshold when every file is in scope.
 NORM="$(mkrepo)"
 mkdir -p "$NORM/.slime" "$NORM/lib"
 cat > "$NORM/.slime/corridor.md" <<'EOF'
 # Corridor: broad-normal
 ## Rigor
 normal
-## Scope
-Update a broad generated surface.
-## Semantic Delta
-- This task changes: generated values.
-- This task preserves: public APIs.
-## Non-goals
-- No architecture change.
+## Outcome
+Generated values are current while public APIs remain stable.
 ## Paths
 - lib/**
-## Goal Frontier
-- Generated values are current.
-## Start Frontier
-- lib/:generated files
 ## Evidence
 - Supports: the generator owns these files.
 - Would falsify: a hand-owned file appears.
@@ -633,9 +711,10 @@ git -C "$NORM" add -A && git -C "$NORM" commit -qm init
 for i in $(seq 1 13); do printf 'new\n' > "$NORM/lib/$i.txt"; done
 out=$(stop "$NORM" | python3 "$PATCH")
 case "$out" in
-  *'"block"'*) bad "43 broad normal mismatch stays warning-only" "$out" ;;
-  *"rigor mismatch"*"consider high"*) ok "43 broad normal mismatch stays warning-only" ;;
-  *) bad "43 broad normal mismatch stays warning-only" "$out" ;;
+  *'"block"'*) bad "43 broad normal inside explicit corridor -> allow" "$out" ;;
+  *"rigor mismatch"*) bad "43 normal has no arbitrary count warning" "$out" ;;
+  *systemMessage*) ok "43 broad normal inside explicit corridor -> allow" ;;
+  *) bad "43 broad normal inside explicit corridor -> allow" "$out" ;;
 esac
 
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

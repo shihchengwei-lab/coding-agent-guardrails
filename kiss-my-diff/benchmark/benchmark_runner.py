@@ -229,7 +229,11 @@ def collect_result(task: dict, lab_dir: Path, run_dir: Path, timeout_seconds: in
 def find_results(run_root: Path) -> list[dict]:
     rows = []
     for path in sorted(run_root.rglob("result.json")):
-        rows.append(json.loads(path.read_text(encoding="utf-8")))
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            rows.extend(data)
+        else:
+            rows.append(data)
     return rows
 
 

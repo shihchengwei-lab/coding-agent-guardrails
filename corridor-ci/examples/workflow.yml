@@ -14,6 +14,4 @@ jobs:
 
       - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v11
         with:
-          mode: warn
-          small_change_max_files: 1
-          max_changed_files: 12
+          mode: fail

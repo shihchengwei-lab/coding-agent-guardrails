@@ -8,19 +8,11 @@ inputs:
   mode:
     description: "fail blocks the check; warn only writes the report."
     required: false
-    default: warn
+    default: fail
   allow_dependencies:
     description: "Whether dependency manifest changes are allowed."
     required: false
     default: "false"
-  max_changed_files:
-    description: "Optional changed-file limit. Set 0 to disable."
-    required: false
-    default: "12"
-  small_change_max_files:
-    description: "Allow PRs without a handoff when changed-file count is at or below this value. Set 0 to disable."
-    required: false
-    default: "0"
   comment:
     description: "Upsert the Corridor CI report as a sticky PR comment."
     required: false
@@ -29,8 +21,8 @@ inputs:
     description: >-
       Checkout-relative path of a committed agentcam manifest.redacted.json
       (written by `agentcam export --files`). When present, its recorded
-      evidence and capture coverage are appended to the report. Verification
-      provenance may warn, but never affects pass/fail.
+      evidence and capture coverage are appended to the report. Blank,
+      placeholder, or false recorded verification claims fail the corridor.
     required: false
     default: ".agentcam/manifest.redacted.json"
 
@@ -42,8 +34,6 @@ runs:
       env:
         INPUT_MODE: ${{ inputs.mode }}
         INPUT_ALLOW_DEPENDENCIES: ${{ inputs.allow_dependencies }}
-        INPUT_MAX_CHANGED_FILES: ${{ inputs.max_changed_files }}
-        INPUT_SMALL_CHANGE_MAX_FILES: ${{ inputs.small_change_max_files }}
         INPUT_COMMENT: ${{ inputs.comment }}
         INPUT_AGENTCAM_EVIDENCE: ${{ inputs.agentcam_evidence }}
         GITHUB_TOKEN: ${{ github.token }}

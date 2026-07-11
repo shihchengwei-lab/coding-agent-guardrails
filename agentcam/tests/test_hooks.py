@@ -66,6 +66,42 @@ def _hook_payload(session_id: str, cwd: Path, event: str) -> dict:
     }
 
 
+def _codex_turn_payload(session_id: str, turn_id: str, cwd: Path, event: str) -> dict:
+    payload = _hook_payload(session_id, cwd, event)
+    payload["turn_id"] = turn_id
+    return payload
+
+
+class TestCodexTurnHooks:
+    def test_user_prompt_to_stop_records_one_turn(self, tmp_git_repo: Path):
+        sid = "codex-session"
+        turn_id = "codex-turn-1"
+        start = _codex_turn_payload(sid, turn_id, tmp_git_repo, "UserPromptSubmit")
+        proc = _agentcam_hook(tmp_git_repo, "hook-turn-start", start)
+        assert proc.returncode == 0, proc.stderr
+        assert _session_dir(tmp_git_repo, turn_id).exists()
+
+        (tmp_git_repo / "codex-made-this.txt").write_text("changed", encoding="utf-8")
+        end = _codex_turn_payload(sid, turn_id, tmp_git_repo, "Stop")
+        proc = _agentcam_hook(tmp_git_repo, "hook-turn-end", end)
+
+        assert proc.returncode == 0, proc.stderr
+        assert not _session_dir(tmp_git_repo, turn_id).exists()
+        run = _first_run(tmp_git_repo)
+        manifest = json.loads((run / "manifest.json").read_text("utf-8"))
+        assert manifest["capture"]["mode"] == "codex_hook"
+        assert manifest["evidence"]["overall_risk"] == "NONE_DETECTED"
+        report = (run / "AGENT_RUN_REPORT.md").read_text("utf-8")
+        assert "Overall risk: **UNKNOWN**" in report
+
+    def test_missing_turn_id_is_noop(self, tmp_git_repo: Path):
+        payload = _hook_payload("codex-session", tmp_git_repo, "UserPromptSubmit")
+        proc = _agentcam_hook(tmp_git_repo, "hook-turn-start", payload)
+        assert proc.returncode == 0
+        sessions = tmp_git_repo / ".git" / "agentcam" / "sessions"
+        assert not sessions.exists() or not any(sessions.iterdir())
+
+
 # ---------------------------------------------------------------------------
 # SessionStart
 # ---------------------------------------------------------------------------
@@ -503,8 +539,12 @@ class TestRulesetProvenanceHookMode:
         )
         rs = self._manifest(tmp_git_repo)["ruleset"]
         assert rs["builtin_ruleset_id"] == "agentcam-default"
-        assert rs["load_status"] == "builtin_only"
-        assert rs["merged_rules_sha256"].startswith("sha256:")
+        assert set(rs) == {
+            "builtin_ruleset_id",
+            "builtin_ruleset_version",
+            "rules_sha256",
+        }
+        assert rs["rules_sha256"].startswith("sha256:")
 
 
 # ---------------------------------------------------------------------------

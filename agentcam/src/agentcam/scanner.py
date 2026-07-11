@@ -17,7 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from agentcam.models import ChangedFile, RiskFlag, RiskLevel
@@ -216,11 +216,7 @@ def _is_internal_path(path: str) -> bool:
 # Path scanner
 # ---------------------------------------------------------------------------
 
-def scan_paths(
-    changed: list[ChangedFile],
-    *,
-    ruleset: "RuleSet | None" = None,
-) -> list[RiskFlag]:
+def scan_paths(changed: list[ChangedFile]) -> list[RiskFlag]:
     """Generate risk flags from a list of changed files.
 
     Skips files inside ``.git/agentcam/`` (our own output). For each file:
@@ -228,11 +224,7 @@ def scan_paths(
     - HIGH if filename is secret-like
     - HIGH/MEDIUM by path segment / prefix / basename / extension rules
 
-    ``ruleset`` selects which rules to apply; ``None`` means the
-    built-in default from :func:`default_ruleset`. The substrate for
-    roadmap #4 (YAML custom rules).
     """
-    rs = ruleset if ruleset is not None else default_ruleset()
     flags: list[RiskFlag] = []
 
     for cf in changed:
@@ -260,28 +252,21 @@ def scan_paths(
         # Try matchers in HIGH then MEDIUM order. First hit per matcher
         # class wins (keeps the report tidy). The matcher-class split is
         # preserved deliberately -- collapsing into a single list per
-        # severity would change the dedup semantic. See PathMatchers
-        # docstring.
-        _emit_first_match(path, rs.high_paths.segments, "HIGH",
+        # severity would change the report's first-match dedup semantic.
+        _emit_first_match(path, HIGH_PATH_SEGMENTS, "HIGH",
                           evidence_path, flags, _seg_match)
-        _emit_first_match(path, rs.high_paths.prefixes, "HIGH",
+        _emit_first_match(path, HIGH_PATH_PREFIXES, "HIGH",
                           evidence_path, flags, _path_matches_prefix)
-        _emit_first_match(path, rs.high_paths.basenames, "HIGH",
+        _emit_first_match(path, HIGH_PATH_BASENAMES, "HIGH",
                           evidence_path, flags, _path_matches_basename)
-        _emit_first_match(path, rs.high_paths.extensions, "HIGH",
+        _emit_first_match(path, HIGH_PATH_EXTENSIONS, "HIGH",
                           evidence_path, flags, _path_matches_extension)
-        _emit_first_match(path, rs.medium_paths.segments, "MEDIUM",
+        _emit_first_match(path, MEDIUM_PATH_SEGMENTS, "MEDIUM",
                           evidence_path, flags, _seg_match)
-        _emit_first_match(path, rs.medium_paths.basenames, "MEDIUM",
+        _emit_first_match(path, MEDIUM_PATH_BASENAMES, "MEDIUM",
                           evidence_path, flags, _path_matches_basename)
-        _emit_first_match(path, rs.medium_paths.prefixes, "MEDIUM",
+        _emit_first_match(path, MEDIUM_PATH_PREFIXES, "MEDIUM",
                           evidence_path, flags, _path_matches_prefix)
-        # Built-in medium-extensions is empty; loop kept as a forward-
-        # compat slot so custom RuleSets (e.g. YAML-loaded user rules)
-        # can register medium-severity extension matchers without
-        # another scan_paths edit.
-        _emit_first_match(path, rs.medium_paths.extensions, "MEDIUM",
-                          evidence_path, flags, _path_matches_extension)
 
     return flags
 
@@ -374,23 +359,20 @@ def scan_output(
     raw_text: str,
     *,
     stream_label: str,
-    ruleset: "RuleSet | None" = None,
 ) -> list[RiskFlag]:
     """Scan a raw log stream for HIGH / MEDIUM output patterns.
 
     ``stream_label`` is e.g. ``"stdout.log"`` or ``"stderr.log"``; it
     appears in evidence. Evidence intentionally never contains the raw
-    matched text. ``ruleset`` selects which output patterns to apply;
-    ``None`` means the built-in default.
+    matched text.
     """
-    rs = ruleset if ruleset is not None else default_ruleset()
     flags: list[RiskFlag] = []
     flags.extend(
-        _consolidate(_scan_output_text(raw_text, list(rs.high_output)),
+        _consolidate(_scan_output_text(raw_text, HIGH_OUTPUT_PATTERNS),
                      stream_label, "HIGH")
     )
     flags.extend(
-        _consolidate(_scan_output_text(raw_text, list(rs.medium_output)),
+        _consolidate(_scan_output_text(raw_text, MEDIUM_OUTPUT_PATTERNS),
                      stream_label, "MEDIUM")
     )
     return flags
@@ -425,154 +407,53 @@ def _consolidate(
 
 
 # ---------------------------------------------------------------------------
-# Rule registry (the substrate YAML custom rules will plug into)
+# Built-in ruleset fingerprint
 # ---------------------------------------------------------------------------
 
-@dataclass(frozen=True, slots=True)
-class PathMatchers:
-    """One severity's bundle of path matchers, grouped by matcher kind.
-
-    Kept split (not a single ``list[PathRule]`` discriminated union)
-    so the existing scan_paths behavior is preserved bit-for-bit: each
-    matcher kind can independently emit one flag per file, so a single
-    file matching both a segment rule AND an extension rule still
-    produces two flags. Folding into a single list would change that
-    dedup semantic — see ``docs/design.md`` #27.
-    """
-
-    segments: tuple[tuple[str, str], ...] = ()
-    prefixes: tuple[tuple[str, str], ...] = ()
-    basenames: tuple[tuple[str, str], ...] = ()
-    extensions: tuple[tuple[str, str], ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class RuleSet:
-    """A complete set of scanning rules.
-
-    Built-in default is :data:`_BUILTIN_RULESET`; obtain via
-    :func:`default_ruleset`. YAML loading (roadmap #4) will produce a
-    merged :class:`RuleSet` with user rules layered on top of the
-    built-in.
-    """
-
-    high_paths: PathMatchers = field(default_factory=PathMatchers)
-    medium_paths: PathMatchers = field(default_factory=PathMatchers)
-    high_output: tuple[tuple[re.Pattern[str], str], ...] = ()
-    medium_output: tuple[tuple[re.Pattern[str], str], ...] = ()
-
-
-_BUILTIN_RULESET = RuleSet(
-    high_paths=PathMatchers(
-        segments=tuple(HIGH_PATH_SEGMENTS),
-        prefixes=tuple(HIGH_PATH_PREFIXES),
-        basenames=tuple(HIGH_PATH_BASENAMES),
-        extensions=tuple(HIGH_PATH_EXTENSIONS),
-    ),
-    medium_paths=PathMatchers(
-        segments=tuple(MEDIUM_PATH_SEGMENTS),
-        prefixes=tuple(MEDIUM_PATH_PREFIXES),
-        basenames=tuple(MEDIUM_PATH_BASENAMES),
-        extensions=(),
-    ),
-    high_output=tuple(HIGH_OUTPUT_PATTERNS),
-    medium_output=tuple(MEDIUM_OUTPUT_PATTERNS),
-)
-
-
-def default_ruleset() -> RuleSet:
-    """Return the built-in :class:`RuleSet` shipped with agentcam.
-
-    A function (not a constant export) so future call sites can be
-    intercepted -- e.g. a user-config layer could compose this with
-    YAML-loaded user rules without monkey-patching module state.
-    """
-    return _BUILTIN_RULESET
-
-
-# ---------------------------------------------------------------------------
-# Ruleset provenance (decision #29)
-# ---------------------------------------------------------------------------
-
-# Stable identifier for the built-in rule set shipped with this release.
-# Keep this id in sync with the agentcam release line if you ever ship a
-# parallel ruleset (e.g. an "agentcam-strict" preset); the *version* on
-# the provenance struct is the agentcam version that built it.
 BUILTIN_RULESET_ID = "agentcam-default"
 
 
-def _canonical_ruleset(rs: "RuleSet") -> dict:
-    """Project a :class:`RuleSet` to a JSON-serializable canonical form.
-
-    Matcher tuples are preserved in declaration order, NOT sorted. The
-    reason: ``scan_paths`` emits one flag per matcher class per file
-    via first-match-wins (see ``_emit_first_match``). So
-    ``src/auth/login.py`` reports either ``auth path`` or
-    ``login path`` depending on which segment comes first in the
-    tuple — reordering changes scanner behavior, so the hash must
-    track order. Same logic for ``_outputs``.
-
-    ``re.Pattern.flags`` is included so changing ``IGNORECASE`` or
-    ``MULTILINE`` on a built-in pattern propagates into the hash;
-    otherwise two rulesets that scan differently could share a hash.
-
-    Sorted-keys at the JSON layer (`json.dumps(..., sort_keys=True)`
-    in :func:`compute_ruleset_sha256`) still applies to the
-    top-level keys (`high_paths` / `medium_paths` / ...). Only the
-    matcher *content* preserves order.
-    """
-    def _pm(matchers: PathMatchers) -> dict:
+def builtin_ruleset_sha256() -> str:
+    """Return a deterministic fingerprint of the rules that actually run."""
+    def paths(segments, prefixes, basenames, extensions=()) -> dict:
         return {
-            "segments": [list(t) for t in matchers.segments],
-            "prefixes": [list(t) for t in matchers.prefixes],
-            "basenames": [list(t) for t in matchers.basenames],
-            "extensions": [list(t) for t in matchers.extensions],
+            "segments": [list(item) for item in segments],
+            "prefixes": [list(item) for item in prefixes],
+            "basenames": [list(item) for item in basenames],
+            "extensions": [list(item) for item in extensions],
         }
 
-    def _outputs(rows) -> list:
-        return [[pat.pattern, pat.flags, label] for pat, label in rows]
+    def outputs(rows) -> list:
+        return [[pattern.pattern, pattern.flags, label] for pattern, label in rows]
 
-    return {
-        "high_paths": _pm(rs.high_paths),
-        "medium_paths": _pm(rs.medium_paths),
-        "high_output": _outputs(rs.high_output),
-        "medium_output": _outputs(rs.medium_output),
+    canonical = {
+        "high_paths": paths(
+            HIGH_PATH_SEGMENTS,
+            HIGH_PATH_PREFIXES,
+            HIGH_PATH_BASENAMES,
+            HIGH_PATH_EXTENSIONS,
+        ),
+        "medium_paths": paths(
+            MEDIUM_PATH_SEGMENTS,
+            MEDIUM_PATH_PREFIXES,
+            MEDIUM_PATH_BASENAMES,
+        ),
+        "high_output": outputs(HIGH_OUTPUT_PATTERNS),
+        "medium_output": outputs(MEDIUM_OUTPUT_PATTERNS),
     }
-
-
-def compute_ruleset_sha256(rs: "RuleSet") -> str:
-    """Deterministic ``sha256:<hex>`` over the canonical form of ``rs``.
-
-    Stability guarantee: a rule set whose effective scanner behavior
-    is identical (same matchers in the same declaration order, same
-    pattern strings AND flags) hashes the same across runs. Adding,
-    removing, reordering, or re-flagging a rule changes the hash.
-    Used by :func:`provenance_for_builtin_ruleset` and by future
-    YAML-loader integration to put a single behavior-tracking
-    fingerprint on every report.
-    """
-    canonical = _canonical_ruleset(rs)
     blob = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
 def provenance_for_builtin_ruleset() -> "RulesetProvenance":
-    """Provenance struct for the default (built-in-only) rule set.
-
-    YAML-loaded custom rules (roadmap #4) will return a different
-    struct from a sibling factory; the manifest schema is shared.
-    """
+    """Identify the built-in scanner rules used for this run."""
     # Local import: models.py imports nothing from scanner, so this
     # avoids a circular import at module-load time.
     from agentcam.models import RulesetProvenance
     from agentcam import __version__
 
-    merged = compute_ruleset_sha256(default_ruleset())
     return RulesetProvenance(
         builtin_ruleset_id=BUILTIN_RULESET_ID,
         builtin_ruleset_version=__version__,
-        custom_rules_path=None,
-        custom_rules_sha256=None,
-        merged_rules_sha256=merged,
-        load_status="builtin_only",
+        rules_sha256=builtin_ruleset_sha256(),
     )
