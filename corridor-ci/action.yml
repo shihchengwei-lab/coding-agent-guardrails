@@ -1,5 +1,5 @@
 name: Corridor CI
-description: Require PRs to explain their review boundary before maintainer review.
+description: Validate a state-bound Guardrails review artifact before maintainer review.
 branding:
   icon: git-pull-request
   color: green
@@ -13,15 +13,10 @@ inputs:
     description: "Upsert the Corridor CI report as a sticky PR comment."
     required: false
     default: "false"
-  agentcam_evidence:
-    description: >-
-      Checkout-relative path of a committed agentcam manifest.redacted.json
-      (written by `agentcam export --files`). When present, its locally recorded
-      evidence and capture coverage are appended to the report. Recorded
-      verification must be state-bound and match the current PR product;
-      blank, stale, or false claims fail the corridor.
+  review_artifact:
+    description: "Checkout-relative Guardrails review artifact generated at Stop."
     required: false
-    default: ".agentcam/manifest.redacted.json"
+    default: ".guardrails/review.json"
 
 runs:
   using: composite
@@ -31,6 +26,6 @@ runs:
       env:
         INPUT_MODE: ${{ inputs.mode }}
         INPUT_COMMENT: ${{ inputs.comment }}
-        INPUT_AGENTCAM_EVIDENCE: ${{ inputs.agentcam_evidence }}
+        INPUT_REVIEW_ARTIFACT: ${{ inputs.review_artifact }}
         GITHUB_TOKEN: ${{ github.token }}
       run: python "$GITHUB_ACTION_PATH/bin/corridor_ci.py"

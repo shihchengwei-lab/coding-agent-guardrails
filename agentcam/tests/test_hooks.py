@@ -83,6 +83,7 @@ class TestCodexTurnHooks:
 
         (tmp_git_repo / "codex-made-this.txt").write_text("changed", encoding="utf-8")
         end = _codex_turn_payload(sid, turn_id, tmp_git_repo, "Stop")
+        end["declared_scope"] = ["codex-made-this.txt"]
         proc = _agentcam_hook(tmp_git_repo, "hook-turn-end", end)
 
         assert proc.returncode == 0, proc.stderr
@@ -90,9 +91,25 @@ class TestCodexTurnHooks:
         run = _first_run(tmp_git_repo)
         manifest = json.loads((run / "manifest.json").read_text("utf-8"))
         assert manifest["capture"]["mode"] == "codex_hook"
+        assert manifest["declared_scope"] == ["codex-made-this.txt"]
         assert manifest["evidence"]["overall_risk"] == "NONE_DETECTED"
         report = (run / "AGENT_RUN_REPORT.md").read_text("utf-8")
         assert "Overall risk: **UNKNOWN**" in report
+
+    def test_tracked_slime_corridor_is_not_an_scope_source(self, tmp_git_repo: Path):
+        slime = tmp_git_repo / ".slime"
+        slime.mkdir()
+        (slime / "corridor.md").write_text(
+            "# Corridor: archived\n\n## Paths\n- wrong/**\n", encoding="utf-8"
+        )
+        start = _codex_turn_payload("sid", "turn", tmp_git_repo, "UserPromptSubmit")
+        assert _agentcam_hook(tmp_git_repo, "hook-turn-start", start).returncode == 0
+        (tmp_git_repo / "product.txt").write_text("changed", encoding="utf-8")
+        end = _codex_turn_payload("sid", "turn", tmp_git_repo, "Stop")
+        end["declared_scope"] = ["product.txt"]
+        assert _agentcam_hook(tmp_git_repo, "hook-turn-end", end).returncode == 0
+        manifest = json.loads((_first_run(tmp_git_repo) / "manifest.json").read_text("utf-8"))
+        assert manifest["declared_scope"] == ["product.txt"]
 
     def test_missing_turn_id_is_noop(self, tmp_git_repo: Path):
         payload = _hook_payload("codex-session", tmp_git_repo, "UserPromptSubmit")

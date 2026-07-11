@@ -148,7 +148,6 @@ def _do_session_start(*, id_field: str = "session_id") -> int:
         NotAGitRepoError,
         collect_git_state,
         compute_diff_fingerprint,
-        read_declared_scope,
         resolve_git_dir,
         resolve_git_root,
     )
@@ -195,7 +194,7 @@ def _do_session_start(*, id_field: str = "session_id") -> int:
         "git_dir": str(git_dir),
         "state": state,
         "fingerprint": fingerprint,
-        "declared_scope": read_declared_scope(git_root),
+        "declared_scope": [],
     }
     # NOTE: pickle is acceptable here -- files live under .git/agentcam/
     # which is local-only and write-controlled by the user. Same trust
@@ -352,6 +351,14 @@ def _do_session_end(
         # doesn't poison every future SessionEnd for that session id.
         shutil.rmtree(session_dir, ignore_errors=True)
         return 0
+
+    payload_scope = payload.get("declared_scope")
+    if isinstance(payload_scope, list) and all(
+        isinstance(value, str) for value in payload_scope
+    ):
+        declared_scope = list(dict.fromkeys(
+            value.replace("\\", "/") for value in payload_scope if value
+        ))
 
     state_after = collect_git_state(cwd, is_after=True)
     fingerprint_after = compute_diff_fingerprint(cwd)

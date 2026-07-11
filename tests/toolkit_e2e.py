@@ -69,43 +69,7 @@ def execute_hooks(
     return "".join(outputs)
 
 
-def write_corridor(repo: Path, python: Path) -> None:
-    (repo / ".slime" / "corridor.md").write_text(
-        """# Corridor: toolkit-e2e
-
-## Rigor
-normal
-
-## Outcome
-The installed product loop reaches a Corridor PASS from recorded evidence.
-
-## Scope
-Exercise the installed product loop.
-
-## Paths
-- src/app.py
-
-## Semantic Delta
-Change the installed E2E fixture.
-
-## Non-goals
-No dependency or public API changes.
-
-## Goal Frontier
-The installed hooks, recorder, export, and checker agree.
-
-## Start Frontier
-The repository has a committed installation and fixture.
-
-## Evidence
-- Supports: installed commands produce a matching local recording.
-- Would falsify: any hook, verification, export, or corridor check fails.
-
-## Stop Condition
-- Check: primary
-""",
-        encoding="utf-8",
-    )
+def write_primary_check(repo: Path, python: Path) -> None:
     git_dir = Path(git(repo, "rev-parse", "--absolute-git-dir").stdout.strip())
     config = git_dir / "guardrails" / "config.json"
     config.parent.mkdir(parents=True, exist_ok=True)
@@ -128,6 +92,14 @@ The repository has a committed installation and fixture.
         ),
         encoding="utf-8",
     )
+
+
+def guardrails(repo: Path, platform: str, *args: str, env: dict[str, str]):
+    if platform == "windows":
+        command = subprocess.list2cmdline([str(repo / "guardrails.cmd"), *args])
+    else:
+        command = [str(repo / "guardrails"), *args]
+    return run(command, cwd=repo, env=env)
 
 
 def main() -> int:
@@ -165,7 +137,6 @@ def main() -> int:
             hooks_path = repo / ".claude" / "settings.json"
             command_key = "command"
             id_field = "session_id"
-            start_event, end_event = "SessionStart", "SessionEnd"
         else:
             run(
                 [
@@ -179,7 +150,6 @@ def main() -> int:
             hooks_path = repo / ".codex" / "hooks.json"
             command_key = "commandWindows"
             id_field = "turn_id"
-            start_event, end_event = "UserPromptSubmit", "Stop"
 
         git_dir = Path(git(repo, "rev-parse", "--absolute-git-dir").stdout.strip())
         manifest = json.loads(
@@ -191,74 +161,45 @@ def main() -> int:
         shutil.rmtree(toolkit)
 
         hooks = json.loads(hooks_path.read_text(encoding="utf-8-sig"))["hooks"]
-        write_corridor(repo, python)
+        write_primary_check(repo, python)
         git(repo, "add", "-A")
         git(repo, "commit", "-qm", "installed baseline")
         git(repo, "switch", "-qc", "feature/e2e")
 
-        payload = {id_field: "toolkit-e2e", "cwd": str(repo)}
+        payload = {
+            id_field: "toolkit-e2e", "cwd": str(repo),
+            "prompt": "change the installed E2E fixture",
+        }
         execute_hooks(
-            hooks, start_event, payload, repo=repo, env=env,
+            hooks, "UserPromptSubmit", payload, repo=repo, env=env,
             command_key=command_key,
         )
-        # Claude's turn baseline is refreshed through UserPromptSubmit while
-        # Agentcam keeps the original SessionStart snapshot.
-        if args.platform == "posix":
-            execute_hooks(
-                hooks, "UserPromptSubmit", payload, repo=repo, env=env,
-                command_key=command_key,
-            )
+        guardrails(
+            repo, args.platform, "internal", "scope", "set",
+            "--outcome", "installed hooks produce a state-bound review artifact",
+            "--path", "src/app.py", env=env,
+        )
 
         (repo / "src" / "app.py").write_text("changed = True\n", encoding="utf-8")
-        verify = run(
-            [str(python), "-m", "agentcam.cli", "verify", "--", str(python), "-c", "print('verified')"],
-            cwd=repo,
-            env=env,
+        stop_output = execute_hooks(
+            hooks, "Stop", payload, repo=repo, env=env,
+            command_key=command_key,
         )
-        assert verify.returncode == 0
-
-        if args.platform == "posix":
-            stop_output = execute_hooks(
-                hooks, "Stop", payload, repo=repo, env=env,
-                command_key=command_key,
-            )
-            assert '"block"' not in stop_output, stop_output
-            execute_hooks(
-                hooks, end_event, payload, repo=repo, env=env,
-                command_key=command_key,
-            )
-        else:
-            stop_output = execute_hooks(
-                hooks, end_event, payload, repo=repo, env=env,
-                command_key=command_key,
-            )
-            assert '"block"' not in stop_output, stop_output
-
-        handoff = run(
-            [str(python), "-m", "agentcam.cli", "handoff", "latest"],
-            cwd=repo,
-            env=env,
-        ).stdout.strip()
-        assert "[locally recorded by agentcam]" in handoff, handoff
-        lines = []
-        for line in handoff.splitlines():
-            if line.startswith("Decision:"):
-                line = "Decision: https://example.invalid/issues/1"
-            elif line.startswith("Scope:"):
-                line += ", .agentcam/**"
-            lines.append(line)
-        handoff = "\n".join(lines)
-        run(
-            [str(python), "-m", "agentcam.cli", "export", "latest", "--files", ".agentcam/"],
-            cwd=repo,
-            env=env,
-        )
+        assert '"block"' not in stop_output and "Guardrails ready" in stop_output, stop_output
+        review = json.loads((repo / ".guardrails" / "review.json").read_text("utf-8"))
+        assert review["verification"]["level"] == "recorded", review
+        assert review["delivery"]["scope"] == ["src/app.py"], review
         git(repo, "add", "-A")
         git(repo, "commit", "-qm", "exercise product loop")
 
         event = temp / "event.json"
         event.write_text(
-            json.dumps({"pull_request": {"number": 1, "body": handoff}}),
+            json.dumps({"pull_request": {
+                "number": 1,
+                "body": "ordinary free-form PR body",
+                "title": "Exercise low-friction loop",
+                "html_url": "https://example.invalid/pull/1",
+            }}),
             encoding="utf-8",
         )
         corridor_env = env | {
@@ -271,13 +212,14 @@ def main() -> int:
             env=corridor_env,
         )
         assert "# Corridor CI: PASS" in checked.stdout, checked.stdout
-        assert "local-recorded" in checked.stdout, checked.stdout
+        assert "primary" in checked.stdout, checked.stdout
 
         # A later shell write outside the corridor is observable immediately
         # after Bash and remains a final Stop blocker.
         outside_payload = {id_field: "outside-e2e", "cwd": str(repo), "tool_name": "Bash"}
+        outside_payload["prompt"] = "write outside the intended edit"
         execute_hooks(
-            hooks, start_event, outside_payload, repo=repo, env=env,
+            hooks, "UserPromptSubmit", outside_payload, repo=repo, env=env,
             command_key=command_key,
         )
         (repo / "outside.txt").write_text("outside\n", encoding="utf-8")

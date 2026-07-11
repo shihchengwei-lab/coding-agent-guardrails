@@ -139,7 +139,7 @@ class TestManifestEvidence:
             (_run_dir(tmp_git_repo) / "manifest.json").read_text("utf-8")
         )
 
-        assert manifest["declared_scope"] == ["src/**"]
+        assert manifest["declared_scope"] == []
         assert len(manifest["final_state_fingerprint"]) == 64
         assert len(manifest["evidence"]["product_fingerprint"]) == 64
 
@@ -211,10 +211,10 @@ class TestHandoff:
         proc = _agentcam(tmp_git_repo, "handoff")
 
         assert proc.returncode == 0, proc.stderr
-        assert "Scope: .env.production" in proc.stdout.decode("utf-8")
+        assert "Scope: <fill in:" in proc.stdout.decode("utf-8")
         assert "Review first: .env.production" in proc.stdout.decode("utf-8")
 
-    def test_handoff_uses_declared_scope_instead_of_observed_files(
+    def test_handoff_ignores_archived_corridor_scope(
         self, tmp_git_repo: Path
     ):
         slime = tmp_git_repo / ".slime"
@@ -228,7 +228,7 @@ class TestHandoff:
         proc = _agentcam(tmp_git_repo, "handoff")
 
         assert proc.returncode == 0, proc.stderr
-        assert proc.stdout.decode("utf-8").splitlines()[1] == "Scope: src/**"
+        assert proc.stdout.decode("utf-8").splitlines()[1].startswith("Scope: <fill in:")
 
     def test_old_manifest_without_evidence_errors(self, tmp_git_repo: Path):
         _make_one_run(tmp_git_repo)

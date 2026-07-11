@@ -23,6 +23,8 @@ jobs:
   test:
     name: Slime POSIX
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ../agentcam/src
     steps:
       - uses: actions/checkout@v4
 
@@ -33,22 +35,14 @@ jobs:
           bash --version | head -1
 
       - name: Syntax-check hook scripts
-        run: |
-          python3 -c 'import ast; ast.parse(open("bin/patch-cost").read())'
-          python3 -c 'import ast; ast.parse(open("bin/prune-inject").read())'
-
-      - name: Validate hooks template JSON
-        run: python3 -c 'import json; json.load(open("hooks/hooks.template.json"))'
+        run: python3 -c 'import ast; ast.parse(open("bin/patch-cost").read())'
 
       - name: Lint shell scripts
-        run: |
-          bash -n install.sh
-          bash -n tests/test.sh
-          bash -n tests/test-cg-install.sh
+        run: bash -n tests/test.sh
 
       - name: Check executable bits
         run: |
-          for f in bin/patch-cost bin/prune-inject install.sh tests/test.sh; do
+          for f in bin/patch-cost tests/test.sh; do
             if [ ! -x "$f" ]; then echo "::error::$f is not executable"; exit 1; fi
           done
 
@@ -58,39 +52,16 @@ jobs:
       - name: Run trusted check tests
         run: python3 -m unittest tests/test_trusted_checks.py
 
-      - name: Run removed --with-cg regression tests
-        run: bash tests/test-cg-install.sh
-
-      - name: install.sh smoke test (idempotent)
-        run: |
-          target="$(mktemp -d)"
-          git -C "$target" init -q
-          ./install.sh "$target"
-          ./install.sh "$target"   # second run must stay idempotent
-          python3 - "$target" <<'PY'
-          import json, sys
-          hooks = json.load(open(sys.argv[1] + "/.claude/settings.json"))["hooks"]
-          assert set(hooks) >= {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"}, hooks
-          for event, groups in hooks.items():
-              assert len(groups) == 1, f"{event} not idempotent: {len(groups)} groups"
-          print("install.sh smoke test OK")
-          PY
-
   test-windows-installer:
     name: Slime Windows
     runs-on: windows-latest
+    env:
+      PYTHONPATH: ../agentcam/src
     steps:
       - uses: actions/checkout@v4
 
       - name: Run trusted check tests
         run: python -m unittest tests/test_trusted_checks.py
-
-      # Windows PowerShell 5.1 on purpose: it is what plain `powershell`
-      # resolves to for users, and it lacks ConvertFrom-Json -AsHashtable,
-      # which the installer must cope with.
-      - name: Run Codex installer tests
-        shell: powershell
-        run: ./tests/test-codex-install.ps1
 
   result:
     name: Slime tests

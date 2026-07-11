@@ -1,77 +1,94 @@
-# Corridor CI Handoff Spec
+# Corridor CI v14 review artifact specification
 
-Corridor CI reads a compact handoff from the pull request body. The grammar is
-strict so other tools can generate the same shape reliably.
+The historical filename is retained for stable links. Corridor CI v14 has no
+fixed PR-body handoff. It reads exactly one JSON artifact at
+`.guardrails/review.json` by default.
 
-## Fields
+## Shape
 
-The handoff has five required fields, each with exactly one label (matched
-case-insensitively). The first occurrence wins. There are no aliases.
-
-- `Decision`
-- `Scope`
-- `Review first`
-- `Verified`
-- `Risk`
-
-Each field must be a single plain line:
-
-```md
-Decision: #123
-Scope: pkg/parser/*, tests/parser/*
-Review first: pkg/parser/links.py
-Verified: pytest tests/parser
-Risk: none-detected
+```json
+{
+  "schema": 1,
+  "generator": {
+    "agentcam_version": "0.6.0",
+    "runtime_revision": "revision"
+  },
+  "delivery": {
+    "base_commit": "sha-or-null",
+    "product_fingerprint": "sha256",
+    "changed_files": [{"path": "src/app.py", "status": "modified"}],
+    "outcomes": ["observable result"],
+    "scope": ["src/app.py", "tests/test_app.py"],
+    "scope_changes": [],
+    "review_first": "src/app.py",
+    "risk": "none-detected"
+  },
+  "verification": {
+    "level": "recorded",
+    "checks": [{
+      "id": "primary",
+      "argv": ["python", "-m", "pytest", "-q"],
+      "exit_code": 0,
+      "duration_ms": 1234,
+      "state_fingerprint": "sha256"
+    }]
+  },
+  "capture": {
+    "terminal": "unavailable",
+    "coverage": "partial"
+  },
+  "approval": null
+}
 ```
 
-`<fill in...>`, `n/a`, `tbd`, `todo`, and `not set` are still incomplete and
-fail the corridor.
+The file must be UTF-8 JSON, no larger than 1 MiB, with `schema` equal to the
+integer `1`. Commands are argv arrays; repository text never supplies shell
+syntax for execution.
 
-Headings, bold labels, and bullet labels are not fields. For example,
-`### Decision`, `**Decision:** #123`, and `- Decision: #123` are invalid.
+## Product state
 
-## Verification Provenance
+The product fingerprint is derived from current product paths and statuses.
+The artifact itself is excluded from that fingerprint and from scope coverage,
+but remains visible in the PR touched-file list.
 
-`Verified` is required handoff context, not proof by itself. A manual command or
-check is accepted and labeled `manual`. When an agentcam manifest is committed,
-Corridor CI labels it `local-recorded` only if the handoff contains
-`[locally recorded by agentcam]`, exact fixed grammar, an integer exit code 0,
-matching verification state, and a product fingerprint equal to the current
-PR. Any other recorded-looking marker is an unmatched claim.
-Placeholders, `n/a`, and unmatched recorded claims are `unverified`
-and fail the corridor. Manual checks remain valid and labeled `manual`. Legacy
-or hook capture can additionally be labeled `partial` without changing the
-verdict.
+Every changed product file must be covered by `delivery.scope`.
+`review_first` must be one of those product files. Empty and match-all scope is
+invalid.
 
-`manual` and `partial` produce warnings only. `unverified` is an issue and fails
-the default action mode.
+The accepted risk values are `high`, `medium`, `none-detected`, and `unknown`.
+Corridor recomputes a minimum risk; the artifact may be more cautious but not
+less cautious.
 
-## Scope
+## Verification
 
-`Scope` is a comma-separated list of paths or glob patterns. Paths are normalized
-to forward slashes. Glob matching uses git-style semantics: `*` and `?` never
-cross `/`, `**/` spans zero or more directories, and `dir/**` means the
-directory and the whole subtree.
+`verification.level` is either:
 
-`Scope: auto` is rejected. A declared boundary must be independent of the diff
-it checks. Match-everything patterns such as `**/*` are rejected for the same
-reason.
+- `recorded`: every listed check has a string ID, nonempty string argv, integer
+  exit code `0` (a JSON boolean is not an integer result), duration, and current
+  state fingerprint.
+- `structural-only`: no reliable behavioral test was configured. This passes
+  with a warning and must not contain a fabricated passing primary check.
 
-## Pass Conditions
+Partial capture or unavailable terminal output is a warning only.
 
-A report passes when all required fields are present, `Review first` is one of
-the changed files, every changed file is covered by the declared scope, and
-dependency manifest changes are approved or absent.
+## High-risk approval
 
-All changes require all five fields. File count is not a proxy for semantic
-risk: a one-file policy, authentication, migration, or workflow change still
-needs a review boundary.
+High-risk work requires an approval object bound to the identical product
+fingerprint. The local coordinator accepts only an exact user prompt or the
+TTY-only fallback and stores a confirmation hash, never the raw prompt.
 
-## Warnings
+Dependency and workflow changes additionally require an OWNER/MEMBER GitHub
+comment containing the current full PR head SHA:
 
-Warnings never block. Corridor CI warns when:
+```text
+Guardrails-Dependency-Approval: <full-head-sha>
+Guardrails-Workflow-Approval: <full-head-sha>
+```
 
-- `Decision` has no `#123`-style reference and no `http://` or `https://` URL.
-- The PR body is more than 60 lines, because the compact handoff is harder to
-  find.
-- Verification is manual or observation coverage is partial.
+New commits invalidate earlier approvals.
+
+## Report safety
+
+Artifact-controlled text is Markdown-escaped. Malformed shapes safely become
+issues rather than exceptions. Sticky comment updates are restricted to the
+bot's own previous comment.

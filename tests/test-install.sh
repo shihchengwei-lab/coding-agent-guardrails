@@ -73,10 +73,10 @@ assert not any("old/patch-cost" in h.get("command", "") for h in stop), stop
 PY
 
 test -f "$PROJECT/.github/workflows/corridor.yml"
-grep -q '^# coding-agent-guardrails:managed corridor-ci-v13.0.0$' "$PROJECT/.github/workflows/corridor.yml"
-grep -q 'corridor-ci@corridor-ci-v13.0.0' "$PROJECT/.github/workflows/corridor.yml"
-grep -A1 '^## Rigor$' "$PROJECT/.slime/corridor.md" | grep -q '^normal$'
-"$AGENTCAM_PYTHON" -m agentcam.cli version | grep -q '^agentcam 0.5.0$'
+grep -q '^# coding-agent-guardrails:managed corridor-ci-v14.0.0$' "$PROJECT/.github/workflows/corridor.yml"
+grep -q 'corridor-ci@corridor-ci-v14.0.0' "$PROJECT/.github/workflows/corridor.yml"
+test ! -e "$PROJECT/.slime"
+"$AGENTCAM_PYTHON" -m agentcam.cli version | grep -q '^agentcam 0.6.0$'
 if find "$PROJECT" -name '*.bak-*' -print -quit | grep -q .; then
   echo "FAIL: successful install left permanent backup files" >&2
   exit 1
@@ -142,7 +142,8 @@ test ! -e "$ROLLBACK/.slime"
 
 # Uninstall dry-run is inert; actual uninstall removes only proven managed
 # content and runtime, preserving .slime, trusted config, and user hooks.
-printf 'user pruned history\n' > "$PROJECT/.slime/PRUNED.md"
+mkdir -p "$PROJECT/.slime"
+printf 'user archived history\n' > "$PROJECT/.slime/PRUNED.md"
 "$PROJECT/guardrails" check set primary -- python -V >/dev/null
 CONFIG="$GUARDRAILS/config.json"
 "$PROJECT/guardrails" uninstall --dry-run >/dev/null
@@ -154,7 +155,7 @@ test ! -e "$MANIFEST"
 test ! -e "$RUNTIME"
 test ! -e "$ENVIRONMENT"
 test -f "$CONFIG"
-grep -qx 'user pruned history' "$PROJECT/.slime/PRUNED.md"
+grep -qx 'user archived history' "$PROJECT/.slime/PRUNED.md"
 grep -q 'user-existing-hook' "$PROJECT/.claude/settings.json"
 ! grep -q 'guardrails_managed' "$PROJECT/.claude/settings.json"
 grep -q 'user modified launcher' "$PROJECT/guardrails.cmd"

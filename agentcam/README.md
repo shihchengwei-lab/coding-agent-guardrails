@@ -78,7 +78,7 @@ Verify:
 
 ```bash
 agentcam version
-# agentcam 0.5.0
+# agentcam 0.6.0
 ```
 
 ---
@@ -275,11 +275,14 @@ where it goes.
 
 ---
 
-## Handing off a PR
+## Standalone verification and export
 
-Three commands connect a recorded run to a pull request (they pair with
-[corridor-ci](https://github.com/shihchengwei-lab/coding-agent-guardrails),
-but the output is plain text any reviewer can use):
+The integrated Coding Agent Guardrails workflow does not require these
+commands. Its Stop coordinator records checks and writes
+`.guardrails/review.json` automatically for Corridor CI v14. The commands below
+remain available when Agentcam is used by itself or for diagnostics.
+
+Standalone Agentcam can still record a check:
 
 ```bash
 agentcam verify -- pytest -q
@@ -300,7 +303,7 @@ agentcam handoff
 # Risk: high
 ```
 
-`handoff` drafts the five-line review handoff from the recorded run:
+`handoff` drafts the legacy five-line text format for human use:
 `Scope` from the files that actually changed, `Review first` from the
 highest-severity risk flag, `Risk` from flags plus capture coverage, `Verified`
 from recorded passing checks. `Decision` always stays with you:
@@ -314,13 +317,10 @@ agentcam export latest --files .agentcam/
 # → .agentcam/manifest.redacted.json
 ```
 
-`export --files` writes the redacted run record in committable form.
-Commit it with the PR and corridor-ci appends it to its report as
-locally recorded evidence. Corridor CI cross-checks the handoff command against
-passing recorded checks and labels matching author-controlled evidence
-`local-recorded`, otherwise `manual` or
-`unverified`; limited capture is marked `partial`. Manual and partial states
-remain visible; placeholders and false recorded claims fail the check.
+`export --files` writes the redacted run record in committable form for manual
+inspection. Corridor CI v14 does not consume this export or the five-line
+handoff; only the coordinator-generated `.guardrails/review.json` can satisfy
+that gate.
 
 ---
 

@@ -44,19 +44,6 @@ class TrustedChecksTest(unittest.TestCase):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps({"schema": 1, "checks": checks}), encoding="utf-8")
 
-    def write_corridor(self, stop, high=""):
-        target = self.repo / ".slime" / "corridor.md"
-        target.parent.mkdir(exist_ok=True)
-        target.write_text(
-            "# Corridor: trusted-check\n\n## Rigor\n"
-            + ("high" if high else "trivial")
-            + "\n\n## Outcome\nworks\n\n## Paths\n- product.txt\n\n"
-            + ("## Evidence\n- Supports: test\n- Would falsify: fail\n\n" if high else "")
-            + f"## Stop Condition\n{stop}\n"
-            + (f"\n## High-risk Controls\n- Failure mode: bad\n- Rollback: revert\n{high}\n" if high else ""),
-            encoding="utf-8",
-        )
-
     def test_valid_argv_runs_without_shell(self):
         self.write_config({"primary": {"argv": [
             sys.executable, "-c", "import sys; assert sys.argv[1] == '&&'", "&&",
@@ -93,53 +80,20 @@ class TrustedChecksTest(unittest.TestCase):
         self.assertEqual(code, 124)
         self.assertIn("timed out", message)
 
-    def test_inline_command_and_legacy_env_are_ignored(self):
+    def test_legacy_command_environment_is_not_an_execution_source(self):
         marker = self.repo / "should-not-exist"
-        self.write_corridor(f"- Command: {sys.executable} -c \"open(r'{marker}','w').write('bad')\"")
-        (self.repo / "product.txt").write_text("delta", encoding="utf-8")
-        blocks = slime.stop_blocks(self.repo)
-        self.assertTrue(any("Check: or Manual:" in block for block in blocks))
+        with mock.patch.dict(
+            os.environ,
+            {
+                "SLIME_TEST_CMD": f"echo forbidden > {marker}",
+                "SLIME_TYPECHECK_CMD": f"echo forbidden > {marker}",
+            },
+        ):
+            checks, error = slime._run_review_checks(self.repo, "fingerprint")
+
+        self.assertIsNone(error)
+        self.assertEqual([item["id"] for item in checks], ["structural"])
         self.assertFalse(marker.exists())
-
-        self.write_corridor("- Manual: inspected generated output")
-        with mock.patch.dict(os.environ, {"SLIME_TEST_CMD": "echo forbidden"}):
-            blocks = slime.stop_blocks(self.repo)
-        self.assertEqual(blocks, [])
-
-    def test_unknown_check_and_high_duplicate_argv_block(self):
-        self.write_config({
-            "primary": {"argv": [sys.executable, "-c", "raise SystemExit(0)"]},
-            "same": {"argv": [sys.executable, "-c", "raise SystemExit(0)"]},
-        })
-        self.write_corridor("- Check: missing")
-        self.assertTrue(any("unknown check" in block.lower() for block in slime.stop_blocks(self.repo)))
-
-        self.write_corridor("- Check: primary", "- Independent check: same")
-        self.assertTrue(any("same argv" in block.lower() for block in slime.stop_blocks(self.repo)))
-
-    def test_legacy_corridor_blocks_product_delta(self):
-        target = self.repo / ".slime" / "corridor.md"
-        target.parent.mkdir()
-        target.write_text(
-            "# Corridor: old\n\n## Paths\n- product.txt\n\n## Stop Condition\n- Manual: checked\n",
-            encoding="utf-8",
-        )
-        (self.repo / "product.txt").write_text("delta", encoding="utf-8")
-
-        blocks = slime.stop_blocks(self.repo)
-
-        self.assertTrue(any("Rigor" in block and "migration" in block for block in blocks))
-
-    def test_no_rigor_is_invalid_without_needing_a_product_delta(self):
-        target = self.repo / ".slime" / "corridor.md"
-        target.parent.mkdir()
-        target.write_text(
-            "# Corridor: old\n\n## Paths\n- product.txt\n\n"
-            "## Stop Condition\n- Manual: checked\n",
-            encoding="utf-8",
-        )
-
-        self.assertIn("explicit Rigor", slime.corridor_problem(self.repo))
 
     def test_dirty_signature_batch_reads_index_once_for_200_files(self):
         for index in range(200):
@@ -163,7 +117,7 @@ class TrustedChecksTest(unittest.TestCase):
         index_calls = [args for args in calls if args[:2] == ("ls-files", "--stage")]
         self.assertEqual(index_calls, [("ls-files", "--stage", "-z")])
 
-    def test_bash_feedback_reports_missing_corridor_after_write(self):
+    def test_bash_feedback_reports_missing_git_local_scope_after_write(self):
         (self.repo / "product.txt").write_text("shell delta", encoding="utf-8")
         output = StringIO()
 
@@ -175,7 +129,7 @@ class TrustedChecksTest(unittest.TestCase):
             })
 
         self.assertIn('"decision": "block"', output.getvalue())
-        self.assertIn("corridor.md is missing", output.getvalue())
+        self.assertIn("declared its intent", output.getvalue())
 
 
 if __name__ == "__main__":

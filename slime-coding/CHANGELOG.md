@@ -6,15 +6,20 @@ cloning, so "versions" track the git history rather than published releases.
 
 ## Unreleased
 
-- Stop checks now reference trusted check IDs from
-  `<git-dir>/guardrails/config.json`; argv runs with `shell=False`.
-- Inline `Command:`, `Independent check command:`, `SLIME_TEST_CMD`, and
-  `SLIME_TYPECHECK_CMD` are migration errors when product files changed.
-- High rigor uses `Independent check:` and rejects duplicate IDs or argv.
-- Corridors without explicit `Rigor` must migrate before a product delta can
-  complete.
+- Replaced tracked corridor, Rigor, Evidence, Stop Condition, PRUNED, slash
+  commands, and standalone installers with one low-friction coordinator.
+- Agent intent and scope expansion now live under `<git-dir>/guardrails/` and
+  are checked before direct writes and after shell writes.
+- Stop runs structural and trusted checks, derives risk, coordinates the
+  state-bound high-risk confirmation, finalizes Agentcam, and atomically writes
+  `.guardrails/review.json`.
+- Existing `.slime/` content is preserved as archived user state and is no
+  longer read by Slime or Agentcam.
 
-## [Unreleased]
+## Historical monorepo import notes
+
+The entries below describe earlier corridor-based designs and are retained as
+history, not current interfaces.
 
 ### Changed
 - Turn-scoped baselines now separate pre-existing dirty state from changes made

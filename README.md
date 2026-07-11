@@ -2,50 +2,27 @@
 
 [繁體中文](README.zh-TW.md)
 
-**CI green does not mean the change is complete. Complete means the person
-taking over can understand the diff and take responsibility for merging and
-maintaining it.**
+**Install once. Then ask your coding agent to work as usual.**
 
-Coding agents can finish the task, pass the tests, and turn CI green. The hard
-part comes next: someone has to take over the diff, understand what changed,
-take responsibility for merging it, and maintain it afterward. The model can
-produce code, but the person who adopts, merges, and maintains that output is
-responsible for it. This toolkit sits on the agent's side before that handoff.
-It keeps the handoff facts visible: what changed, which checks ran, and where
-the next person starts.
+Guardrails keeps the agent inside a declared file boundary, runs the repository's
+trusted checks at Stop, records the final state, and writes one review artifact:
+`.guardrails/review.json`. You do not edit a corridor, choose a risk tier, run
+Agentcam commands, or paste a fixed PR handoff.
 
-One install connects four tools that cover the path from "agent starts typing"
-to "human presses merge". Each tool covers one stage:
+For ordinary changes the daily flow is:
 
-| Stage | Tool | What it adds |
-|---|---|---|
-| Before the agent starts | [kiss-my-diff](kiss-my-diff/) × [slime-coding](slime-coding/) rules | One unified discipline block in your `CLAUDE.md` / `AGENTS.md` ([templates/DISCIPLINE.md](templates/DISCIPLINE.md)): smallest sufficient readable change, minimal semantic drift, stop when done. |
-| While the agent works | [slime-coding](slime-coding/) hooks | Turn-scoped gates: direct edits are checked before writing; shell writes are checked immediately afterward and again at Stop. An OS sandbox, not a hook, is the filesystem security boundary. |
-| After the agent claims done | [agentcam](agentcam/) | Records what actually changed: files, risk flags, diff stat, then drafts the PR handoff from that record. |
-| Before a human reviews | [corridor-ci](corridor-ci/) | Validates the five-line handoff against the actual diff and appends the recorded evidence to the PR report. |
+```text
+ask the agent to make a change
+→ agent works
+→ Stop checks scope, tests, risk, and final state
+→ ask the agent to commit or open a PR as you normally would
+```
 
-The collaboration discipline is one ordered loop, not four interchangeable
-slogans: reduce the request to observable necessities (first principles), let
-repo evidence support or falsify candidate routes (slime), choose the smallest
-sufficient change rather than merely the shortest diff (Occam), then label
-manual claims separately from recorded behavior. Read broadly, edit narrowly;
-stop when the observable condition is met.
+For an objectively high-risk change, Stop asks for one exact confirmation such
+as `確認高風險變更 7F3A2C`. The nonce is bound to the current product state;
+another product edit invalidates it.
 
-## Why a Vibe-Built Tool Needs Guardrails
-
-This project is mostly implemented by coding agents. I am not a software
-engineer, I do not write code, and I cannot judge a diff line by line. In
-practice, I usually do not inspect much: if the benchmark looks good, the tool
-runs, or the game moves, I tend to let it move forward.
-
-That is the starting point. I use these tools loosely, and I may not even use
-this whole toolkit consistently myself. The contradiction is the point: I vibed
-together a tool for limiting vibe coding. The problem is also real. When coding
-agents produce a lot of code quickly, the risk often lands in the handoff: what
-changed, whether checks really ran, and whether the next person can take over.
-Every tool here does one job: turn "trust me" into a recorded fact.
-
-## Install (one command)
+## Install
 
 ```bash
 git clone https://github.com/shihchengwei-lab/coding-agent-guardrails ~/guardrails
@@ -57,96 +34,95 @@ git clone https://github.com/shihchengwei-lab/coding-agent-guardrails $HOME\guar
 & $HOME\guardrails\install.ps1 -Project C:\path\to\your\project
 ```
 
-Both entrypoints call the same Python 3.11+ installer core. It creates a
-versioned runtime and virtual environment under `<git-dir>/guardrails/`, then
-atomically wires absolute hook commands for both Claude Code and Codex. The
-toolkit checkout can be moved or deleted after installation. Re-running is
-idempotent: user hooks are retained, `.slime/corridor.md` and `PRUNED.md` are
-create-if-absent, and a workflow is upgraded only when its managed marker and
-official hash both match. Custom content is preserved with a warning.
+The target must be a Git worktree root and needs Python 3.11+. The installer
+creates a versioned runtime under `<git-dir>/guardrails/`, installs one
+coordinator hook for Claude Code and Codex, and adds repo-local `guardrails`
+launchers. The toolkit checkout may be moved or deleted afterward.
 
-The install also creates repo-local `guardrails` and `guardrails.cmd`
-launchers. Configure executable trusted checks as argv, inspect the installed
-runtime, or preview a safe uninstall with:
+If exactly one supported test ecosystem is clear at the repository root,
+Guardrails configures its primary test automatically: pytest, Node, Cargo, Go,
+or Flutter. If detection is ambiguous, Stop still runs `git diff --check` and
+reports `structural-only`; it does not guess or pretend tests ran.
+
+Existing user hooks and trusted checks are preserved. Old `.slime/` data is
+preserved as archived state but is no longer read. Managed files are updated
+only when ownership can be proved; custom content is preserved with a warning.
+
+## What happens automatically
+
+Before the first product edit, the installed agent instruction makes the agent
+store its intended outcome and paths outside the working tree. Direct edits are
+checked before writing. Shell writes can only be detected immediately after the
+shell call and are checked again at Stop.
+
+At Stop, the single coordinator performs this sequence once:
+
+1. Calculate the branch delivery delta, excluding unchanged pre-existing dirt.
+2. Require every product file to be inside the agent's declared scope.
+3. Run `git diff --check` and the configured trusted checks.
+4. Derive risk from paths, file statuses, dependency changes, and Agentcam.
+5. Require the state-bound confirmation when risk is high.
+6. Finalize the local Agentcam record and atomically write
+   `.guardrails/review.json`.
+
+The artifact records changed files, scope changes, checks, risk, capture
+coverage, and the product fingerprint. Guardrails never stages, commits,
+pushes, opens a PR, or merges on its own. When you ask the agent to commit or
+open a PR, its managed instruction includes the artifact in that normal work.
+
+Corridor CI reads only the artifact. The PR body is free-form. It independently
+recomputes the PR product state, scope coverage, risk floor, and recorded check
+binding. Dependency and workflow changes also need a GitHub approval comment
+bound to the current head SHA; after a confirmed high-risk change the agent can
+sync that comment after the PR exists.
+
+## What the user may operate
+
+These are maintenance commands, not daily workflow steps:
 
 ```bash
-./guardrails check set primary -- python -m pytest -q
 ./guardrails doctor
-./guardrails doctor --remote  # also inspect GitHub required contexts via gh
+./guardrails doctor --remote
+./guardrails check set primary -- python -m pytest -q
+./guardrails check remove primary
 ./guardrails uninstall --dry-run
 ./guardrails uninstall
+./guardrails uninstall --purge-state  # also remove retained local history/config
 ```
 
-Uninstall removes only content proven by `<git-dir>/guardrails/install.json`.
-It preserves `.slime/`, trusted check configuration, and recording history by
-default; `--purge-state` explicitly removes that retained state. Codex project
-hooks still need to be reviewed once with `/hooks`.
+If a host cannot expose the original user prompt to hooks, the only fallback is
+`guardrails approve <nonce>`. It requires a TTY and requires the human to type
+the complete confirmation phrase again; a non-interactive agent shell cannot
+approve itself.
 
-## The loop
+## Boundaries
 
-The four tools connect into one workflow. That is why they are packaged
-together:
+- Hooks are workflow gates, not an OS sandbox or filesystem sandbox. Direct edits are checked
+  before writing; shell side effects are detected afterward. OS permissions or
+  a sandbox remain the hard boundary.
+- The review artifact is author-controlled local evidence bound to the final
+  product state, not third-party attestation.
+- `structural-only` means no reliable test command was found. It is a visible
+  warning, not evidence that behavior is correct.
+- Guardrails cannot judge product quality or replace human review.
+- A workflow is not a merge gate until repository rules make `Policy Gate`,
+  `Corridor`, and the relevant tests required checks.
+- The threat model prevents accidental drift and self-modifying PR policy; it
+  does not defend against a malicious repository administrator with full local
+  and GitHub control.
 
-1. **Record**: `agentcam run -- <agent command>` (or use the installed
-   Claude Code session / Codex turn hooks). Agentcam records the before/after
-   Git state, changed-file list, and diff stat under `.git/agentcam/runs/`;
-   wrap mode also keeps terminal output. Trade-off, disclosed: hook-mode
-   evidence is thinner, because lifecycle hooks do not expose terminal output, so
-   output-pattern risk flags (`rm -rf` and friends) are unavailable;
-   wrap the session with `agentcam run` when you want the full record.
-2. **Verify**: `agentcam verify -- pytest -q`. agentcam runs the check
-   itself and records command, exit code, and duration: observed facts,
-   not the agent's claim. Passing checks draft the handoff's `Verified`
-   line.
-3. **Hand off**: `agentcam handoff` prints the five-line corridor handoff
-   drafted from the record. Paste it into the PR body, then fill in
-   `Decision`, the line only the author can know (`Verified` too, if no
-   recorded check passed).
-4. **Attach evidence**: `agentcam export latest --files .agentcam/`
-   writes the redacted run record in committable form; commit it with
-   the PR.
-5. **Gate**: corridor-ci on the PR validates the handoff against the
-   actual diff and appends the recorded evidence (risk flags, recorded
-   checks, diff stat) to its report. It labels author-controlled matching
-   evidence as `local-recorded`, otherwise `manual` or `unverified`, and marks
-   partial observation. Manual and partial
-   provenance stay visible; a placeholder or false recorded claim fails the
-   corridor.
-
-Every tool also works standalone; each subdirectory has its own README.
-Breaking upgrades are listed in [the migration guide](docs/MIGRATION.md).
-
-A workflow file is not a merge gate by itself. Repository administrators must
-make Corridor and the relevant test jobs required checks in branch protection
-or a ruleset. This repository requires seven stable aggregate checks on `main`:
-Policy Gate, Corridor, and the five product test aggregates.
-
-This repository also runs `Policy Gate` from the default branch with
-`pull_request_target`; it treats the PR head as data and never executes PR
-scripts. A PR that changes `.github/workflows/**` needs an OWNER approval bound
-to the exact current head SHA:
-
-```text
-Guardrails-Workflow-Approval: <full-head-sha>
-```
-
-After adding the comment, rerun the failed Policy Gate job. A later commit
-invalidates the approval. This is an explicit maintainer break-glass for
-workflow maintenance, not an approval that PR content can grant itself.
+See [the migration guide](docs/MIGRATION.md) for the breaking low-friction
+upgrade. Each component also has its own README:
+[Agentcam](agentcam/), [Slime coordinator](slime-coding/),
+[Corridor CI](corridor-ci/), and [kiss-my-diff](kiss-my-diff/).
 
 ## Versioning
 
-One repo, four tools, so release tags are prefixed per tool:
-`agentcam-v0.5.0`, `corridor-ci-v13.0.0`, and the floating major tag
-`corridor-ci-v13`. Earlier releases
-(`v0.2.0`, `v10`, …) live in each tool's original repository.
-
-## History
-
-Each tool started as its own repository and was imported here with full
-commit history. `git log` inside any subdirectory goes back to that
-tool's first commit.
+The low-friction line is Agentcam `0.6.0` and Corridor CI `v14.0.0`. Release
+tags are prefixed per component: `agentcam-v0.6.0` and
+`corridor-ci-v14.0.0`; the immutable Corridor tag is what installed workflows
+pin after the release rollout.
 
 ## License
 
-MIT, for the toolkit and for every tool in it.
+MIT.

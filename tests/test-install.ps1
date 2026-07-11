@@ -61,8 +61,9 @@ try {
       }
     }
   ) -join "`n"
-  if ($allCommands -notmatch "hook-turn-start") { throw "Codex turn-start recorder missing" }
-  if ($allCommands -notmatch "hook-turn-end") { throw "Codex turn-end recorder missing" }
+  if ($allCommands -notmatch "patch-cost") { throw "Guardrails coordinator missing" }
+  $hooksText = Get-Content -Raw -Encoding utf8 (Join-Path $Project ".codex/hooks.json")
+  if ($hooksText -notmatch "guardrails-coordinator") { throw "coordinator ownership marker missing" }
   if ($allCommands -notmatch "user-existing-hook") { throw "existing user hook was overwritten" }
   if ($allCommands -notmatch [regex]::Escape($Guardrails)) {
     throw "hooks do not target the per-repo guardrails runtime"
@@ -70,24 +71,16 @@ try {
   if ($allCommands -match [regex]::Escape($Root)) {
     throw "hooks still depend on the toolkit checkout"
   }
-  if ([regex]::Matches($allCommands, "hook-turn-start").Count -ne 2) {
-    throw "turn-start hook duplicated or missing command/commandWindows"
-  }
-  if ([regex]::Matches($allCommands, "hook-turn-end").Count -ne 2) {
-    throw "turn-end hook duplicated or missing command/commandWindows"
-  }
-
-  $corridor = Get-Content -Raw -Encoding utf8 (Join-Path $Project ".slime/corridor.md")
-  if ($corridor -notmatch "(?m)^## Rigor\r?\nnormal$") { throw "normal corridor not seeded" }
-  if (-not (Test-Path (Join-Path $Project ".agents/skills/slime-navigate/SKILL.md"))) {
-    throw "Codex skill not installed"
+  if (Test-Path (Join-Path $Project ".slime")) { throw "new install created obsolete .slime state" }
+  if (Test-Path (Join-Path $Project ".agents/skills/slime-navigate")) {
+    throw "obsolete Slime skill was installed"
   }
   if (-not (Test-Path (Join-Path $Project ".github/workflows/corridor.yml"))) {
     throw "Corridor workflow not installed"
   }
   $workflow = Get-Content -Raw -Encoding utf8 (Join-Path $Project ".github/workflows/corridor.yml")
-  if ($workflow -notmatch "coding-agent-guardrails:managed corridor-ci-v13\.0\.0" -or
-      $workflow -notmatch "corridor-ci@corridor-ci-v13\.0\.0") {
+  if ($workflow -notmatch "coding-agent-guardrails:managed corridor-ci-v14\.0\.0" -or
+      $workflow -notmatch "corridor-ci@corridor-ci-v14\.0\.0") {
     throw "installed Corridor workflow is not the managed v12 template"
   }
 
@@ -113,6 +106,9 @@ try {
 
   & $Manifest.python -m agentcam.cli version | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "agentcam not installed into selected Python" }
+  if ((& $Manifest.python -m agentcam.cli version).Trim() -ne "agentcam 0.6.0") {
+    throw "unexpected agentcam version"
+  }
 
   if (Get-ChildItem -LiteralPath $Project -Recurse -Force -Filter "*.bak-*" -ErrorAction SilentlyContinue) {
     throw "successful install left permanent backup files"
@@ -174,7 +170,8 @@ python %*
 
   # Dry-run uninstall changes nothing. Actual uninstall removes only proven
   # managed content, preserving trusted config, .slime history, and user hooks.
-  "user pruned history" | Set-Content -Encoding utf8 (Join-Path $Project ".slime/PRUNED.md")
+  New-Item -ItemType Directory -Force -Path (Join-Path $Project ".slime") | Out-Null
+  "user archived history" | Set-Content -Encoding utf8 (Join-Path $Project ".slime/PRUNED.md")
   & (Join-Path $Project "guardrails.cmd") check set primary -- python -V | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "guardrails check set failed" }
   $ConfigPath = Join-Path $Guardrails "config.json"
@@ -190,7 +187,7 @@ python %*
   if (Test-Path $RuntimePath) { throw "uninstall left versioned runtime" }
   if (Test-Path $EnvironmentPath) { throw "uninstall left versioned environment" }
   if (-not (Test-Path $ConfigPath)) { throw "uninstall removed trusted config" }
-  if ((Get-Content -Raw -Encoding utf8 (Join-Path $Project ".slime/PRUNED.md")).Trim() -ne "user pruned history") {
+  if ((Get-Content -Raw -Encoding utf8 (Join-Path $Project ".slime/PRUNED.md")).Trim() -ne "user archived history") {
     throw "uninstall changed .slime history"
   }
   $hooksAfter = Get-Content -Raw -Encoding utf8 (Join-Path $Project ".codex/hooks.json")

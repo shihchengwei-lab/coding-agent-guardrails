@@ -1,7 +1,7 @@
 <!-- Unified coding discipline for the toolkit — the single source.
      The one-command installer writes this block into the consuming
-     project's CLAUDE.md and AGENTS.md; install-codex.ps1 reads the same
-     file. Distilled from kiss-my-diff/AGENT.md (kept verbatim as the
+     project's CLAUDE.md and AGENTS.md. Distilled from
+     kiss-my-diff/AGENT.md (kept verbatim as the
      benchmark's measured specimen) and the former slime-coding discipline
      templates, which were removed at monorepo fusion. -->
 
@@ -11,7 +11,7 @@ Optimize for the **smallest sufficient semantic displacement**: make the
 smallest readable change that fully satisfies the observable goal. Do not trade
 fewer lines for hidden state, extra assumptions, or more context required to
 understand the result. Preserve existing APIs, data flow, module boundaries,
-naming, and architecture unless the corridor explicitly allows moving them.
+naming, and architecture unless the task explicitly requires moving them.
 
 Rules:
 
@@ -24,45 +24,34 @@ Rules:
 5. Do not add abstractions for one-shot code.
 6. Do not hide errors or invalid states.
 7. Verify with the smallest relevant test.
-8. Stop at the **Stop Condition** — the observable check that means done.
+8. Stop when the observable result is true and the installed checks pass.
    No gold-plating past it.
 
-Process (uses the slime-coding hooks installed in this project):
+Process (the installed Guardrails hooks enforce this without user setup per task):
 
 1. Do not generate code straight from the prompt. Read backwards from the
    acceptance criteria and forwards from real attachment points in this repo
    until you can name one observable **Outcome**. Read broadly enough to
-   understand the existing flow; edit narrowly. Use the `slime-navigate` skill.
-2. Edit only inside the **Meeting Corridor** — the minimal paths connecting the
-   existing code to that outcome. Write Outcome, Paths, and Stop Condition to
-   `.slime/corridor.md` with `/slime-corridor` before editing. Choose `trivial`,
-   `normal`, or `high` rigor. Normal/high add supporting and falsifying evidence;
-   high adds failure, rollback, and a secondary trusted check ID whose argv is
-   distinct from every primary Stop check. A dependency must be
-   named with its reason in Evidence. Leaving the corridor requires new evidence
-   and an update.
-3. **Before editing, read `.slime/PRUNED.md`.** Do not revive a rejected
-   design without new evidence. When you delegate editing to a sub-agent,
-   copy the relevant pruned summary into its task prompt.
-4. When you actually reject a design path, record it with `/slime-prune` (the
-   abandoned path, concrete falsifying evidence, and revival condition).
+   understand the existing flow; edit narrowly.
+2. Before the first product edit, declare the observable outcome and minimal
+   intended paths yourself; do not ask the user to fill a file:
+   `guardrails internal scope set --outcome "..." --path path [--path path]`.
+3. If repo evidence later requires another path, record the concrete reason
+   before editing it:
+   `guardrails internal scope add --path path --reason "..."`.
+4. Do not invoke `guardrails approve`; high-risk approval belongs to the user.
 
-Evidence & handoff (agentcam — do this without being asked):
+Evidence & handoff (automatic at Stop):
 
-1. After your change passes its tests, run them once more under the
-   recorder: `agentcam verify -- <project test command>`. It runs the
-   check itself and records command, exit code, and duration as observed
-   facts. If it errors because nothing is being recorded (no wrapped
-   run and no in-progress recorded session), skip steps 2–3 and say so.
-2. When preparing the PR: `agentcam handoff` prints the five-line
-   handoff drafted from the record. Paste it into the PR body, fill in
-   `Decision` yourself, and leave `Verified` as the fill-in unless a
-   recorded check actually passed.
-3. Attach the evidence: `agentcam export latest --files .agentcam/` and
-   commit that directory with the PR, so corridor-ci can append the
-   recorded evidence to its report.
+1. Do not run a second `agentcam verify`, handoff, or export workflow. The Stop
+   coordinator runs trusted checks once, finalizes the local record, and writes
+   `.guardrails/review.json`.
+2. When the user asks you to commit or open a PR, include that review artifact
+   with the product change. Do not auto-stage or auto-commit it before then.
+3. After opening a dependency or workflow PR, run
+   `guardrails internal pr-sync`; it posts a head-bound approval only when a
+   matching user high-risk confirmation exists.
 
-Self-report explains intent; observed evidence determines confidence. Never
-hand-write facts these tools measure: no invented `Verified` lines, no edited
-exit codes. Label manual checks as manual, and state when observation was only
-partial.
+Never hand-edit `.guardrails/review.json`; if it is stale, let Stop regenerate
+it from the final state. Self-report explains intent; observed evidence
+determines confidence.
