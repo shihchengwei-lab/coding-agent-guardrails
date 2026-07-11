@@ -23,7 +23,8 @@ jobs:
 
       # Enforcement uses the published checker. The separate Corridor tests
       # workflow tests changes to the checker implementation.
-      - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v13.0.0
+      # Keep dogfood enforcement pinned to the immutable v14 release.
+      - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v14.0.0
         with:
           mode: fail
           comment: true

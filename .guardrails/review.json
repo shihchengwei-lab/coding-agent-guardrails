@@ -1,0 +1,52 @@
+{
+  "approval": {
+    "confirmation_id": "4622e123bd8893b473bf37ee4af74b8cd3997b7f9b697be7c5a4a020877cd82e",
+    "confirmed": true,
+    "product_fingerprint": "21f7789e99b79deb192ef391c26fe3de9e6f622b58e355138549a42307da7841",
+    "required": true
+  },
+  "capture": {
+    "coverage": "partial",
+    "terminal": "unavailable"
+  },
+  "delivery": {
+    "base_commit": "33a06a780e500e0383db16b58c881f9a808febc0",
+    "changed_files": [
+      {
+        "path": ".github/workflows/corridor.yml",
+        "status": "modified"
+      }
+    ],
+    "outcomes": [
+      "Use the published Corridor CI v14 release for repository enforcement"
+    ],
+    "product_fingerprint": "21f7789e99b79deb192ef391c26fe3de9e6f622b58e355138549a42307da7841",
+    "review_first": ".github/workflows/corridor.yml",
+    "risk": "high",
+    "scope": [
+      ".github/workflows/corridor.yml"
+    ],
+    "scope_changes": []
+  },
+  "generator": {
+    "agentcam_version": "0.6.0",
+    "runtime_revision": "development"
+  },
+  "schema": 1,
+  "verification": {
+    "checks": [
+      {
+        "argv": [
+          "git",
+          "diff",
+          "--check"
+        ],
+        "duration_ms": 78,
+        "exit_code": 0,
+        "id": "structural",
+        "state_fingerprint": "21f7789e99b79deb192ef391c26fe3de9e6f622b58e355138549a42307da7841"
+      }
+    ],
+    "level": "structural-only"
+  }
+}
