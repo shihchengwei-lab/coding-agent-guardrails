@@ -514,7 +514,9 @@ normal
 ```
 
 若保留新 dependency，另在 Evidence 加
-`- Dependency: <package> — <why required>`；high tier 再加入 `## Controls`。
+`- Dependency: <package> — <why required>`；high tier 再加入
+`## High-risk Controls`，並用 `Independent check command:` 指定與 Stop command
+不同、可由 hook 執行的檢查。
 
 ### 7.2 `.slime/PRUNED.md`
 

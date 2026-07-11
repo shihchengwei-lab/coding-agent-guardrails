@@ -85,6 +85,19 @@ function Install-ManagedBlock {
   Set-Content -LiteralPath $Path -Value $content -Encoding utf8
 }
 
+function Resolve-PythonInvocation {
+  param([string]$Command)
+  if ($Command -match '^"([^"]+)"(?:\s+(.*))?$') {
+    $prefix = if ($Matches[2]) { @($Matches[2] -split '\s+') } else { @() }
+    return @{ Exe = $Matches[1]; Prefix = $prefix }
+  }
+  $parts = @($Command -split '\s+' | Where-Object { $_ })
+  if (-not $parts.Count) { throw "Python command is empty." }
+  $resolved = Get-Command $parts[0] -ErrorAction SilentlyContinue
+  if (-not $resolved) { throw "Python command was not found: $($parts[0])" }
+  return @{ Exe = $resolved.Source; Prefix = @($parts | Select-Object -Skip 1) }
+}
+
 function Merge-Hooks {
   param(
     [string]$SettingsPath,
@@ -143,13 +156,56 @@ $pythonWin = if ($PythonCommand) { $PythonCommand } else { Find-PythonCommand }
 # A bare interpreter path with spaces (user-supplied, or with its quotes eaten
 # at a process boundary) would split into two tokens in every baked command
 # line; wrap it. Launcher forms like `py -3` stay untouched.
-if ($pythonWin -notmatch '^"' -and $pythonWin -match '\s' -and $pythonWin -match '(?i)\.exe$') {
+if ($pythonWin -notmatch '^"' -and $pythonWin -match '\s' -and
+    ((Test-Path -LiteralPath $pythonWin -PathType Leaf) -or $pythonWin -match '(?i)\.exe$')) {
   $pythonWin = '"' + $pythonWin + '"'
+}
+
+# Preflight all executables and templates before changing the project.
+$gitCommand = Get-Command git -ErrorAction SilentlyContinue
+if (-not $gitCommand) { throw "git is required." }
+& $gitCommand.Source -C $Project rev-parse --git-dir *> $null
+if ($LASTEXITCODE -ne 0) { throw "Target must be a git repository: $Project" }
+$pythonInvocation = Resolve-PythonInvocation $pythonWin
+& $pythonInvocation.Exe @($pythonInvocation.Prefix) -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)"
+if ($LASTEXITCODE -ne 0) { throw "Python 3.11 or newer is required." }
+foreach ($relative in @(
+  "hooks/codex.hooks.template.json",
+  "templates/.slime/corridor.md",
+  "templates/.slime/PRUNED.md",
+  "skills/slime-navigate/SKILL.md"
+)) {
+  $source = Join-Path $SlimeHome $relative
+  if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+    throw "Required installer source is missing: $source"
+  }
+}
+try {
+  Get-Content -LiteralPath (Join-Path $SlimeHome "hooks/codex.hooks.template.json") -Raw |
+    ConvertFrom-Json | Out-Null
+} catch {
+  throw "Invalid Codex hook template JSON: $($_.Exception.Message)"
 }
 
 Write-Host "Slime Coding home : $SlimeHome"
 Write-Host "Target project    : $Project"
 
+$managedPaths = @(".codex", ".agents/skills/slime-navigate", ".slime", "AGENTS.md")
+$journal = Join-Path ([System.IO.Path]::GetTempPath()) ("slime-journal-" + [guid]::NewGuid())
+$backupRoot = Join-Path $journal "backup"
+New-Item -ItemType Directory -Force -Path $backupRoot | Out-Null
+$existed = @{}
+foreach ($relative in $managedPaths) {
+  $source = Join-Path $Project $relative
+  if (Test-Path -LiteralPath $source) {
+    $existed[$relative] = $true
+    $destination = Join-Path $backupRoot $relative
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+    Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force
+  }
+}
+
+try {
 Merge-Hooks `
   -SettingsPath (Join-Path $Project ".codex/hooks.json") `
   -TemplatePath (Join-Path $SlimeHome "hooks/codex.hooks.template.json") `
@@ -180,6 +236,20 @@ Install-ManagedBlock -Path (Join-Path $Project "AGENTS.md") -Block $agentsBlock.
   -Start "<!-- coding-agent-guardrails:discipline:start -->" `
   -End "<!-- coding-agent-guardrails:discipline:end -->"
 Write-Host "  installed discipline block (root templates/DISCIPLINE.md) -> $(Join-Path $Project 'AGENTS.md')"
+} catch {
+  foreach ($relative in $managedPaths) {
+    $target = Join-Path $Project $relative
+    if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
+    if ($existed.ContainsKey($relative)) {
+      $backup = Join-Path $backupRoot $relative
+      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $target) | Out-Null
+      Copy-Item -LiteralPath $backup -Destination $target -Recurse -Force
+    }
+  }
+  throw "Slime installation failed; project files were restored. $($_.Exception.Message)"
+} finally {
+  Remove-Item -LiteralPath $journal -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 Write-Host ""
 Write-Host "Done. Restart Codex or start a new Codex run in the target repo so AGENTS.md and hooks are reloaded."

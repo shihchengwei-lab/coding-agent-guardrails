@@ -7,6 +7,22 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-11
+
+### Changed
+
+- Handoff verification now says `[locally recorded by agentcam]`. This is an
+  observed local command and exit code, not an attestation or merge authority;
+  required CI remains the independent merge gate.
+- Root installers now report and install this package version consistently.
+
+### Migration
+
+- Consumers that parse the handoff marker should accept
+  `[locally recorded by agentcam]`. Corridor CI v12 also accepts the old
+  `[recorded by agentcam]` marker for compatibility, but reports a legacy
+  warning and still classifies it as `local-recorded`.
+
 ### Removed
 
 - **Unimplemented custom-rules substrate.** `RuleSet`, `PathMatchers`, scanner

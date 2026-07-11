@@ -6,6 +6,10 @@
           {
             "type": "command",
             "command": "python3 \"__SLIME_HOME__\"/bin/prune-inject"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"__SLIME_HOME__\"/bin/patch-cost"
           }
         ]
       }
@@ -16,6 +20,10 @@
           {
             "type": "command",
             "command": "python3 \"__SLIME_HOME__\"/bin/prune-inject"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"__SLIME_HOME__\"/bin/patch-cost"
           }
         ]
       }
@@ -23,6 +31,17 @@
     "PreToolUse": [
       {
         "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"__SLIME_HOME__\"/bin/patch-cost"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",

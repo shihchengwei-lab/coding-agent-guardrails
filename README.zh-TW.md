@@ -47,8 +47,9 @@ git clone https://github.com/shihchengwei-lab/coding-agent-guardrails $HOME\guar
 
 重跑安全。安裝器會把紀律區塊（規則＋agentcam 交接循環）接進
 `CLAUDE.md` 與 `AGENTS.md`（Claude Code 讀前者、Codex 等讀後者）、
-裝好 slime-coding 的 hooks、放一份 corridor-ci 起手 workflow（你已有
-的不會被覆蓋）、把 agentcam 從這份 checkout 直接 pip 裝進你目前的
+裝好 slime-coding 的 hooks、放一份受管理的 corridor-ci-v12 workflow（完全符合
+官方 v11 範本時自動升級；自訂 workflow 保留並警告）、把 agentcam 從這份
+checkout 直接 pip 裝進你目前的
   Python（需 3.11 以上），並接好 agentcam 自動錄製：shell 安裝路徑錄 Claude Code
   session，PowerShell 安裝路徑錄 Codex 每一回合。Codex 專案 hooks 需先用 `/hooks`
   檢視並信任一次。
@@ -73,15 +74,20 @@ git clone https://github.com/shihchengwei-lab/coding-agent-guardrails $HOME\guar
    實錄寫成可 commit 的檔案，隨 PR 一起提交。
 5. **關卡**：corridor-ci 在 PR 上用實際 diff 驗證交接單，並把實錄證據
    （風險旗標、驗證紀錄、diff 統計）附進報告。它會把驗證標成
-   recorded、manual 或 unverified，也會指出 partial observation。manual 與
+   local-recorded、manual 或 unverified，也會指出 partial observation。manual 與
    partial 會保持可見；placeholder 或假的 recorded 聲明會讓 corridor 失敗。
 
 每個工具都可以單獨使用；各子目錄有自己的 README。
 
+只有 workflow 檔案不等於 merge gate。Repo 管理者仍須在 branch protection 或
+ruleset 把 Corridor 與測試工作設為 required checks；本 repo 對 `main` 要求全部
+13 個穩定名稱的 checks。
+
 ## 版本規則
 
-一個 repo、四個工具，release tag 以工具名為前綴：`agentcam-v0.3.3`、
-`corridor-ci-v11`⋯⋯。更早的版本（`v0.2.0`、`v10`⋯⋯）留在各工具原本的
+一個 repo、四個工具，release tag 以工具名為前綴：`agentcam-v0.4.0`、
+`corridor-ci-v12.0.0` 與 floating `corridor-ci-v12`。更早的版本
+（`v0.2.0`、`v10`⋯⋯）留在各工具原本的
 repo 裡。
 
 ## 歷史

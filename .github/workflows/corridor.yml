@@ -10,13 +10,19 @@ permissions:
 
 jobs:
   corridor:
+    name: Corridor
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: ./corridor-ci
+      # Enforcement uses the previously published checker. The separate
+      # Corridor tests workflow tests this PR's checker implementation.
+      - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v11
         with:
           mode: fail
           comment: true
+          # v11 still has a file-count gate. This one-time closure migration
+          # spans all four products; v12 removes the arbitrary count limit.
+          max_changed_files: 50

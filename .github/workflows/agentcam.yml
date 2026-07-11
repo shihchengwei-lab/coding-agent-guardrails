@@ -7,7 +7,6 @@ on:
     paths: ['agentcam/**']
   pull_request:
     branches: [main]
-    paths: ['agentcam/**']
 
 permissions:
   contents: read
@@ -18,12 +17,30 @@ defaults:
 
 jobs:
   test:
+    name: ${{ matrix.check-name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.11", "3.12"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.11"
+            check-name: Agentcam Ubuntu Python 3.11
+          - os: ubuntu-latest
+            python-version: "3.12"
+            check-name: Agentcam Ubuntu Python 3.12
+          - os: macos-latest
+            python-version: "3.11"
+            check-name: Agentcam macOS Python 3.11
+          - os: macos-latest
+            python-version: "3.12"
+            check-name: Agentcam macOS Python 3.12
+          - os: windows-latest
+            python-version: "3.11"
+            check-name: Agentcam Windows Python 3.11
+          - os: windows-latest
+            python-version: "3.12"
+            check-name: Agentcam Windows Python 3.12
 
     steps:
       - uses: actions/checkout@v4

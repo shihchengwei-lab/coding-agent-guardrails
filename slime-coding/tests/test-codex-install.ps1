@@ -55,10 +55,13 @@ try {
   } else {
     Bad "2  hooks are baked for Codex including Windows command" $hookText
   }
-  if ($hookJson.hooks.PreToolUse[0].matcher -match "Edit" -and $hookJson.hooks.Stop.Count -ge 1) {
-    Ok "3  hook events include PreToolUse and Stop"
+  if ($hookJson.hooks.PreToolUse[0].matcher -match "Edit" -and
+      $hookJson.hooks.PostToolUse[0].matcher -match "Bash" -and
+      $hookJson.hooks.UserPromptSubmit.Count -ge 1 -and
+      $hookJson.hooks.Stop.Count -ge 1) {
+    Ok "3  hook events include baseline, PreToolUse, Bash PostToolUse and Stop"
   } else {
-    Bad "3  hook events include PreToolUse and Stop" $hookText
+    Bad "3  hook events include baseline, PreToolUse, Bash PostToolUse and Stop" $hookText
   }
   if (Test-Path -LiteralPath $Skill) { Ok "4  installs repo-local Codex skill" } else { Bad "4  installs repo-local Codex skill" "missing" }
   if ((Test-Path -LiteralPath $Corridor) -and (Test-Path -LiteralPath $Pruned)) { Ok "5  seeds .slime artifacts" } else { Bad "5  seeds .slime artifacts" "missing" }
@@ -109,17 +112,23 @@ try {
   }
 
   # Quoted absolute python path (the no-py-launcher branch) must yield valid
-  # JSON: the path goes through JSON escaping before template substitution.
+  # JSON and pass the real preflight: the path goes through JSON escaping
+  # before template substitution.
   $Project2 = New-TmpDir
   git -C $Project2 init -q
+  $PythonDir = Join-Path $Project2 "Python Tools"
+  New-Item -ItemType Directory -Force -Path $PythonDir | Out-Null
+  $PythonWrapper = Join-Path $PythonDir "python wrapper.cmd"
+  "@echo off`r`npython %*`r`n" | Set-Content -LiteralPath $PythonWrapper -Encoding ascii
+  $QuotedPython = '"' + $PythonWrapper + '"'
   & powershell -NoProfile -ExecutionPolicy Bypass -File $Install -Project $Project2 `
-    -PythonCommand '"C:\Program Files\Python 3.12\python.exe"' | Out-Null
+    -PythonCommand $QuotedPython | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "install-codex.ps1 with -PythonCommand failed with $LASTEXITCODE" }
   $Hooks2 = Join-Path $Project2 ".codex/hooks.json"
   try {
     $quotedJson = Get-Content -LiteralPath $Hooks2 -Raw | ConvertFrom-Json
     $cmdWin = [string]$quotedJson.hooks.PreToolUse[0].hooks[0].commandWindows
-    if ($cmdWin -match 'Program Files' -and $cmdWin.StartsWith('"')) {
+    if ($cmdWin -match 'Python Tools' -and $cmdWin.StartsWith('"')) {
       Ok "10 quoted python path bakes into valid JSON"
     } else {
       Bad "10 quoted python path bakes into valid JSON" $cmdWin

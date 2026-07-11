@@ -25,7 +25,7 @@ the compact execution contract. Keep it short — this is a map, not a spec.
   Outcome, Paths, and Stop Condition only.
 - **normal** — the default: Outcome, Paths, supporting/falsifying Evidence, and
   Stop Condition.
-- **high** — normal plus a failure mode, rollback, and independent check.
+- **high** — normal plus a failure mode, rollback, and an executable independent check command.
 
 Existing corridors without a Rigor section remain legacy-compatible. New
 corridors must state `trivial`, `normal`, or `high` explicitly.
@@ -67,8 +67,9 @@ Persist the selected tier's Outcome, Paths, Evidence, and Stop Condition to
 `.slime/corridor.md` (use `/slime-corridor`). Normal and high Evidence must
 contain `Supports:` and `Would falsify:`. When adding a dependency, add
 `Dependency: <package> — <reason>` or the Stop gate rejects it. High additionally
-includes `## Controls` with `Failure mode:`, `Rollback:`, and
-`Independent check:`.
+includes `## High-risk Controls` with `Failure mode:`, `Rollback:`, and
+`Independent check command:`. That command must differ from the Stop command;
+the Stop hook executes both and blocks unless both exit 0.
 
 ## Before editing
 

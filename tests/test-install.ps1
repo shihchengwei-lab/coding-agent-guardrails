@@ -66,9 +66,73 @@ try {
   if (-not (Test-Path (Join-Path $Project ".github/workflows/corridor.yml"))) {
     throw "Corridor workflow not installed"
   }
+  $workflow = Get-Content -Raw -Encoding utf8 (Join-Path $Project ".github/workflows/corridor.yml")
+  if ($workflow -notmatch "coding-agent-guardrails:managed corridor-ci-v12" -or
+      $workflow -notmatch "corridor-ci@corridor-ci-v12") {
+    throw "installed Corridor workflow is not the managed v12 template"
+  }
+
+  # The exact official v11 template upgrades; user-authored workflow content
+  # is preserved and gets an explicit stale-version warning.
+  Copy-Item -LiteralPath (Join-Path $Root "tests/fixtures/corridor-v11-workflow.yml") `
+    -Destination (Join-Path $Project ".github/workflows/corridor.yml") -Force
+  & $Installer -Project $Project -Python $Python | Out-Null
+  $workflow = Get-Content -Raw -Encoding utf8 (Join-Path $Project ".github/workflows/corridor.yml")
+  if ($workflow -notmatch "corridor-ci@corridor-ci-v12") {
+    throw "official v11 workflow was not upgraded"
+  }
+  "# custom corridor workflow" | Set-Content -Encoding utf8 (Join-Path $Project ".github/workflows/corridor.yml")
+  $customOutput = (& $Installer -Project $Project -Python $Python 3>&1 | Out-String)
+  $workflow = (Get-Content -Raw -Encoding utf8 (Join-Path $Project ".github/workflows/corridor.yml")).Trim()
+  if ($workflow -ne "# custom corridor workflow") { throw "custom workflow was overwritten" }
+  if ($customOutput -notmatch "custom workflow is not overwritten") {
+    throw "custom workflow did not produce a preservation warning"
+  }
 
   & $Python -m agentcam.cli version | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "agentcam not installed into selected Python" }
+
+  # A pip preflight failure must not leave project files or hook directories.
+  $FailProject = Join-Path $Temp "preflight-failure"
+  New-Item -ItemType Directory -Force -Path $FailProject | Out-Null
+  git -C $FailProject init -q -b main
+  $FakePython = Join-Path $Temp "fake-python.cmd"
+  @'
+@echo off
+if "%1"=="-m" if "%2"=="pip" exit /b 77
+python %*
+'@ | Set-Content -Encoding ascii $FakePython
+  $failed = $false
+  try { & $Installer -Project $FailProject -Python $FakePython | Out-Null }
+  catch { $failed = $true }
+  if (-not $failed) { throw "fake pip failure unexpectedly succeeded" }
+  foreach ($relative in @("CLAUDE.md", "AGENTS.md", ".codex", ".agents", ".slime", ".github")) {
+    if (Test-Path (Join-Path $FailProject $relative)) {
+      throw "preflight failure left $relative behind"
+    }
+  }
+
+  # A later mutation failure must restore every managed path already touched.
+  $RollbackProject = Join-Path $Temp "rollback-project"
+  New-Item -ItemType Directory -Force -Path $RollbackProject | Out-Null
+  git -C $RollbackProject init -q -b main
+  "original instructions" | Set-Content -Encoding utf8 (Join-Path $RollbackProject "CLAUDE.md")
+  "user-owned obstacle" | Set-Content -Encoding utf8 (Join-Path $RollbackProject ".codex")
+  $failed = $false
+  try { & $Installer -Project $RollbackProject -Python $Python | Out-Null }
+  catch { $failed = $true }
+  if (-not $failed) { throw "post-mutation obstacle unexpectedly succeeded" }
+  if ((Get-Content -Raw -Encoding utf8 (Join-Path $RollbackProject "CLAUDE.md")).Trim() -ne "original instructions") {
+    throw "rollback did not restore CLAUDE.md"
+  }
+  if ((Get-Content -Raw -Encoding utf8 (Join-Path $RollbackProject ".codex")).Trim() -ne "user-owned obstacle") {
+    throw "rollback did not restore the pre-existing .codex path"
+  }
+  foreach ($relative in @("AGENTS.md", ".agents", ".slime", ".github")) {
+    if (Test-Path (Join-Path $RollbackProject $relative)) {
+      throw "rollback left $relative behind"
+    }
+  }
 
   Write-Host "install.ps1 toolkit test OK"
 }

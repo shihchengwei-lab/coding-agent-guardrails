@@ -171,7 +171,7 @@ class TestVerifiedLineInHandoff:
         verified = proc.stdout.decode("utf-8").strip().splitlines()[3]
         assert verified.startswith("Verified: ")
         assert "(exit 0)" in verified
-        assert "recorded by agentcam" in verified
+        assert "[locally recorded by agentcam]" in verified
         assert "<fill in" not in verified
 
     def test_handoff_keeps_fill_in_when_only_failed_checks(

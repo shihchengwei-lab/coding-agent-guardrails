@@ -13,7 +13,7 @@ Steps:
    repo until you can name one observable outcome and the real attachment path.
 3. Choose `trivial`, `normal`, or `high` rigor. Use trivial only for one local
    product file with no dependency or boundary change. Use normal by default.
-   Use high when failure containment, rollback, and an independent check are
+   Use high when failure containment, rollback, and an executable independent check are
    necessary.
 4. Determine the **Meeting Corridor**: the minimal sufficient paths connecting
    the existing attachment point to the required outcome.
@@ -46,10 +46,10 @@ Steps:
    use the normal shape and append:
 
    ```markdown
-   ## Controls
+   ## High-risk Controls
    - Failure mode: <what can go wrong>
    - Rollback: <how to contain or reverse it>
-   - Independent check: <a check separate from the implementation path>
+   - Independent check command: <an executable command different from the Stop command>
    ```
 
 6. Keep it terse — a map, not a spec. Create the `.slime/` directory if needed.
