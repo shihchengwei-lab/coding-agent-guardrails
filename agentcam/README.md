@@ -162,6 +162,13 @@ Output-pattern risk scanning runs over the merged stream in
 resize during a run is NOT forwarded (subprocess TUI won't reflow
 until restarted).
 
+Redaction caveat: PTY output is full of ANSI escape sequences, and an
+escape sequence interleaved inside a token defeats the inline redaction
+patterns — under the default PTY backend, treat `stdout.redacted.log`
+as best-effort and the raw log as sensitive. PIPE mode gives the
+redactor the cleanest input when redaction quality matters more than
+TUI fidelity.
+
 Windows requires the `pywinpty` dependency (installed automatically
 on Windows by `pip install agentcam`; not installed on Linux/macOS).
 See [wrapped process](docs/design.md#wrapped-process) for the design rationale.

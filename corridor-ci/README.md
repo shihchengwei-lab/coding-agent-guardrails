@@ -51,7 +51,9 @@ a required check in branch protection or a ruleset.
   state fingerprint equal to the current product state.
 - The declared risk is not lower than the risk Corridor derives from paths,
   statuses, dependency manifests, and workflow changes.
-- High-risk work has a confirmation bound to the same product fingerprint.
+- High-risk work carries a confirmation object bound to the same product
+  fingerprint. Like the rest of the artifact, it is author-side evidence
+  whose format and binding are checked; it is not independently attested.
 - Dependency and workflow changes have the required GitHub approval bound to
   the current full head SHA.
 
