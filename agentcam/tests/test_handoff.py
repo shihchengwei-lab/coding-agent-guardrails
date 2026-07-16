@@ -157,7 +157,9 @@ class TestHandoff:
         assert [line.split(":")[0] for line in lines] == [
             "Decision", "Scope", "Review first", "Verified", "Risk",
         ]
-        assert lines[1].startswith("Scope: <fill in:")
+        # Wrap mode has no declared scope: Scope falls back to the files
+        # that actually changed (README's documented behavior).
+        assert lines[1] == "Scope: produced.txt"
         assert lines[2] == "Review first: produced.txt"
         # Decision and Verified stay with the author.
         assert "<fill in" in lines[0]
@@ -211,7 +213,7 @@ class TestHandoff:
         proc = _agentcam(tmp_git_repo, "handoff")
 
         assert proc.returncode == 0, proc.stderr
-        assert "Scope: <fill in:" in proc.stdout.decode("utf-8")
+        assert "Scope: .env.production" in proc.stdout.decode("utf-8")
         assert "Review first: .env.production" in proc.stdout.decode("utf-8")
 
     def test_handoff_ignores_archived_corridor_scope(
@@ -228,7 +230,9 @@ class TestHandoff:
         proc = _agentcam(tmp_git_repo, "handoff")
 
         assert proc.returncode == 0, proc.stderr
-        assert proc.stdout.decode("utf-8").splitlines()[1].startswith("Scope: <fill in:")
+        # Archived .slime corridor scope (src/**) must not surface here;
+        # the fallback is the run's actual changed files.
+        assert proc.stdout.decode("utf-8").splitlines()[1] == "Scope: produced.txt"
 
     def test_old_manifest_without_evidence_errors(self, tmp_git_repo: Path):
         _make_one_run(tmp_git_repo)
