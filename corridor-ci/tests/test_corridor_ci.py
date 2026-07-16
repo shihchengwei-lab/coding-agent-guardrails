@@ -26,6 +26,18 @@ class CorridorV14Test(unittest.TestCase):
         self.assertTrue(corridor_ci.path_matches("src/deep/app.py", "src/**/*.py"))
         self.assertTrue(corridor_ci.path_matches("src", "src/**"))
 
+    def test_dependency_file_detection_covers_modern_lockfiles(self):
+        for path in (
+            "uv.lock",
+            "setup.py",
+            "npm-shrinkwrap.json",
+            "bun.lockb",
+            "backend/uv.lock",
+        ):
+            self.assertTrue(corridor_ci.is_dependency_file(path), path)
+        for path in ("src/main.py", "docs/setup.md"):
+            self.assertFalse(corridor_ci.is_dependency_file(path), path)
+
     def test_product_fingerprint_excludes_only_fixed_review_metadata(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
