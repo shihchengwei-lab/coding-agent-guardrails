@@ -423,6 +423,13 @@ def _finalize_agentcam(cwd, data, baseline):
         return None
     after = set(os.listdir(runs)) if os.path.isdir(runs) else set()
     created = sorted(after - before)
+    if not created:
+        # The hook succeeded but produced no run: the turn itself made no
+        # git-visible change (e.g. all delivery work was committed in
+        # earlier turns). That is a valid delivery with no turn capture,
+        # not a failure — return an empty manifest so capture degrades to
+        # partial/unavailable downstream.
+        return {}
     if len(created) != 1:
         return None
     run_dir = os.path.join(runs, created[0])
@@ -954,9 +961,21 @@ def _cached_review_checks(value, fingerprint):
 def finish_delivery(cwd, data):
     baseline = load_baseline(cwd, data)
     if baseline is None:
-        return {"decision": "block", "reason": "turn baseline is unavailable"}
+        return {
+            "decision": "block",
+            "reason": (
+                "turn baseline is unavailable — the hooks usually became "
+                "active mid-turn; start a new conversation turn and retry"
+            ),
+        }
     if not baseline.get("agentcam_ready"):
-        return {"decision": "block", "reason": "Agentcam turn capture failed to initialize"}
+        return {
+            "decision": "block",
+            "reason": (
+                "Agentcam turn capture failed to initialize; run "
+                "`guardrails doctor` to check the installation"
+            ),
+        }
     scope = read_delivery_scope(cwd)
     if not scope:
         return {
@@ -974,7 +993,11 @@ def finish_delivery(cwd, data):
     if outside:
         return {
             "decision": "block",
-            "reason": "Out-of-scope changes: " + ", ".join(outside),
+            "reason": (
+                "Out-of-scope changes: " + ", ".join(outside)
+                + ". Revert them, or record the evidence with "
+                "`guardrails internal scope add --path <path> --reason \"<evidence>\"`."
+            ),
         }
     fingerprint = review_product_fingerprint(cwd, changed)
     risk, reasons = delivery_risk(changed)
@@ -1006,7 +1029,14 @@ def finish_delivery(cwd, data):
                 "confirmation_phrase": pending["phrase"],
             }
         if pending.get("product_fingerprint") != fingerprint:
-            return {"decision": "block", "reason": "high-risk confirmation is stale"}
+            return {
+                "decision": "block",
+                "reason": (
+                    "high-risk confirmation is stale — the product changed "
+                    "after it was confirmed; stopping again will issue a "
+                    "fresh confirmation phrase"
+                ),
+            }
         approval = {
             "required": True,
             "confirmed": True,
@@ -1026,7 +1056,13 @@ def finish_delivery(cwd, data):
             return {"decision": "block", "reason": "could not record verification with Agentcam"}
         manifest = _finalize_agentcam(cwd, data, baseline)
         if manifest is None:
-            return {"decision": "block", "reason": "could not finalize the Agentcam turn record"}
+            return {
+                "decision": "block",
+                "reason": (
+                    "the Agentcam hook-turn-end call failed; run "
+                    "`guardrails doctor` to check the installation, then retry"
+                ),
+            }
         baseline["finalized_agentcam"] = {
             "product_fingerprint": fingerprint,
             "manifest": manifest,
