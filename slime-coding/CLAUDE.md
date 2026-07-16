@@ -1,26 +1,34 @@
 # slime-coding (development)
 
-This repo IS the Slime Coding tooling. It is not a Dart app — the hooks here
-target *consuming* projects. It is installed by cloning and running
-`install.sh` against a target project (no plugin / marketplace).
+This directory IS the Slime coordinator tooling. It is not a Dart app —
+`bin/patch-cost` targets *consuming* projects. It is installed into a target
+repository by the monorepo root installer (`install.sh` / `install.ps1` at the
+repo root, which delegates to `installer/guardrails_installer.py`); there is
+no per-directory installer here.
 
-Layout: `install.sh` (wires a target project), `hooks/hooks.template.json`
-(hook block with the `__SLIME_HOME__` placeholder), `bin/` (hook executables),
-`skills/`, `commands/`, `templates/`.
+Layout: `bin/patch-cost` (the single hook coordinator and internal CLI),
+`tests/` (unittest + shell contract tests), `docs/` (concept and design
+notes), `benchmark/` (recorded benchmark tables and raw cells).
 
-When changing a hook executable in `bin/`, keep it dependency-free (stdlib
-Python 3 only), never crash the user's session (exit 0 silently on unexpected
-input), and remember: L2 gates may block on git facts only; L3 only reports.
-Run `python3 -c 'import ast; ast.parse(open("bin/patch-cost", encoding="utf-8").read())'`
-to syntax-check after edits (the explicit encoding matters: without it the
-check itself breaks on machines whose locale codepage is not UTF-8), and
-keep the `bin/` scripts executable (`chmod +x`).
+`patch-cost` depends on the sibling `agentcam` package: the root installer
+pip-installs agentcam into the managed venv, and Stop hard-blocks if agentcam
+fails to initialize. Running the tests locally therefore needs
+`PYTHONPATH=../agentcam/src`:
 
-After changing `hooks/hooks.template.json` or `install.sh`, sanity-check the
-merge with `bash install.sh /tmp/throwaway-project` and confirm it is
-idempotent and quotes the baked path.
+```bash
+PYTHONPATH=../agentcam/src python3 -m unittest discover -s tests
+PYTHONPATH=../agentcam/src bash tests/test.sh
+```
 
-The tool's own discipline is described in `README.md`; the discipline block
-consumers get is the monorepo root `templates/DISCIPLINE.md`, written into
-CLAUDE.md and AGENTS.md by the root installer (install-codex.ps1 reads the
-same file).
+When changing `bin/patch-cost`: never crash the user's session (exit 0
+silently on unexpected input); L2 gates may block on git facts only, L3 only
+reports; keep `is_dependency_manifest` aligned with Corridor CI's
+`DEPENDENCY_GLOBS` (a mismatch makes local artifacts underreport risk and the
+PR gate reject them). Syntax-check after edits with
+`python3 -c 'import ast; ast.parse(open("bin/patch-cost", encoding="utf-8").read())'`
+(the explicit encoding matters on non-UTF-8 locale machines), and keep the
+script executable (`chmod +x`).
+
+The discipline block consumers get is the monorepo root
+`templates/DISCIPLINE.md`, written into their CLAUDE.md and AGENTS.md by the
+root installer.
