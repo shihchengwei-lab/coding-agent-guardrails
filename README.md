@@ -146,9 +146,10 @@ upgrade. Each component also has its own README:
 
 ## Versioning
 
-The low-friction line is Agentcam `0.6.0` and Corridor CI `v14.0.0`. Release
-tags are prefixed per component: `agentcam-v0.6.0` and
-`corridor-ci-v14.0.0`. Installed workflows pin that immutable Corridor release.
+The low-friction line is Agentcam `0.7.0` and Corridor CI `v15.0.0`. Release
+tags are prefixed per component: `agentcam-v0.7.0` and
+`corridor-ci-v15.0.0`. Installed workflows pin that immutable Corridor release.
+Cross-component changes are recorded in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

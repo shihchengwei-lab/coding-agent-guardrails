@@ -131,9 +131,10 @@ Breaking upgrade 請看[遷移指南](docs/MIGRATION.md)。各元件說明：
 
 ## 版本
 
-最低摩擦版本線是 Agentcam `0.6.0` 與 Corridor CI `v14.0.0`。Release tag 分別
-是 `agentcam-v0.6.0` 與 `corridor-ci-v14.0.0`。安裝器產生的 workflow 會 pin
-這個已發布且不可變的 Corridor 版本。
+最低摩擦版本線是 Agentcam `0.7.0` 與 Corridor CI `v15.0.0`。Release tag 分別
+是 `agentcam-v0.7.0` 與 `corridor-ci-v15.0.0`。安裝器產生的 workflow 會 pin
+這個已發布且不可變的 Corridor 版本。跨元件變更記錄在
+[CHANGELOG.md](CHANGELOG.md)。
 
 ## 授權
 

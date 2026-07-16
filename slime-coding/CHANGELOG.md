@@ -6,6 +6,17 @@ cloning, so "versions" track the git history rather than published releases.
 
 ## Unreleased
 
+- Deliveries whose turn made no new git-visible change now complete with
+  degraded capture instead of blocking — the "agent works, user asks to
+  commit" flow works on the first Stop.
+- Stale delivery state (branch-name-keyed, base already merged) is
+  absorbed at scope set; leftover approvals are dropped.
+- Every Stop block reason states a cause and a concrete next step.
+- Dependency-manifest detection is case-insensitive and mirrors Corridor
+  CI's `DEPENDENCY_GLOBS` (lockfiles, `uv.lock`, `setup.py`,
+  `npm-shrinkwrap.json`, `bun.lockb`).
+- The review artifact stamps the installed agentcam version instead of a
+  hardcoded literal.
 - Replaced tracked corridor, Rigor, Evidence, Stop Condition, PRUNED, slash
   commands, and standalone installers with one low-friction coordinator.
 - Agent intent and scope expansion now live under `<git-dir>/guardrails/` and

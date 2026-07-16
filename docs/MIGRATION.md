@@ -21,9 +21,27 @@ User hooks, custom workflows, trusted check configuration, Agentcam history,
 and existing `.slime/` data are preserved. `.slime/` becomes archived state:
 the new runtime neither migrates nor reads it.
 
-After the v14 release rollout, the managed Corridor workflow pins
-`corridor-ci-v14.0.0`. A customized workflow is preserved and `doctor` reports
-the required manual update.
+After the v15 release rollout, the managed Corridor workflow pins
+`corridor-ci-v15.0.0`. Official v13 and v14 templates are recognized and
+upgraded automatically; a customized workflow is preserved and `doctor`
+reports the required manual update.
+
+## Agentcam 0.6 to 0.7
+
+Re-run the root installer. Hook-mode session snapshots changed from pickle to
+JSON: an in-flight session started under 0.6.x is discarded rather than
+loaded, so finish or discard in-progress sessions first if their turn record
+matters. Subdirectory invocations, redaction coverage, and export path
+handling are fixed; no user action is needed for those.
+
+## Corridor CI v14 to v15
+
+The dependency-approval surface grew: PRs touching `uv.lock`, `setup.py`,
+`npm-shrinkwrap.json`, or `bun.lockb` now require the head-bound
+`Guardrails-Dependency-Approval` comment. The `review_artifact` action input
+was removed — it could never pass validation; the artifact path is the fixed
+contract `.guardrails/review.json`. The policy gate briefly re-reads approval
+comments, so an approval posted right after the push lands in the same run.
 
 ## Removed daily workflow
 
