@@ -18,11 +18,15 @@ def test_only_unified_installer_entrypoints_remain():
 def test_runtime_and_action_use_low_friction_contract():
     runtime = read("slime-coding/bin/patch-cost")
     action = read("corridor-ci/action.yml")
+    checker = read("corridor-ci/bin/corridor_ci.py")
     installer = read("installer/guardrails_installer.py")
 
     assert ".guardrails/review.json" in runtime
     assert "guardrails internal scope set" in runtime
-    assert "review_artifact" in action
+    # The artifact path is a fixed contract, not a configurable input:
+    # a custom path can never satisfy its own fingerprint exclusion.
+    assert ".guardrails/review.json" in checker
+    assert "review_artifact" not in action
     assert "agentcam_evidence" not in action
     assert "guardrails-coordinator" in installer
 

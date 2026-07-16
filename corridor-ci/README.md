@@ -72,7 +72,6 @@ when enabled, updates only a comment created by `github-actions[bot]`.
 |---|---:|---|
 | `mode` | `fail` | `fail` exits non-zero on issues; `warn` only reports. |
 | `comment` | `false` | Upsert the report as a bot-owned sticky PR comment. |
-| `review_artifact` | `.guardrails/review.json` | Checkout-relative schema-1 review artifact. |
 
 Sticky comments require `pull-requests: write`; the default action needs only
 `contents: read`.
