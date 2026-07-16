@@ -33,7 +33,7 @@ _INLINE_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
     ("SLACK", re.compile(r"xox[abprs]-[A-Za-z0-9-]{10,}"), "[REDACTED:SLACK]"),
     (
         "GITHUB_PAT",
-        re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}"),
+        re.compile(r"(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{36,})"),
         "[REDACTED:GITHUB_PAT]",
     ),
     ("NPM_TOKEN", re.compile(r"npm_[A-Za-z0-9]{36}"), "[REDACTED:NPM_TOKEN]"),
@@ -69,14 +69,16 @@ _INLINE_PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
         ),
         r"\1[REDACTED:ENV]",
     ),
-    # URL basic-auth: https://user:password@host. Catches HTTP_PROXY=...,
+    # URL basic-auth: scheme://user:password@host. Catches HTTP_PROXY=...,
     # `git clone https://user:token@github.com/...`, etc., even when the
     # surrounding env-var name doesn't match the KEY/TOKEN/SECRET keyword
-    # list above. (Codex source-review HIGH.)
+    # list above. (Codex source-review HIGH.) Scheme-generic so DB and VCS
+    # URLs (postgres://, mongodb+srv://, redis://, git+ssh://) are covered,
+    # not just http(s).
     (
         "URL_BASIC_AUTH",
         re.compile(
-            r"(\bhttps?://)([^:/?#@\s]+):([^@\s]+)(@)",
+            r"(\b[a-zA-Z][a-zA-Z0-9+.\-]*://)([^:/?#@\s]+):([^@\s]+)(@)",
             re.IGNORECASE,
         ),
         r"\1[REDACTED]:[REDACTED]\4",
