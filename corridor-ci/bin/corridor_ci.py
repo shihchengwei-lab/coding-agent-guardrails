@@ -237,6 +237,15 @@ def evaluate_workflow_policy(
         )
 
     normalized_head = head_sha.strip().lower()
+    if re.fullmatch(r"[0-9a-f]{40}", normalized_head) is None:
+        # Fail closed: an empty head would reduce the pattern to
+        # "label with no SHA", losing the head binding entirely.
+        return WorkflowPolicyDecision(
+            ok=False,
+            changed_workflows=changed_workflows,
+            approved_by=None,
+            reason="Head SHA is missing or invalid; approval cannot be verified.",
+        )
     approval_pattern = re.compile(
         rf"(?m)^{re.escape(WORKFLOW_APPROVAL_LABEL)}:\s*"
         rf"({re.escape(normalized_head)})\s*$"
@@ -285,6 +294,15 @@ def evaluate_dependency_policy(
         return DependencyPolicyDecision(True, [], None, "No dependency files changed.")
 
     normalized_head = head_sha.strip().lower()
+    if re.fullmatch(r"[0-9a-f]{40}", normalized_head) is None:
+        # Fail closed: an empty head would reduce the pattern to
+        # "label with no SHA", losing the head binding entirely.
+        return DependencyPolicyDecision(
+            False,
+            dependencies,
+            None,
+            "Head SHA is missing or invalid; approval cannot be verified.",
+        )
     pattern = re.compile(
         rf"(?m)^{re.escape(DEPENDENCY_APPROVAL_LABEL)}:\s*"
         rf"{re.escape(normalized_head)}\s*$"

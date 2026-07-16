@@ -96,6 +96,33 @@ class CorridorV14Test(unittest.TestCase):
         )
         self.assertTrue(decision.ok)
 
+    def test_missing_head_sha_fails_closed_for_both_policies(self):
+        # Regression: with an empty head SHA the compiled pattern reduced
+        # to "label with no SHA", so a bare approval comment matched and
+        # the head binding was silently lost.
+        workflow = corridor_ci.evaluate_workflow_policy(
+            changed_files=[".github/workflows/ci.yml"],
+            comments=[{
+                "body": "Guardrails-Workflow-Approval:",
+                "author_association": "OWNER",
+                "user": {"login": "owner"},
+            }],
+            head_sha="",
+            pr_author="owner",
+        )
+        dependency = corridor_ci.evaluate_dependency_policy(
+            dependency_files=["requirements.txt"],
+            comments=[{
+                "body": "Guardrails-Dependency-Approval:",
+                "author_association": "OWNER",
+                "user": {"login": "owner"},
+            }],
+            head_sha="",
+            pr_author="owner",
+        )
+        self.assertFalse(workflow.ok)
+        self.assertFalse(dependency.ok)
+
     def test_markdown_escape_blocks_structure_and_mentions(self):
         escaped = corridor_ci.escape_markdown("x\n# injected\n```\n@team")
         self.assertNotIn("\n# injected", escaped)
