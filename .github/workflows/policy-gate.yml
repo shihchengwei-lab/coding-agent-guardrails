@@ -2,7 +2,10 @@ name: Guardrails policy
 
 on:
   pull_request_target:
-    types: [opened, synchronize, reopened]
+    # edited: re-evaluate when the PR retargets its base — check runs are
+    # keyed to the head SHA, so a green gate would otherwise survive a
+    # retarget whose new diff includes workflow changes.
+    types: [opened, edited, synchronize, reopened]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

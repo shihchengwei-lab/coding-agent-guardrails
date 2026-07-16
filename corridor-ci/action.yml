@@ -13,11 +13,6 @@ inputs:
     description: "Upsert the Corridor CI report as a sticky PR comment."
     required: false
     default: "false"
-  review_artifact:
-    description: "Checkout-relative Guardrails review artifact generated at Stop."
-    required: false
-    default: ".guardrails/review.json"
-
 runs:
   using: composite
   steps:
@@ -26,6 +21,5 @@ runs:
       env:
         INPUT_MODE: ${{ inputs.mode }}
         INPUT_COMMENT: ${{ inputs.comment }}
-        INPUT_REVIEW_ARTIFACT: ${{ inputs.review_artifact }}
         GITHUB_TOKEN: ${{ github.token }}
       run: python "$GITHUB_ACTION_PATH/bin/corridor_ci.py"

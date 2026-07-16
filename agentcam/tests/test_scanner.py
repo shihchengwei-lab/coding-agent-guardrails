@@ -214,6 +214,45 @@ class TestScanOutput:
             f.level == "HIGH" and "git reset --hard" in f.rule for f in flags
         )
 
+    def test_rm_flag_variants_high(self):
+        # Regression: -fr, -r -f, whole-cwd, and glob-everything are
+        # everyday spellings, not adversarial evasions.
+        for command in (
+            "rm -fr /opt/old/data",
+            "rm -r -f /opt/old/data",
+            "rm -rf .",
+            "rm -rf *",
+        ):
+            flags = scan_output(command + "\n", stream_label="stdout.log")
+            assert any(
+                f.level == "HIGH" and "rm -rf" in f.rule for f in flags
+            ), command
+
+    def test_rm_scoped_cleanup_not_flagged(self):
+        # ./build and *.tmp are scoped cleanups, not whole-tree deletions.
+        for command in ("rm -rf ./build", "rm -rf *.tmp"):
+            flags = scan_output(command + "\n", stream_label="stdout.log")
+            assert not any("rm -rf" in f.rule for f in flags), command
+
+    def test_force_push_variants_high(self):
+        # Regression: the flag after remote/branch and the +refspec
+        # shorthand used to slip through.
+        for command in (
+            "git push -f",
+            "git push origin main --force",
+            "git push origin +main",
+        ):
+            flags = scan_output(command + "\n", stream_label="stdout.log")
+            assert any(
+                f.level == "HIGH" and "git push" in f.rule for f in flags
+            ), command
+
+    def test_plain_push_not_flagged(self):
+        flags = scan_output(
+            "git push origin feature-f\n", stream_label="stdout.log"
+        )
+        assert not any("git push" in f.rule for f in flags)
+
     def test_conflict_marker_high(self):
         text = "before\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> branch\nafter\n"
         flags = scan_output(text, stream_label="stdout.log")

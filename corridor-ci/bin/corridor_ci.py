@@ -22,13 +22,17 @@ from typing import Any, Callable
 DEPENDENCY_GLOBS = (
     "package.json",
     "package-lock.json",
+    "npm-shrinkwrap.json",
     "pnpm-lock.yaml",
     "yarn.lock",
     "bun.lock",
+    "bun.lockb",
     "requirements.txt",
     "requirements-*.txt",
     "pyproject.toml",
+    "setup.py",
     "poetry.lock",
+    "uv.lock",
     "Pipfile",
     "Pipfile.lock",
     "Cargo.toml",
@@ -380,7 +384,7 @@ def _glob_to_regex(pattern: str) -> "re.Pattern[str]":
     return re.compile("".join(parts) + r"\Z")
 
 
-_GLOB_REGEX_CACHE: dict[str, "re.Pattern[str]"] = {}
+_GLOB_REGEX_CACHE: dict[str, "re.Pattern[str] | None"] = {}
 
 
 def path_matches(path: str, pattern: str) -> bool:
@@ -391,11 +395,17 @@ def path_matches(path: str, pattern: str) -> bool:
     if pattern.endswith("/**"):
         prefix = pattern[:-3].rstrip("/")
         return path == prefix or path.startswith(prefix + "/")
-    regex = _GLOB_REGEX_CACHE.get(pattern)
-    if regex is None:
-        regex = _glob_to_regex(pattern)
-        _GLOB_REGEX_CACHE[pattern] = regex
-    return regex.match(path) is not None
+    if pattern not in _GLOB_REGEX_CACHE:
+        # A malformed glob (e.g. bad character range "[z-a]") must fail
+        # closed as "matches nothing" — covered files then surface as an
+        # outside-scope issue — not crash the checker with a traceback,
+        # which would also break warn mode's report-only contract.
+        try:
+            _GLOB_REGEX_CACHE[pattern] = _glob_to_regex(pattern)
+        except re.error:
+            _GLOB_REGEX_CACHE[pattern] = None
+    regex = _GLOB_REGEX_CACHE[pattern]
+    return regex is not None and regex.match(path) is not None
 
 
 def is_allowed(path: str, allowed_paths: list[str]) -> bool:
@@ -498,8 +508,6 @@ def evaluate_review_artifact(
         issues.append("review artifact scope must be a non-empty string array")
     else:
         allowed = [normalize_path(value) for value in raw_scope]
-        if any(value in {"*", "**", "**/*"} for value in allowed):
-            issues.append("review artifact scope cannot match everything")
         outside = [path for path in product if not is_allowed(path, allowed)]
         if outside:
             issues.append("product files outside review artifact scope: " + ", ".join(outside))
@@ -619,8 +627,7 @@ def read_review_artifact(path: Path) -> tuple[dict[str, Any] | None, str | None]
 def apply_dependency_policy(
     report: Report, decision: DependencyPolicyDecision
 ) -> Report:
-    prefix = "dependency files require head-bound trusted approval:"
-    issues = [issue for issue in report.issues if not issue.startswith(prefix)]
+    issues = list(report.issues)
     if decision.dependency_files and not decision.ok:
         issues.append(decision.reason)
     return replace(report, ok=not issues, issues=issues)
@@ -866,11 +873,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--head", help="head revision for --policy-gate")
     parser.add_argument("--mode", choices=("fail", "warn"), default=os.environ.get("INPUT_MODE", "fail"))
     parser.add_argument("--comment", default=os.environ.get("INPUT_COMMENT", "false"))
-    parser.add_argument(
-        "--review-artifact",
-        default=os.environ.get("INPUT_REVIEW_ARTIFACT", REVIEW_ARTIFACT_DEFAULT),
-        help="checkout-relative Guardrails review artifact",
-    )
     return parser
 
 
@@ -886,7 +888,7 @@ def main(argv: list[str] | None = None) -> int:
     current_product_fingerprint = compute_current_product_fingerprint(
         repo, changed
     )
-    review, review_note = read_review_artifact(repo / args.review_artifact)
+    review, review_note = read_review_artifact(repo / REVIEW_ARTIFACT_DEFAULT)
     event = read_event_payload()
     pull = event.get("pull_request") if isinstance(event, dict) else None
     pr_title = str(pull.get("title") or "Pull request") if isinstance(pull, dict) else "Pull request"
@@ -932,8 +934,6 @@ def main(argv: list[str] | None = None) -> int:
             pr_author=pr_author,
         )
         report = apply_dependency_policy(report, decision)
-    if review_note and review is not None:
-        report = replace(report, warnings=[*report.warnings, review_note])
     markdown = render_markdown(report)
     print(markdown)
     write_step_summary(markdown)

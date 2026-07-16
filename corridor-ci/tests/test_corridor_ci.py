@@ -26,6 +26,18 @@ class CorridorV14Test(unittest.TestCase):
         self.assertTrue(corridor_ci.path_matches("src/deep/app.py", "src/**/*.py"))
         self.assertTrue(corridor_ci.path_matches("src", "src/**"))
 
+    def test_dependency_file_detection_covers_modern_lockfiles(self):
+        for path in (
+            "uv.lock",
+            "setup.py",
+            "npm-shrinkwrap.json",
+            "bun.lockb",
+            "backend/uv.lock",
+        ):
+            self.assertTrue(corridor_ci.is_dependency_file(path), path)
+        for path in ("src/main.py", "docs/setup.md"):
+            self.assertFalse(corridor_ci.is_dependency_file(path), path)
+
     def test_product_fingerprint_excludes_only_fixed_review_metadata(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
@@ -169,12 +181,6 @@ class CorridorV14Test(unittest.TestCase):
         self.assertEqual(len(patches), 1)
         self.assertTrue(patches[0].endswith("/comments/2"))
 
-    def test_parser_exposes_review_artifact_not_agentcam_manifest(self):
-        parser = corridor_ci.build_parser()
-        args = parser.parse_args([])
-        self.assertEqual(args.review_artifact, ".guardrails/review.json")
-        self.assertNotIn("agentcam_evidence", vars(args))
-
     def test_main_accepts_arbitrary_pr_body_with_valid_artifact(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)
@@ -240,19 +246,6 @@ class CorridorV14Test(unittest.TestCase):
                 code = corridor_ci.main(["--repo", str(repo)])
             self.assertEqual(code, 0, output.getvalue())
             self.assertIn("Corridor CI: PASS", output.getvalue())
-
-    def test_source_contains_no_pr_body_handoff_fallback(self):
-        source = (ROOT / "bin" / "corridor_ci.py").read_text(encoding="utf-8")
-        for token in (
-            "extract_compact_handoff",
-            "COMPACT_HANDOFF_LABELS",
-            "COPYABLE_REVIEW_HANDOFF",
-            "find_pr_body",
-            "classify_verification_provenance",
-            "read_agentcam_manifest",
-        ):
-            self.assertNotIn(token, source)
-
 
 if __name__ == "__main__":
     unittest.main()

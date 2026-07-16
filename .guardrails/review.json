@@ -1,8 +1,8 @@
 {
   "approval": {
-    "confirmation_id": "ff036e5e5f7b07a56c3cad2d31b13051573f896947f15607800a349bfceafee0",
+    "confirmation_id": "a0f092813e56fadba13c1dcea5ce85f99e721243ee6125d702abb356f3e6b97f",
     "confirmed": true,
-    "product_fingerprint": "c9865bbc694804e0dbd884d70136e47418758119ebe33b3c40b9cff0057e0f28",
+    "product_fingerprint": "159102d6e7a24a2dd7c7532bfc24bf6d922dc258e98a1b73636470ca5cf034e1",
     "required": true
   },
   "capture": {
@@ -10,22 +10,10 @@
     "terminal": "unavailable"
   },
   "delivery": {
-    "base_commit": "a6130e36e36a03648e294ca13cb802042fa3f58b",
+    "base_commit": "7dbc27b89b17bb6bb9ee5be2193fbafbd5dcfa8d",
     "changed_files": [
       {
-        "path": ".github/workflows/agentcam-publish.yml",
-        "status": "modified"
-      },
-      {
-        "path": ".github/workflows/corridor-ci-tag.yml",
-        "status": "modified"
-      },
-      {
-        "path": ".github/workflows/corridor-ci.yml",
-        "status": "modified"
-      },
-      {
-        "path": ".github/workflows/toolkit.yml",
+        "path": ".github/workflows/policy-gate.yml",
         "status": "modified"
       },
       {
@@ -33,23 +21,31 @@
         "status": "modified"
       },
       {
-        "path": "agentcam/src/agentcam/hooks.py",
+        "path": "agentcam/src/agentcam/export.py",
         "status": "modified"
       },
       {
-        "path": "agentcam/src/agentcam/redaction.py",
+        "path": "agentcam/src/agentcam/scanner.py",
         "status": "modified"
       },
       {
-        "path": "agentcam/tests/test_e2e.py",
+        "path": "agentcam/tests/test_export.py",
         "status": "modified"
       },
       {
-        "path": "agentcam/tests/test_redaction.py",
+        "path": "agentcam/tests/test_handoff.py",
         "status": "modified"
       },
       {
-        "path": "agentcam/tests/test_ruleset_provenance.py",
+        "path": "agentcam/tests/test_scanner.py",
+        "status": "modified"
+      },
+      {
+        "path": "corridor-ci/README.md",
+        "status": "modified"
+      },
+      {
+        "path": "corridor-ci/action.yml",
         "status": "modified"
       },
       {
@@ -61,35 +57,49 @@
         "status": "modified"
       },
       {
+        "path": "corridor-ci/tests/test_review_artifact.py",
+        "status": "modified"
+      },
+      {
+        "path": "slime-coding/CLAUDE.md",
+        "status": "modified"
+      },
+      {
         "path": "slime-coding/bin/patch-cost",
         "status": "modified"
       },
       {
         "path": "slime-coding/tests/test_trusted_checks.py",
         "status": "modified"
+      },
+      {
+        "path": "tests/test_pr4_contract.py",
+        "status": "modified"
       }
     ],
     "outcomes": [
-      "PR #38 fixes five audited defects: agentcam git-root state binding, scheme-generic credential redaction, case-insensitive dependency manifest detection, fail-closed head SHA validation, and pinned CI publish action with explicit workflow permissions"
+      "Second audit round: export path redaction, rm/force-push detection variants, handoff scope fallback, dependency-manifest alignment, malformed-glob fail-closed, policy-gate edited trigger, removal of the unusable review_artifact input and dead code, and a truthful slime-coding CLAUDE.md"
     ],
-    "product_fingerprint": "c9865bbc694804e0dbd884d70136e47418758119ebe33b3c40b9cff0057e0f28",
-    "review_first": ".github/workflows/agentcam-publish.yml",
+    "product_fingerprint": "159102d6e7a24a2dd7c7532bfc24bf6d922dc258e98a1b73636470ca5cf034e1",
+    "review_first": ".github/workflows/policy-gate.yml",
     "risk": "high",
     "scope": [
-      ".github/workflows/agentcam-publish.yml",
-      ".github/workflows/corridor-ci-tag.yml",
-      ".github/workflows/corridor-ci.yml",
-      ".github/workflows/toolkit.yml",
+      ".github/workflows/policy-gate.yml",
       "agentcam/src/agentcam/cli.py",
-      "agentcam/src/agentcam/hooks.py",
-      "agentcam/src/agentcam/redaction.py",
-      "agentcam/tests/test_e2e.py",
-      "agentcam/tests/test_redaction.py",
-      "agentcam/tests/test_ruleset_provenance.py",
+      "agentcam/src/agentcam/export.py",
+      "agentcam/src/agentcam/scanner.py",
+      "agentcam/tests/test_export.py",
+      "agentcam/tests/test_handoff.py",
+      "agentcam/tests/test_scanner.py",
+      "corridor-ci/README.md",
+      "corridor-ci/action.yml",
       "corridor-ci/bin/corridor_ci.py",
       "corridor-ci/tests/test_corridor_ci.py",
+      "corridor-ci/tests/test_review_artifact.py",
+      "slime-coding/CLAUDE.md",
       "slime-coding/bin/patch-cost",
-      "slime-coding/tests/test_trusted_checks.py"
+      "slime-coding/tests/test_trusted_checks.py",
+      "tests/test_pr4_contract.py"
     ],
     "scope_changes": []
   },
@@ -106,10 +116,10 @@
           "diff",
           "--check"
         ],
-        "duration_ms": 2,
+        "duration_ms": 3,
         "exit_code": 0,
         "id": "structural",
-        "state_fingerprint": "c9865bbc694804e0dbd884d70136e47418758119ebe33b3c40b9cff0057e0f28"
+        "state_fingerprint": "159102d6e7a24a2dd7c7532bfc24bf6d922dc258e98a1b73636470ca5cf034e1"
       }
     ],
     "level": "structural-only"

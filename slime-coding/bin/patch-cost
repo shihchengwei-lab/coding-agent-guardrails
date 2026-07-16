@@ -118,7 +118,19 @@ def is_dependency_manifest(path):
     # Case-insensitive: delivery_risk lowercases paths before calling and
     # "Cargo.toml" must still match (it used to slip through as high-risk
     # exempt); Windows filesystems are case-insensitive anyway.
-    supported = {PUBSPEC.lower(), "package.json", "pyproject.toml", "cargo.toml", "go.mod"}
+    # Kept aligned with Corridor CI's DEPENDENCY_GLOBS: anything Corridor
+    # floors to high risk must also be high risk locally, or the artifact
+    # underreports and the PR gate rejects it.
+    supported = {
+        PUBSPEC.lower(),
+        "package.json", "package-lock.json", "npm-shrinkwrap.json",
+        "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb",
+        "pyproject.toml", "setup.py", "poetry.lock", "uv.lock",
+        "pipfile", "pipfile.lock",
+        "cargo.toml", "cargo.lock",
+        "go.mod", "go.sum",
+        "gemfile", "gemfile.lock",
+    }
     basename = os.path.basename(path).lower()
     return path == PUBSPEC or basename in supported or (
         basename.startswith("requirements") and basename.endswith(".txt")

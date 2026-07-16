@@ -511,7 +511,10 @@ def _handoff_command(args) -> int:
 
     declared_scope = data.get("declared_scope")
     scope = [value for value in declared_scope if isinstance(value, str)] if isinstance(declared_scope, list) else []
-    scope_line = ", ".join(scope) if scope else "<fill in: declare intended paths or globs>"
+    # No declared scope (wrap mode): fall back to the files that actually
+    # changed, which is what the README promises for this line. `changed`
+    # is guaranteed non-empty above.
+    scope_line = ", ".join(scope if scope else paths)
     verifications = read_records(
         run_dir,
         evidence.get("verifications") if isinstance(evidence.get("verifications"), list) else [],

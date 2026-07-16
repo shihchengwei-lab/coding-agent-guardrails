@@ -123,10 +123,15 @@ def redact_manifest(manifest_json_text: str) -> dict:
        (report, argv) treats such names as sensitive -- the exported
        manifest is the one artifact designed to leave the machine, so
        it must not be the one surface that leaks them.
+    4. Absolute local paths (``cwd``, ``git_root``, ``git_dir``,
+       ``paths.*``) are relativized to the git root -- they embed the
+       username and machine layout, which the report renderer already
+       strips for the same reason.
 
     Structure is preserved. Keys are not renamed.
     """
     from agentcam.redaction import redact_text
+    from agentcam.report import _relative_to_git_root
     from agentcam.scanner import (
         is_secret_like_filename,
         redact_filenames_in_diff_stat,
@@ -136,6 +141,27 @@ def redact_manifest(manifest_json_text: str) -> dict:
     redacted = _walk_redact(data, redact_text)
     if "command_argv_redacted" in redacted:
         redacted["command_argv_raw"] = redacted["command_argv_redacted"]
+
+    git_root = redacted.get("git_root")
+    if isinstance(git_root, str) and git_root:
+        def _strip_absolute(value):
+            if not isinstance(value, str) or not value:
+                return value
+            relative = _relative_to_git_root(value, git_root)
+            # _relative_to_git_root falls back to the original string for
+            # paths outside git_root (e.g. a worktree's git_dir); the
+            # bundle leaves the machine, so redact rather than leak.
+            if relative == value and Path(value).is_absolute():
+                return "<redacted-absolute-path>"
+            return relative
+
+        for key in ("cwd", "git_dir"):
+            redacted[key] = _strip_absolute(redacted.get(key))
+        paths = redacted.get("paths")
+        if isinstance(paths, dict):
+            for key, value in paths.items():
+                paths[key] = _strip_absolute(value)
+        redacted["git_root"] = "."
 
     evidence = redacted.get("evidence")
     if isinstance(evidence, dict):

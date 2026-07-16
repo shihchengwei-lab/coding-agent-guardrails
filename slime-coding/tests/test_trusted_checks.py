@@ -135,7 +135,12 @@ class TrustedChecksTest(unittest.TestCase):
         # Regression: delivery_risk lowercases paths before calling
         # is_dependency_manifest, whose set held the mixed-case literal
         # "Cargo.toml" — Rust dependency edits bypassed the high-risk gate.
-        for path in ("Cargo.toml", "backend/Cargo.toml", "package.json"):
+        for path in (
+            "Cargo.toml", "backend/Cargo.toml", "package.json",
+            # Lockfiles must stay aligned with Corridor CI's floor, or
+            # the local artifact underreports and the PR gate rejects it.
+            "uv.lock", "package-lock.json", "poetry.lock", "go.sum",
+        ):
             level, reasons = slime.delivery_risk(
                 [{"path": path, "status": "modified"}]
             )

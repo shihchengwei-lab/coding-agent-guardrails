@@ -175,6 +175,33 @@ class TestManifestRedaction:
             for cf in entries
         )
 
+    def test_manifest_strips_absolute_local_paths(self, tmp_git_repo: Path):
+        # Regression: cwd, git_root, git_dir, and paths.* used to pass
+        # through as absolute paths (username, machine layout) in the
+        # one artifact designed to leave the machine.
+        proc = _agentcam(
+            tmp_git_repo, "run", "--",
+            sys.executable, "-c", "open('x.txt','w').write('x')",
+        )
+        assert proc.returncode == 0
+        rid = _run_dir(tmp_git_repo).name
+        out = tmp_git_repo / "share.zip"
+        _agentcam(tmp_git_repo, "export", rid, "--output", str(out))
+
+        with zipfile.ZipFile(out) as zf:
+            with zf.open("manifest.redacted.json") as fp:
+                blob = fp.read().decode("utf-8")
+            redacted = json.loads(blob)
+
+        repo_absolute = str(tmp_git_repo.resolve())
+        assert repo_absolute not in blob, (
+            "share-safe manifest leaks the absolute repo location"
+        )
+        assert redacted["git_root"] == "."
+        assert not Path(redacted["cwd"]).is_absolute()
+        for value in redacted["paths"].values():
+            assert not Path(value).is_absolute()
+
     def test_manifest_redacted_no_inline_token_leak(
         self, tmp_git_repo: Path,
     ):
