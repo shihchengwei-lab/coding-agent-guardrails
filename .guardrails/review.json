@@ -1,110 +1,30 @@
 {
-  "approval": null,
+  "approval": {
+    "confirmation_id": "dd980c4c06b1177f49f6009e3fa18f828df26bfdfc6dac8585a715b8924677f4",
+    "confirmed": true,
+    "product_fingerprint": "94ac9eaef208a13e4bbc2ade7ac2bca45458fd1660d22af9829842cbad3eea20",
+    "required": true
+  },
   "capture": {
     "coverage": "partial",
     "terminal": "unavailable"
   },
   "delivery": {
-    "base_commit": "58890bd334e71a09acad01379ab910007850af08",
+    "base_commit": "394974a01b8b2e4fb8ea715d39710d9dab50feab",
     "changed_files": [
       {
-        "path": "CHANGELOG.md",
-        "status": "modified"
-      },
-      {
-        "path": "README.md",
-        "status": "modified"
-      },
-      {
-        "path": "README.zh-TW.md",
-        "status": "modified"
-      },
-      {
-        "path": "agentcam/CHANGELOG.md",
-        "status": "modified"
-      },
-      {
-        "path": "agentcam/README.md",
-        "status": "modified"
-      },
-      {
-        "path": "agentcam/src/agentcam/__init__.py",
-        "status": "modified"
-      },
-      {
-        "path": "agentcam/tests/test_ruleset_provenance.py",
-        "status": "modified"
-      },
-      {
-        "path": "corridor-ci/README.md",
-        "status": "modified"
-      },
-      {
-        "path": "corridor-ci/bin/corridor_ci.py",
-        "status": "modified"
-      },
-      {
-        "path": "corridor-ci/docs/HANDOFF_SPEC.md",
-        "status": "modified"
-      },
-      {
-        "path": "corridor-ci/docs/MANIFESTO.md",
-        "status": "modified"
-      },
-      {
-        "path": "corridor-ci/examples/workflow.yml",
-        "status": "modified"
-      },
-      {
-        "path": "docs/MIGRATION.md",
-        "status": "modified"
-      },
-      {
-        "path": "installer/guardrails_installer.py",
-        "status": "modified"
-      },
-      {
-        "path": "slime-coding/CHANGELOG.md",
-        "status": "modified"
-      },
-      {
-        "path": "tests/test-install.ps1",
-        "status": "modified"
-      },
-      {
-        "path": "tests/test-install.sh",
-        "status": "modified"
-      },
-      {
-        "path": "tests/test_installer_core.py",
+        "path": ".github/workflows/corridor.yml",
         "status": "modified"
       }
     ],
     "outcomes": [
-      "Release wrap-up: agentcam 0.7.0 and Corridor CI v15.0.0 with lockstep pin updates, v14 template auto-upgrade recognition, the cross-component changelog with security notes, contract freeze, and migration guidance"
+      "This repository enforces PRs with the published immutable Corridor v15.0.0 release"
     ],
-    "product_fingerprint": "9fedc7f8f10df7ced7fbbae3018dd4d167713bab5b73cfb4223847f0741f3f72",
-    "review_first": "CHANGELOG.md",
-    "risk": "none-detected",
+    "product_fingerprint": "94ac9eaef208a13e4bbc2ade7ac2bca45458fd1660d22af9829842cbad3eea20",
+    "review_first": ".github/workflows/corridor.yml",
+    "risk": "high",
     "scope": [
-      "CHANGELOG.md",
-      "README.md",
-      "README.zh-TW.md",
-      "agentcam/CHANGELOG.md",
-      "agentcam/README.md",
-      "agentcam/src/agentcam/__init__.py",
-      "agentcam/tests/test_ruleset_provenance.py",
-      "corridor-ci/README.md",
-      "corridor-ci/bin/corridor_ci.py",
-      "corridor-ci/docs/HANDOFF_SPEC.md",
-      "corridor-ci/docs/MANIFESTO.md",
-      "corridor-ci/examples/workflow.yml",
-      "docs/MIGRATION.md",
-      "installer/guardrails_installer.py",
-      "slime-coding/CHANGELOG.md",
-      "tests/test-install.sh",
-      "tests/test-install.ps1",
-      "tests/test_installer_core.py"
+      ".github/workflows/corridor.yml"
     ],
     "scope_changes": []
   },
@@ -124,7 +44,7 @@
         "duration_ms": 3,
         "exit_code": 0,
         "id": "structural",
-        "state_fingerprint": "9fedc7f8f10df7ced7fbbae3018dd4d167713bab5b73cfb4223847f0741f3f72"
+        "state_fingerprint": "94ac9eaef208a13e4bbc2ade7ac2bca45458fd1660d22af9829842cbad3eea20"
       }
     ],
     "level": "structural-only"
