@@ -1,35 +1,95 @@
 {
-  "approval": null,
+  "approval": {
+    "confirmation_id": "ff036e5e5f7b07a56c3cad2d31b13051573f896947f15607800a349bfceafee0",
+    "confirmed": true,
+    "product_fingerprint": "c9865bbc694804e0dbd884d70136e47418758119ebe33b3c40b9cff0057e0f28",
+    "required": true
+  },
   "capture": {
     "coverage": "partial",
     "terminal": "unavailable"
   },
   "delivery": {
-    "base_commit": "8aaad66d4c810700b278ab8c90f6729454fdfbf4",
+    "base_commit": "a6130e36e36a03648e294ca13cb802042fa3f58b",
     "changed_files": [
       {
-        "path": "README.md",
+        "path": ".github/workflows/agentcam-publish.yml",
         "status": "modified"
       },
       {
-        "path": "README.zh-TW.md",
+        "path": ".github/workflows/corridor-ci-tag.yml",
         "status": "modified"
       },
       {
-        "path": "tests/test_pr4_contract.py",
+        "path": ".github/workflows/corridor-ci.yml",
+        "status": "modified"
+      },
+      {
+        "path": ".github/workflows/toolkit.yml",
+        "status": "modified"
+      },
+      {
+        "path": "agentcam/src/agentcam/cli.py",
+        "status": "modified"
+      },
+      {
+        "path": "agentcam/src/agentcam/hooks.py",
+        "status": "modified"
+      },
+      {
+        "path": "agentcam/src/agentcam/redaction.py",
+        "status": "modified"
+      },
+      {
+        "path": "agentcam/tests/test_e2e.py",
+        "status": "modified"
+      },
+      {
+        "path": "agentcam/tests/test_redaction.py",
+        "status": "modified"
+      },
+      {
+        "path": "agentcam/tests/test_ruleset_provenance.py",
+        "status": "modified"
+      },
+      {
+        "path": "corridor-ci/bin/corridor_ci.py",
+        "status": "modified"
+      },
+      {
+        "path": "corridor-ci/tests/test_corridor_ci.py",
+        "status": "modified"
+      },
+      {
+        "path": "slime-coding/bin/patch-cost",
+        "status": "modified"
+      },
+      {
+        "path": "slime-coding/tests/test_trusted_checks.py",
         "status": "modified"
       }
     ],
     "outcomes": [
-      "Restore the author's disclosure and keep it visible ahead of operational documentation"
+      "PR #38 fixes five audited defects: agentcam git-root state binding, scheme-generic credential redaction, case-insensitive dependency manifest detection, fail-closed head SHA validation, and pinned CI publish action with explicit workflow permissions"
     ],
-    "product_fingerprint": "9eb6cd131f8a6ca2c5529611fddb5667aadb14a0380daf7587e66f442126f3ed",
-    "review_first": "README.md",
-    "risk": "none-detected",
+    "product_fingerprint": "c9865bbc694804e0dbd884d70136e47418758119ebe33b3c40b9cff0057e0f28",
+    "review_first": ".github/workflows/agentcam-publish.yml",
+    "risk": "high",
     "scope": [
-      "README.md",
-      "README.zh-TW.md",
-      "tests/test_pr4_contract.py"
+      ".github/workflows/agentcam-publish.yml",
+      ".github/workflows/corridor-ci-tag.yml",
+      ".github/workflows/corridor-ci.yml",
+      ".github/workflows/toolkit.yml",
+      "agentcam/src/agentcam/cli.py",
+      "agentcam/src/agentcam/hooks.py",
+      "agentcam/src/agentcam/redaction.py",
+      "agentcam/tests/test_e2e.py",
+      "agentcam/tests/test_redaction.py",
+      "agentcam/tests/test_ruleset_provenance.py",
+      "corridor-ci/bin/corridor_ci.py",
+      "corridor-ci/tests/test_corridor_ci.py",
+      "slime-coding/bin/patch-cost",
+      "slime-coding/tests/test_trusted_checks.py"
     ],
     "scope_changes": []
   },
@@ -46,10 +106,10 @@
           "diff",
           "--check"
         ],
-        "duration_ms": 47,
+        "duration_ms": 2,
         "exit_code": 0,
         "id": "structural",
-        "state_fingerprint": "9eb6cd131f8a6ca2c5529611fddb5667aadb14a0380daf7587e66f442126f3ed"
+        "state_fingerprint": "c9865bbc694804e0dbd884d70136e47418758119ebe33b3c40b9cff0057e0f28"
       }
     ],
     "level": "structural-only"
