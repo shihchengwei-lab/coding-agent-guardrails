@@ -536,7 +536,7 @@ _SESSION_STALE_SECONDS = 24 * 3600
 def _latest_in_progress_session(git_dir: Path) -> Path | None:
     """Most recently started in-progress hook session, or None.
 
-    A session dir with a state_before.pickle is a Claude Code session
+    A session dir with a state_before.json is a Claude Code session
     that started but has not ended (SessionEnd removes the dir).
     Sessions older than ``_SESSION_STALE_SECONDS`` are ignored: a crash
     that skipped SessionEnd leaves the dir behind forever, and treating
@@ -554,9 +554,9 @@ def _latest_in_progress_session(git_dir: Path) -> Path | None:
             # *.ending = session mid-teardown (claimed by SessionEnd,
             # hooks.py); it no longer accepts checks.
             if not d.name.endswith(".ending")
-            and (d / "state_before.pickle").is_file()
+            and (d / "state_before.json").is_file()
             and (
-                now - (d / "state_before.pickle").stat().st_mtime
+                now - (d / "state_before.json").stat().st_mtime
                 < _SESSION_STALE_SECONDS
             )
         ]
@@ -568,7 +568,7 @@ def _latest_in_progress_session(git_dir: Path) -> Path | None:
             )
         return max(
             candidates,
-            key=lambda d: (d / "state_before.pickle").stat().st_mtime,
+            key=lambda d: (d / "state_before.json").stat().st_mtime,
         )
     except OSError:
         return None

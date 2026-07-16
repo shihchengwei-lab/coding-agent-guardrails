@@ -131,7 +131,7 @@ class TestSessionStart:
         assert proc.returncode == 0
         sdir = _session_dir(tmp_git_repo, sid)
         assert sdir.exists(), "session dir should be created on SessionStart"
-        assert (sdir / "state_before.pickle").exists(), (
+        assert (sdir / "state_before.json").exists(), (
             "state_before snapshot file should exist after SessionStart"
         )
 
@@ -295,7 +295,7 @@ class TestCodexR1Regressions:
         )
         # Capture mtime of the first snapshot file so we can detect
         # whether the second SessionStart overwrites it.
-        state_file = _session_dir(tmp_git_repo, sid) / "state_before.pickle"
+        state_file = _session_dir(tmp_git_repo, sid) / "state_before.json"
         assert state_file.exists()
         first_mtime_ns = state_file.stat().st_mtime_ns
 
@@ -342,8 +342,8 @@ class TestCodexR1Regressions:
             _hook_payload(sid, tmp_git_repo, "SessionStart"),
         )
         sdir = _session_dir(tmp_git_repo, sid)
-        # Overwrite with garbage that pickle.load cannot parse.
-        (sdir / "state_before.pickle").write_bytes(b"\xde\xad\xbe\xef not a pickle")
+        # Overwrite with garbage that json.load cannot parse.
+        (sdir / "state_before.json").write_bytes(b"\xde\xad\xbe\xef not json")
 
         # Make a change so we know "no report" is from the corruption
         # path, not the no-diff cleanup.
@@ -364,22 +364,21 @@ class TestCodexR1Regressions:
     def test_loadable_but_malformed_snapshot_cleans_up(
         self, tmp_git_repo: Path,
     ):
-        # Codex round-2 regression: a pickle that LOADS successfully
-        # but contains the wrong types (state="x" instead of GitState,
-        # started_at="x" instead of datetime) must not slip past
-        # validation. Without isinstance checks on state/started_at,
-        # this would explode inside render_report and leak an orphan
+        # Regression: a snapshot that PARSES successfully but contains
+        # the wrong types (state="x" instead of a GitState dict,
+        # started_at not a timestamp) must not slip past validation —
+        # it would explode inside render_report and leak an orphan
         # session dir via the outer except.
-        import pickle as _pickle
+        import json as _json
         sid = "session-malformed"
         _agentcam_hook(
             tmp_git_repo, "hook-session-start",
             _hook_payload(sid, tmp_git_repo, "SessionStart"),
         )
         sdir = _session_dir(tmp_git_repo, sid)
-        # Replace with a valid pickle of WRONG-typed values.
+        # Replace with valid JSON of WRONG-typed values.
         malformed = {
-            "schema_version": "0.1",
+            "schema_version": "0.2",
             "session_id": sid,
             "started_at": "not a datetime at all",
             "cwd": str(tmp_git_repo),
@@ -388,8 +387,8 @@ class TestCodexR1Regressions:
             "state": "not a GitState",
             "fingerprint": "abc123",
         }
-        with (sdir / "state_before.pickle").open("wb") as f:
-            _pickle.dump(malformed, f)
+        with (sdir / "state_before.json").open("w", encoding="utf-8") as f:
+            _json.dump(malformed, f)
 
         # Add a real change so we know "no report" is from the
         # validation path, not the no-diff cleanup.
@@ -403,6 +402,25 @@ class TestCodexR1Regressions:
         runs = _runs_dir(tmp_git_repo)
         assert not runs.exists() or not any(runs.iterdir())
         # Critical: session dir cleaned up, not orphaned.
+        assert not sdir.exists()
+
+    def test_legacy_pickle_session_dir_is_discarded(self, tmp_git_repo: Path):
+        # A session started under a pre-0.2 agentcam left a pickle
+        # snapshot; the JSON-era SessionEnd must never load it (that was
+        # the point of the migration) and must not leave the dir as a
+        # permanent orphan.
+        sid = "session-legacy-pickle"
+        sdir = _session_dir(tmp_git_repo, sid)
+        sdir.mkdir(parents=True)
+        (sdir / "state_before.pickle").write_bytes(b"legacy snapshot bytes")
+
+        proc = _agentcam_hook(
+            tmp_git_repo, "hook-session-end",
+            _hook_payload(sid, tmp_git_repo, "SessionEnd"),
+        )
+        assert proc.returncode == 0
+        runs = _runs_dir(tmp_git_repo)
+        assert not runs.exists() or not any(runs.iterdir())
         assert not sdir.exists()
 
 
@@ -677,7 +695,7 @@ class TestVerifyDuringSession:
         )
         stale = _session_dir(tmp_git_repo, sid)
         past = time.time() - 25 * 3600
-        os.utime(stale / "state_before.pickle", (past, past))
+        os.utime(stale / "state_before.json", (past, past))
 
         proc = _verify(tmp_git_repo, *PASS_CMD)
         assert proc.returncode == 0, proc.stderr
@@ -743,7 +761,7 @@ class TestVerifyDuringSession:
         ending = live.parent / "old-b.ending"
         shutil.copytree(live, ending)
         future = time.time() + 300
-        os.utime(ending / "state_before.pickle", (future, future))
+        os.utime(ending / "state_before.json", (future, future))
 
         proc = _verify(tmp_git_repo, *PASS_CMD)
         assert proc.returncode == 0, proc.stderr

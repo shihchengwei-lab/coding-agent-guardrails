@@ -240,7 +240,7 @@ class TestVerifiedLineInHandoff:
         for name in ("turn-a", "turn-b"):
             session = sessions / name
             session.mkdir(parents=True)
-            (session / "state_before.pickle").write_bytes(b"snapshot")
+            (session / "state_before.json").write_bytes(b"snapshot")
 
         proc = _agentcam(tmp_git_repo, "verify", "--", *PASS_CMD)
 
