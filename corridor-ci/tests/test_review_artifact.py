@@ -68,6 +68,17 @@ class ReviewArtifactTest(unittest.TestCase):
         self.assertFalse(stale.ok)
         self.assertFalse(underreported.ok)
 
+    def test_malformed_scope_glob_fails_closed_without_crashing(self):
+        # Regression: a bad character range used to escape as re.error
+        # (a traceback, breaking warn mode's report-only contract).
+        review = artifact()
+        review["delivery"]["scope"] = ["[z-a]"]
+        report = self.evaluate(review)
+        self.assertFalse(report.ok)
+        self.assertIn(
+            "outside review artifact scope", "\n".join(report.issues)
+        )
+
     def test_high_risk_confirmation_must_match_product(self):
         bad = artifact(risk="high", approval={
             "required": True,

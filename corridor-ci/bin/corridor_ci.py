@@ -380,7 +380,7 @@ def _glob_to_regex(pattern: str) -> "re.Pattern[str]":
     return re.compile("".join(parts) + r"\Z")
 
 
-_GLOB_REGEX_CACHE: dict[str, "re.Pattern[str]"] = {}
+_GLOB_REGEX_CACHE: dict[str, "re.Pattern[str] | None"] = {}
 
 
 def path_matches(path: str, pattern: str) -> bool:
@@ -391,11 +391,17 @@ def path_matches(path: str, pattern: str) -> bool:
     if pattern.endswith("/**"):
         prefix = pattern[:-3].rstrip("/")
         return path == prefix or path.startswith(prefix + "/")
-    regex = _GLOB_REGEX_CACHE.get(pattern)
-    if regex is None:
-        regex = _glob_to_regex(pattern)
-        _GLOB_REGEX_CACHE[pattern] = regex
-    return regex.match(path) is not None
+    if pattern not in _GLOB_REGEX_CACHE:
+        # A malformed glob (e.g. bad character range "[z-a]") must fail
+        # closed as "matches nothing" — covered files then surface as an
+        # outside-scope issue — not crash the checker with a traceback,
+        # which would also break warn mode's report-only contract.
+        try:
+            _GLOB_REGEX_CACHE[pattern] = _glob_to_regex(pattern)
+        except re.error:
+            _GLOB_REGEX_CACHE[pattern] = None
+    regex = _GLOB_REGEX_CACHE[pattern]
+    return regex is not None and regex.match(path) is not None
 
 
 def is_allowed(path: str, allowed_paths: list[str]) -> bool:
