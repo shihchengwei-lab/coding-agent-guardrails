@@ -297,9 +297,14 @@ def _emit_first_match(
 HIGH_OUTPUT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     # POSIX shell high-risk
     (re.compile(r"\bgit\s+reset\s+--hard\b"), "git reset --hard"),
-    (re.compile(r"\brm\s+-rf\s+/(?!tmp\b)"), "rm -rf root-like path"),
-    (re.compile(r"\brm\s+-rf\s+~"), "rm -rf home"),
-    (re.compile(r"\brm\s+-rf\s+\$"), "rm -rf with variable"),
+    # Flag variants: -rf, -fr, -r -f, -f -r are all everyday spellings.
+    (re.compile(r"\brm\s+(?:-rf|-fr|-r\s+-f|-f\s+-r)\s+/(?!tmp\b)"), "rm -rf root-like path"),
+    (re.compile(r"\brm\s+(?:-rf|-fr|-r\s+-f|-f\s+-r)\s+~"), "rm -rf home"),
+    (re.compile(r"\brm\s+(?:-rf|-fr|-r\s+-f|-f\s+-r)\s+\$"), "rm -rf with variable"),
+    # Whole-cwd / glob-everything deletions; `\.(?=\s|$)` and `\*(?=\s|$)`
+    # keep `rm -rf ./build` and `rm -rf *.tmp` (scoped cleanups) unflagged.
+    (re.compile(r"\brm\s+(?:-rf|-fr|-r\s+-f|-f\s+-r)\s+\.(?=\s|$)", re.MULTILINE), "rm -rf current directory"),
+    (re.compile(r"\brm\s+(?:-rf|-fr|-r\s+-f|-f\s+-r)\s+\*(?=\s|$)", re.MULTILINE), "rm -rf glob everything"),
     (re.compile(r"\bchmod\s+777\b"), "chmod 777"),
     (re.compile(r"\bcurl\s+[^|]*\|\s*(sh|bash|zsh)\b"), "curl pipe to shell"),
     (re.compile(r"\bwget\s+[^|]*\|\s*(sh|bash|zsh)\b"), "wget pipe to shell"),
@@ -314,10 +319,16 @@ HIGH_OUTPUT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^<{7}\s", re.MULTILINE), "conflict marker (<<<<<<<)"),
     (re.compile(r"^>{7}\s", re.MULTILINE), "conflict marker (>>>>>>>)"),
     (re.compile(r"^={7}$", re.MULTILINE), "conflict marker (=======)"),
-    # Force push
+    # Force push: the flag may come before or after the remote/branch
+    # (`git push origin main --force`), and `+branch` is the refspec
+    # shorthand for the same thing.
     (
-        re.compile(r"\bgit\s+push\s+(?:-f\b|--force\b|--force-with-lease\b)"),
+        re.compile(r"\bgit\s+push\b[^\n|;&]*\s(?:-f|--force|--force-with-lease)\b"),
         "git push --force",
+    ),
+    (
+        re.compile(r"\bgit\s+push\s+\S+\s+\+\S+"),
+        "git push +refspec force shorthand",
     ),
 ]
 
