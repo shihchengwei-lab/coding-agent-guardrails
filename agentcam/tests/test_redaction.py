@@ -349,3 +349,28 @@ class TestHighUrlBasicAuth:
             "Cloning https://gh:short_token_value@github.com/x/y.git"
         )
         assert "short_token_value" not in out
+
+    def test_non_http_scheme_url_credentials_redacted(self):
+        # Regression: the pattern used to match only http(s)://, letting
+        # DB and VCS connection-string passwords into the redacted logs.
+        for url in (
+            "postgres://admin:s3cretpw@db.prod.internal:5432/app",
+            "mongodb+srv://root:hunter2@cluster0.example.net/admin",
+            "redis://default:redispass@cache.internal:6379",
+            "git+ssh://deploy:tok3nvalue@git.internal/x/y.git",
+        ):
+            out = redact_inline(url)
+            assert "s3cretpw" not in out
+            assert "hunter2" not in out
+            assert "redispass" not in out
+            assert "tok3nvalue" not in out
+
+
+class TestFineGrainedGitHubPat:
+    def test_github_fine_grained_pat_redacted(self):
+        # Regression: only gh[pousr]_ classic tokens were matched;
+        # fine-grained github_pat_ tokens leaked.
+        token = "github_pat_" + "A" * 22 + "_" + "B" * 59
+        out = redact_inline(f"Authorization uses {token} today")
+        assert token not in out
+        assert "[REDACTED:GITHUB_PAT]" in out

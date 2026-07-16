@@ -131,6 +131,24 @@ class TrustedChecksTest(unittest.TestCase):
         self.assertIn('"decision": "block"', output.getvalue())
         self.assertIn("declared its intent", output.getvalue())
 
+    def test_delivery_risk_flags_cargo_manifest_as_dependency_change(self):
+        # Regression: delivery_risk lowercases paths before calling
+        # is_dependency_manifest, whose set held the mixed-case literal
+        # "Cargo.toml" — Rust dependency edits bypassed the high-risk gate.
+        for path in ("Cargo.toml", "backend/Cargo.toml", "package.json"):
+            level, reasons = slime.delivery_risk(
+                [{"path": path, "status": "modified"}]
+            )
+            self.assertEqual(level, "high", path)
+            self.assertIn("dependency manifest changed", reasons, path)
+
+    def test_is_dependency_manifest_consistent_across_call_sites(self):
+        # sync_pr_approval passes original-case paths; delivery_risk passes
+        # lowercased ones. Both spellings must classify identically.
+        self.assertTrue(slime.is_dependency_manifest("Cargo.toml"))
+        self.assertTrue(slime.is_dependency_manifest("cargo.toml"))
+        self.assertFalse(slime.is_dependency_manifest("src/main.rs"))
+
 
 if __name__ == "__main__":
     unittest.main()

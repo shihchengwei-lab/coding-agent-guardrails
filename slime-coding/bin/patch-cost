@@ -115,9 +115,13 @@ def deny_pretool(reason):
 
 
 def is_dependency_manifest(path):
-    supported = {PUBSPEC, "package.json", "pyproject.toml", "Cargo.toml", "go.mod"}
-    return path == PUBSPEC or os.path.basename(path) in supported or (
-        os.path.basename(path).startswith("requirements") and path.endswith(".txt")
+    # Case-insensitive: delivery_risk lowercases paths before calling and
+    # "Cargo.toml" must still match (it used to slip through as high-risk
+    # exempt); Windows filesystems are case-insensitive anyway.
+    supported = {PUBSPEC.lower(), "package.json", "pyproject.toml", "cargo.toml", "go.mod"}
+    basename = os.path.basename(path).lower()
+    return path == PUBSPEC or basename in supported or (
+        basename.startswith("requirements") and basename.endswith(".txt")
     )
 CHECK_ID_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
 
