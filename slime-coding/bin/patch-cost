@@ -619,6 +619,36 @@ def _approval_path(cwd):
     return None if not parent else os.path.join(parent, "approval.json")
 
 
+def _current_or_fresh_base(cwd, recorded):
+    """Keep the recorded delivery base unless the base branch absorbed it.
+
+    Delivery state is keyed by branch name, so a branch rebuilt after a
+    merge silently inherits the finished delivery's base and every scope
+    check misfires. When the recorded base is a strict ancestor of the
+    current merge-base, that delivery is over: start fresh and drop any
+    leftover approval. Mid-delivery base-branch movement keeps the
+    merge-base (and therefore the recorded base) unchanged, and the
+    no-upstream fallback (fresh == HEAD) is excluded so multi-turn
+    deliveries in detached or single-branch repos keep aggregating.
+    """
+    fresh = resolve_delivery_base(cwd)
+    if not recorded:
+        return fresh
+    if (
+        recorded != fresh
+        and fresh != current_head(cwd)
+        and git(cwd, "merge-base", recorded, fresh).strip() == recorded
+    ):
+        approval = _approval_path(cwd)
+        if approval:
+            try:
+                os.unlink(approval)
+            except OSError:
+                pass
+        return fresh
+    return recorded
+
+
 def set_delivery_scope(cwd, outcome, paths):
     normalized = []
     for raw in paths:
@@ -638,9 +668,10 @@ def set_delivery_scope(cwd, outcome, paths):
     if path is None:
         raise ValueError("delivery scope requires a git repository")
     existing = read_delivery_scope(cwd)
+    base_commit = _current_or_fresh_base(cwd, existing.get("base_commit"))
     value = {
         "schema": 1,
-        "base_commit": existing.get("base_commit") or resolve_delivery_base(cwd),
+        "base_commit": base_commit,
         "outcomes": [str(outcome).strip()],
         "paths": normalized,
         "changes": [],

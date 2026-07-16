@@ -147,6 +147,60 @@ class TrustedChecksTest(unittest.TestCase):
             self.assertEqual(level, "high", path)
             self.assertIn("dependency manifest changed", reasons, path)
 
+    def _git(self, *args):
+        return subprocess.run(
+            ["git", *args], cwd=self.repo, check=True,
+            capture_output=True, text=True,
+        ).stdout.strip()
+
+    def test_scope_set_absorbs_stale_delivery_after_base_was_merged(self):
+        # Regression: delivery state is keyed by branch name, and a branch
+        # rebuilt after its delivery merged silently inherited the old
+        # base_commit, misfiring every scope check.
+        default = self._git("rev-parse", "--abbrev-ref", "HEAD")
+        old_base = self._git("rev-parse", "HEAD")
+        self._git("switch", "-qc", "feature")
+        (self.repo / "work.txt").write_text("v1", encoding="utf-8")
+        self._git("add", ".")
+        self._git("commit", "-qm", "delivery one")
+        slime.set_delivery_scope(self.repo, "first delivery", ["work.txt"])
+        self.assertEqual(
+            slime.read_delivery_scope(self.repo)["base_commit"], old_base
+        )
+        approval = Path(slime._approval_path(self.repo))
+        approval.parent.mkdir(parents=True, exist_ok=True)
+        approval.write_text("{}", encoding="utf-8")
+
+        # Delivery merges; the branch is rebuilt from the advanced base.
+        self._git("switch", "-q", default)
+        self._git("merge", "-q", "--no-ff", "-m", "merge one", "feature")
+        new_base = self._git("rev-parse", "HEAD")
+        self._git("branch", "-qf", "feature", default)
+        self._git("switch", "-q", "feature")
+        (self.repo / "work2.txt").write_text("v2", encoding="utf-8")
+        self._git("add", ".")
+        self._git("commit", "-qm", "delivery two")
+
+        slime.set_delivery_scope(self.repo, "second delivery", ["work2.txt"])
+        self.assertEqual(
+            slime.read_delivery_scope(self.repo)["base_commit"], new_base
+        )
+        self.assertFalse(approval.exists(), "stale approval must be dropped")
+
+    def test_scope_set_keeps_base_across_turns_without_upstream(self):
+        # Single-branch fallback (resolve_delivery_base == HEAD): committing
+        # mid-delivery and re-declaring scope must keep aggregating from the
+        # original base, exactly as before.
+        base = self._git("rev-parse", "HEAD")
+        slime.set_delivery_scope(self.repo, "delivery", ["work.txt"])
+        (self.repo / "work.txt").write_text("v1", encoding="utf-8")
+        self._git("add", ".")
+        self._git("commit", "-qm", "mid-delivery commit")
+        slime.set_delivery_scope(self.repo, "delivery continued", ["work.txt"])
+        self.assertEqual(
+            slime.read_delivery_scope(self.repo)["base_commit"], base
+        )
+
     def test_is_dependency_manifest_consistent_across_call_sites(self):
         # sync_pr_approval passes original-case paths; delivery_risk passes
         # lowercased ones. Both spellings must classify identically.
