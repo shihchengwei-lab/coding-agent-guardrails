@@ -36,9 +36,19 @@ The maintained result is a same-day two-arm run of the fused discipline text:
 | baseline | 16 | 100.00 | 1.94 | 35.31 lines |
 | fused discipline | 16 | 100.00 | 1.75 | 26.56 lines |
 
-That is 24.8% smaller patches and 9.8% fewer files touched with unchanged test
-correctness in this sample. It is directional evidence, not a general model
-claim.
+That is 24.8% smaller patches and 9.7% fewer files touched (31 → 28 files,
+565 → 425 lines over 16 runs per arm) with unchanged test correctness in this
+sample. It is directional evidence, not a general model claim.
+
+Two honest caveats about what that delta measures. First, a substantial part
+of the line reduction is **suppressed test writing**: every task budgets
+`max_files: 1`, the harness discards agent-written tests before verification
+but still counts them against the file/line budgets, and 15/16 baseline runs
+touched a `tests/` file versus 12/16 discipline runs. The discipline gain is
+partly a trade-off (fewer regression tests written), not purely bloat
+reduction. Second, correctness is saturated at 100% in both arms, so this
+sample has no power to detect a correctness cost of the prompt — "unchanged
+correctness" here means "not observed to regress", not "shown safe".
 
 The exact prompt fixture, 32 scoring records, their SHA-256 hashes, method notes,
 and recomputation command are committed in

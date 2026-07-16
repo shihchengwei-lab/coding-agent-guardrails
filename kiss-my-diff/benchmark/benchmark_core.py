@@ -143,7 +143,9 @@ def _relative_files(root: Path) -> set[Path]:
 def _read_lines(path: Path) -> list[str]:
     if not path.exists():
         return []
-    return path.read_text(encoding="utf-8").splitlines(keepends=True)
+    # errors="replace": an agent-written non-UTF-8 file must degrade to a
+    # lossy diff, not crash result collection.
+    return path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
 
 
 def _line_delta(before_lines: list[str], after_lines: list[str]) -> int:

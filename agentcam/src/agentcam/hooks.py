@@ -26,11 +26,13 @@ Stop. Those commands key snapshots by ``turn_id`` because Codex has no
 SessionEnd event. All four commands share the same snapshot/report pipeline.
 
 State storage:
-``<git_dir>/agentcam/sessions/<sanitized-session-id>/state_before.pickle``
-— pickle is used because :class:`GitState` contains bytes and nested
-dataclasses; JSON would need a custom serializer for each. Files are
-local-only under ``.git/`` (same trust model as the rest of agentcam's
-artifacts: if the attacker can write here, they already own the user).
+``<git_dir>/agentcam/sessions/<sanitized-session-id>/state_before.json``
+— JSON with an explicit (de)serializer for :class:`GitState`
+(``porcelain_raw`` bytes are base64-encoded). Pickle was used before,
+but in hook mode the recorded agent typically has file-write permission
+without per-action approval while shell execution is gated, so a planted
+pickle would have been a permission upgrade; JSON removes that class of
+risk entirely.
 
 The session dir is removed on SessionEnd whether or not a report is
 generated. If SessionEnd never fires (Claude Code crash), verify ignores the
@@ -38,9 +40,10 @@ leftover after its stale-session threshold.
 """
 from __future__ import annotations
 
+import base64
+import dataclasses
 import json
 import os
-import pickle
 import platform as _platform
 import re
 import shutil
@@ -51,7 +54,27 @@ from pathlib import Path
 # Snapshot schema version. Bump when changing the persisted dict shape so
 # stale snapshots from older agentcam versions are detected on load and
 # silently discarded instead of producing a broken report.
-_SNAPSHOT_SCHEMA_VERSION = "0.1"
+# 0.2: pickle replaced by JSON with explicit GitState (de)serialization.
+_SNAPSHOT_SCHEMA_VERSION = "0.2"
+
+
+def _serialize_git_state(state) -> dict:
+    value = dataclasses.asdict(state)
+    value["porcelain_raw"] = base64.b64encode(state.porcelain_raw).decode("ascii")
+    return value
+
+
+def _deserialize_git_state(value: dict):
+    from agentcam.models import ChangedFile, GitState
+
+    if not isinstance(value, dict):
+        raise ValueError("snapshot['state'] is not a dict")
+    fields = dict(value)
+    fields["porcelain_raw"] = base64.b64decode(fields["porcelain_raw"])
+    fields["changed_files"] = [
+        ChangedFile(**item) for item in fields.get("changed_files", [])
+    ]
+    return GitState(**fields)
 
 # Cap on the on-disk session id length and character set. Defends
 # against path traversal (``..``) and exotic filesystems.
@@ -177,7 +200,7 @@ def _do_session_start(*, id_field: str = "session_id") -> int:
     session_dir = git_dir / "agentcam" / "sessions" / _safe_session_id(session_id)
     session_dir.mkdir(parents=True, exist_ok=True)
 
-    state_file = session_dir / "state_before.pickle"
+    state_file = session_dir / "state_before.json"
     # Duplicate SessionStart for the same session_id (resume, clear,
     # compact) MUST NOT overwrite the original baseline -- otherwise
     # any changes made before the duplicate would silently disappear
@@ -188,22 +211,19 @@ def _do_session_start(*, id_field: str = "session_id") -> int:
     snapshot = {
         "schema_version": _SNAPSHOT_SCHEMA_VERSION,
         "session_id": session_id,
-        "started_at": started_at,
+        "started_at": started_at.isoformat(),
         "cwd": str(cwd),
         "git_root": str(git_root),
         "git_dir": str(git_dir),
-        "state": state,
+        "state": _serialize_git_state(state),
         "fingerprint": fingerprint,
         "declared_scope": [],
     }
-    # NOTE: pickle is acceptable here -- files live under .git/agentcam/
-    # which is local-only and write-controlled by the user. Same trust
-    # model as the existing stdout.log / manifest.json artifacts.
     # Atomic write: dump to .tmp then os.replace, so SessionEnd can
-    # never see a half-written pickle if it fires mid-write.
-    tmp_path = session_dir / "state_before.pickle.tmp"
-    with tmp_path.open("wb") as f:
-        pickle.dump(snapshot, f)
+    # never see a half-written snapshot if it fires mid-write.
+    tmp_path = session_dir / "state_before.json.tmp"
+    with tmp_path.open("w", encoding="utf-8") as f:
+        json.dump(snapshot, f)
     os.replace(tmp_path, state_file)
 
     return 0
@@ -283,8 +303,14 @@ def _do_session_end(
         return 0
 
     session_dir = git_dir / "agentcam" / "sessions" / _safe_session_id(session_id)
-    state_file = session_dir / "state_before.pickle"
+    state_file = session_dir / "state_before.json"
     if not state_file.exists():
+        # A session started under a pre-0.2 agentcam left a pickle
+        # snapshot we deliberately no longer load; discard the dir so it
+        # doesn't linger as a permanent orphan.
+        if (session_dir / "state_before.pickle").exists():
+            shutil.rmtree(session_dir, ignore_errors=True)
+            return 0
         # No matching SessionStart — silent no-op. Common cases: hook
         # registered mid-session; SessionEnd from a different session id.
         return 0
@@ -303,18 +329,17 @@ def _do_session_end(
         shutil.rmtree(claimed, ignore_errors=True)  # stale claim, if any
         os.rename(session_dir, claimed)
         session_dir = claimed
-        state_file = session_dir / "state_before.pickle"
+        state_file = session_dir / "state_before.json"
     except OSError:
         pass
 
-    # Codex round-1: catch broadly. pickle can raise ValueError /
-    # TypeError / RecursionError; dict extraction below can raise
-    # KeyError / TypeError on malformed snapshots; any of those should
-    # discard-and-continue, not leak orphan session dirs via the outer
-    # except.
+    # Catch broadly: JSON decoding, base64 decoding, and the dataclass
+    # reconstruction below can raise ValueError / TypeError / KeyError on
+    # malformed snapshots; any of those should discard-and-continue, not
+    # leak orphan session dirs via the outer except.
     try:
-        with state_file.open("rb") as f:
-            snapshot = pickle.load(f)
+        with state_file.open("r", encoding="utf-8") as f:
+            snapshot = json.load(f)
         if not isinstance(snapshot, dict):
             raise ValueError("snapshot is not a dict")
         if snapshot.get("schema_version") != _SNAPSHOT_SCHEMA_VERSION:
@@ -322,21 +347,14 @@ def _do_session_end(
                 f"snapshot schema_version mismatch: "
                 f"{snapshot.get('schema_version')!r}"
             )
-        state_before = snapshot["state"]
+        state_before = _deserialize_git_state(snapshot["state"])
         fingerprint_before = snapshot["fingerprint"]
         declared_scope = snapshot.get("declared_scope", [])
-        started_at = snapshot["started_at"]
+        started_at = datetime.fromisoformat(str(snapshot["started_at"]))
         git_root_str = snapshot["git_root"]
-        # Type checks for every field used downstream. Codex round-2
-        # caught that without state/started_at validation, a loadable
-        # but malformed snapshot (e.g. state="x") would slip past this
-        # block, raise inside render_report, and hit the outer except
-        # leaving the bad session dir behind.
-        from agentcam.models import GitState
-        if not isinstance(state_before, GitState):
-            raise ValueError("snapshot['state'] is not a GitState")
-        if not isinstance(started_at, datetime):
-            raise ValueError("snapshot['started_at'] is not a datetime")
+        # Type checks for every field used downstream: a loadable but
+        # malformed snapshot must be discarded here, not raise inside
+        # render_report and leave the bad session dir behind.
         if not isinstance(fingerprint_before, str):
             raise ValueError("fingerprint not a str")
         if not isinstance(declared_scope, list) or not all(

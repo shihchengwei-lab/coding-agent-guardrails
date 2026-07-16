@@ -1051,10 +1051,16 @@ def finish_delivery(cwd, data):
         changed[0]["path"],
     )
     recorded = any(item["id"] == "primary" for item in checks)
+    # Read the version from the installed package: a hardcoded literal
+    # would silently lie in the artifact after the next agentcam release.
+    try:
+        from agentcam import __version__ as agentcam_version
+    except Exception:
+        agentcam_version = "unknown"
     artifact = {
         "schema": 1,
         "generator": {
-            "agentcam_version": "0.6.0",
+            "agentcam_version": agentcam_version,
             "runtime_revision": os.environ.get("GUARDRAILS_RUNTIME_REVISION", "development"),
         },
         "delivery": {

@@ -346,3 +346,37 @@ def test_verification_tree_restores_original_tests(tmp_path):
         assert restored == "ORIGINAL = True\n"
         assert (verify_dir / "tests" / "test_hidden.py").exists()
         assert not (verify_dir / "tests" / "test_extra.py").exists()
+
+
+def test_verification_tree_resets_agent_written_conftest(tmp_path):
+    # Loophole regression: a root-level conftest.py written by the agent
+    # used to survive into the verification tree and could rig both the
+    # public and hidden runs.
+    lab = tmp_path / "lab"
+    base = lab / "tasks" / "demo" / "base"
+    work = tmp_path / "work"
+    (base / "tests").mkdir(parents=True)
+    (lab / "tasks" / "demo" / "hidden").mkdir(parents=True)
+    (base / "conftest.py").write_text("BASE = True\n", encoding="utf-8")
+    work.mkdir()
+    (work / "conftest.py").write_text("RIGGED = True\n", encoding="utf-8")
+    (work / "extra_conftest_dir").mkdir()
+    (work / "extra_conftest_dir" / "conftest.py").write_text(
+        "RIGGED = True\n", encoding="utf-8"
+    )
+
+    with runner.verification_tree({"id": "demo"}, lab, work, include_hidden=False) as verify_dir:
+        assert (verify_dir / "conftest.py").read_text(encoding="utf-8") == "BASE = True\n"
+        assert not (verify_dir / "extra_conftest_dir" / "conftest.py").exists()
+
+
+def test_quality_score_survives_deleted_checked_file(tmp_path):
+    task = {
+        "quality_checks": [
+            {"file": "missing.py", "type": "contains", "value": "x"},
+            {"file": "present.py", "type": "contains", "value": "VALUE"},
+        ]
+    }
+    (tmp_path / "present.py").write_text("VALUE = 1\n", encoding="utf-8")
+    hits, total = runner._quality_score(task, tmp_path)
+    assert (hits, total) == (1, 2)

@@ -14,9 +14,9 @@ Committed 32-row scoring input SHA-256:
 
 Two arms, run the same day on the same model snapshot: `gpt-5.5` via the
 Codex CLI, 8 tasks × 2 repetitions per arm (32 runs). The historical
-tables in the main README were measured months earlier on different
-model snapshots, so they are not a valid control group for these runs;
-only the same-day baseline is.
+tables recorded in `one-line-kiss.md` and `context-weighting-experiment.md`
+were measured months earlier on different model snapshots, so they are
+not a valid control group for these runs; only the same-day baseline is.
 
 | variant | runs | correctness | files touched | patch size |
 | --- | ---: | ---: | ---: | ---: |

@@ -132,32 +132,45 @@ def prepare_run(
 def run_agent(run_dir: Path, model: str, timeout_seconds: int = 600) -> None:
     prompt = (run_dir / "PROMPT.md").read_text(encoding="utf-8")
     output_file = run_dir / "AGENT_OUTPUT.md"
-    completed = subprocess.run(
-        codex_command()
-        + [
-            "exec",
-            "-m",
-            model,
-            "-C",
-            str(run_dir / "work"),
-            "-s",
-            "workspace-write",
-            "--skip-git-repo-check",
-            "--ignore-rules",
-            "--ephemeral",
-            "-o",
-            str(output_file),
-            prompt,
-        ],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=timeout_seconds,
-    )
-    (run_dir / "codex_stdout.txt").write_text(completed.stdout or "", encoding="utf-8")
-    (run_dir / "codex_stderr.txt").write_text(completed.stderr or "", encoding="utf-8")
-    (run_dir / "codex_returncode.txt").write_text(str(completed.returncode), encoding="utf-8")
+    try:
+        completed = subprocess.run(
+            codex_command()
+            + [
+                "exec",
+                "-m",
+                model,
+                "-C",
+                str(run_dir / "work"),
+                "-s",
+                "workspace-write",
+                "--skip-git-repo-check",
+                "--ignore-rules",
+                "--ephemeral",
+                "-o",
+                str(output_file),
+                prompt,
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+        )
+        stdout, stderr = completed.stdout, completed.stderr
+        returncode = str(completed.returncode)
+    except subprocess.TimeoutExpired as expired:
+        # A timed-out run must not crash the CLI loop; record what the
+        # agent produced and mark the run so the operator can rerun it.
+        def _captured(stream) -> str:
+            if isinstance(stream, bytes):
+                return stream.decode("utf-8", errors="replace")
+            return stream or ""
+
+        stdout, stderr = _captured(expired.stdout), _captured(expired.stderr)
+        returncode = "timeout"
+    (run_dir / "codex_stdout.txt").write_text(stdout or "", encoding="utf-8")
+    (run_dir / "codex_stderr.txt").write_text(stderr or "", encoding="utf-8")
+    (run_dir / "codex_returncode.txt").write_text(returncode, encoding="utf-8")
 
 
 def codex_command() -> list[str]:
@@ -304,7 +317,11 @@ def _quality_score(task: dict, work_dir: Path) -> tuple[int, int]:
     checks = task.get("quality_checks", [])
     hits = 0
     for check in checks:
-        content = (work_dir / check["file"]).read_text(encoding="utf-8")
+        try:
+            content = (work_dir / check["file"]).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            # A deleted or undecodable checked file is a miss, not a crash.
+            continue
         value = check["value"]
         if check["type"] == "contains" and value in content:
             hits += 1
@@ -327,9 +344,21 @@ def verification_tree(task: dict, lab_dir: Path, work_dir: Path, include_hidden:
         tests_dir = verify_dir / "tests"
         if tests_dir.exists():
             shutil.rmtree(tests_dir)
-        base_tests = lab_dir / "tasks" / task["id"] / "base" / "tests"
+        base_dir = lab_dir / "tasks" / task["id"] / "base"
+        base_tests = base_dir / "tests"
         if base_tests.exists():
             shutil.copytree(base_tests, tests_dir)
+        # Restoring tests/ alone leaves a loophole: an agent-written
+        # conftest.py outside tests/ survives into the verification tree
+        # and could rig both the public and hidden runs. Reset every
+        # conftest to the base task's version, or drop it if base has none.
+        for conftest in verify_dir.rglob("conftest.py"):
+            relative = conftest.relative_to(verify_dir)
+            base_copy = base_dir / relative
+            if base_copy.is_file():
+                shutil.copy2(base_copy, conftest)
+            else:
+                conftest.unlink()
         if include_hidden:
             hidden_dir = lab_dir / "tasks" / task["id"] / "hidden"
             for path in hidden_dir.rglob("*"):
