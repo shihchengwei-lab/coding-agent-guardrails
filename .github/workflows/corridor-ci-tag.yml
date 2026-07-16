@@ -4,6 +4,9 @@ on:
   push:
     tags: ['corridor-ci-v*']
 
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: corridor-ci

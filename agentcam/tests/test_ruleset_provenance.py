@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,7 +22,12 @@ def test_release_workflow_uses_oidc_and_releases_only_after_pypi():
 
     assert "tags: ['agentcam-v*']" in workflow
     assert "id-token: write" in workflow
-    assert "pypa/gh-action-pypi-publish@release/v1" in workflow
+    # The publish job holds id-token: write, so the action must be pinned
+    # to an immutable commit SHA, never a mutable tag or branch.
+    assert re.search(
+        r"pypa/gh-action-pypi-publish@[0-9a-f]{40}\b", workflow
+    )
+    assert "pypa/gh-action-pypi-publish@release/v1" not in workflow
     assert "needs: [build, publish-pypi]" in workflow
     assert "gh release create" in workflow
     assert "--draft" in workflow
