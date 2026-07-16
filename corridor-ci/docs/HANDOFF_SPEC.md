@@ -85,7 +85,10 @@ Guardrails-Dependency-Approval: <full-head-sha>
 Guardrails-Workflow-Approval: <full-head-sha>
 ```
 
-New commits invalidate earlier approvals.
+New commits invalidate earlier approvals. The policy gate re-reads comments
+briefly before failing, so an approval posted right after the push is picked
+up in the same run; an approval posted later needs a normal re-run of the
+check.
 
 ## Report safety
 

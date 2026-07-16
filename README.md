@@ -90,6 +90,20 @@ binding. Dependency and workflow changes also need a GitHub approval comment
 bound to the current head SHA; after a confirmed high-risk change the agent can
 sync that comment after the PR exists.
 
+## The mental model
+
+You only ever hold two concepts. The agent **declares its scope** before the
+first edit, and you **type the confirmation phrase** when a change is
+high-risk. Everything else — turns, deliveries, fingerprints, the artifact's
+internal shape — is machinery the hooks run for you, and when it stops you it
+says why and what to do next.
+
+The two layers do different jobs. The review artifact is the author's own
+evidence: it keeps an honest agent honest and gives a reviewer one place to
+look, but its author controls it. The security boundary is elsewhere — the
+head-SHA-bound GitHub approval comments, the base-branch policy gate, and
+ultimately the OS permissions the agent runs under.
+
 ## What the user may operate
 
 These are maintenance commands, not daily workflow steps:

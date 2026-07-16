@@ -181,6 +181,83 @@ class CorridorV14Test(unittest.TestCase):
         self.assertEqual(len(patches), 1)
         self.assertTrue(patches[0].endswith("/comments/2"))
 
+    def _policy_gate_repo(self, raw):
+        repo = Path(raw)
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
+        (repo / "base.txt").write_text("base\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "base"], cwd=repo, check=True)
+        subprocess.run(["git", "switch", "-qc", "feature"], cwd=repo, check=True)
+        (repo / ".github" / "workflows").mkdir(parents=True)
+        (repo / ".github" / "workflows" / "ci.yml").write_text("name: ci\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "workflow"], cwd=repo, check=True)
+        event = repo / "event.json"
+        event.write_text(json.dumps({
+            "number": 7,
+            "pull_request": {
+                "head": {"sha": "b" * 40},
+                "user": {"login": "author"},
+            },
+        }), encoding="utf-8")
+        return repo, event
+
+    def test_policy_gate_retries_briefly_for_late_approval_comment(self):
+        # The approval comment can only be posted after the push that
+        # starts the run, so the first read always races it. A brief
+        # re-read must absorb that window.
+        approval = {
+            "body": f"Guardrails-Workflow-Approval: {'b' * 40}",
+            "author_association": "OWNER",
+            "user": {"login": "owner"},
+        }
+        pages = [[], [approval]]
+        naps = []
+
+        def transport(method, url, token, body):
+            return pages.pop(0) if pages else [approval]
+
+        with tempfile.TemporaryDirectory() as raw:
+            repo, event = self._policy_gate_repo(raw)
+            with mock.patch.dict(os.environ, {
+                "GITHUB_EVENT_PATH": str(event),
+                "GITHUB_TOKEN": "t",
+                "GITHUB_REPOSITORY": "o/r",
+            }, clear=False), redirect_stdout(StringIO()):
+                code = corridor_ci.run_policy_gate(
+                    repo, "main", "feature",
+                    approval_delay_seconds=0.0,
+                    sleep=naps.append,
+                    transport=transport,
+                )
+        self.assertEqual(code, 0)
+        self.assertEqual(len(naps), 1)
+
+    def test_policy_gate_fails_closed_after_retry_window(self):
+        naps = []
+
+        def transport(method, url, token, body):
+            return []
+
+        with tempfile.TemporaryDirectory() as raw:
+            repo, event = self._policy_gate_repo(raw)
+            with mock.patch.dict(os.environ, {
+                "GITHUB_EVENT_PATH": str(event),
+                "GITHUB_TOKEN": "t",
+                "GITHUB_REPOSITORY": "o/r",
+            }, clear=False), redirect_stdout(StringIO()):
+                code = corridor_ci.run_policy_gate(
+                    repo, "main", "feature",
+                    approval_attempts=3,
+                    approval_delay_seconds=0.0,
+                    sleep=naps.append,
+                    transport=transport,
+                )
+        self.assertEqual(code, 1)
+        self.assertEqual(len(naps), 2)
+
     def test_main_accepts_arbitrary_pr_body_with_valid_artifact(self):
         with tempfile.TemporaryDirectory() as raw:
             repo = Path(raw)

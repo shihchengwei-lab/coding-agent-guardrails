@@ -211,6 +211,31 @@ def test_review_artifact_aggregates_committed_changes_across_turns(tmp_path):
     ]
 
 
+def test_stop_completes_delivery_when_turn_made_no_new_change(tmp_path):
+    # Regression: with all delivery work committed before the turn (clean
+    # tree), agentcam records no turn run and Stop used to block with
+    # "could not finalize the Agentcam turn record" — even though the
+    # README's primary flow is exactly "agent works, user asks to commit".
+    repo = make_repo(tmp_path)
+    git(repo, "switch", "-qc", "feature")
+    (repo / "src").mkdir()
+    (repo / "src" / "app.py").write_text("done = True\n", encoding="utf-8")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "work committed before the turn")
+
+    payload = start(repo, "turn-clean")
+    runtime.set_delivery_scope(repo, "deliver already-committed work", ["src/app.py"])
+    result = runtime.finish_delivery(repo, payload)
+
+    assert result["decision"] == "ready", result
+    review = json.loads((repo / ".guardrails" / "review.json").read_text("utf-8"))
+    assert [item["path"] for item in review["delivery"]["changed_files"]] == [
+        "src/app.py",
+    ]
+    # No turn capture existed, so capture degrades instead of blocking.
+    assert review["capture"] == {"coverage": "partial", "terminal": "unavailable"}
+
+
 def test_agentcam_canonical_high_path_requires_confirmation_before_finalize(tmp_path):
     repo = make_repo(tmp_path)
     payload = start(repo)

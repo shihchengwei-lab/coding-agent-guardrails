@@ -84,6 +84,17 @@ scope coverage、風險下限與 recorded check 綁定。Dependency 或 workflow
 仍需目前 head SHA 的 GitHub approval；使用者完成高風險確認後，agent 可以在
 PR 建立後同步該留言。
 
+## 心智模型
+
+你只需要掌握兩個概念：agent 在第一次編輯前**宣告範圍**；遇到高風險變更時，
+由你**輸入確認短語**。其餘的一切——turn、delivery、指紋、artifact 的內部
+結構——都是 hooks 替你運轉的機器；當它擋下你時，會說明原因和下一步。
+
+兩層機制各司其職。review artifact 是作者自己的證據：它讓誠實的 agent 保持
+誠實、給 reviewer 一個入口，但它由作者控制。真正的安全邊界在別處——綁定
+head SHA 的 GitHub 審批留言、base branch 的 policy gate，以及最終 agent
+執行時的 OS 權限。
+
 ## 使用者可能會操作的命令
 
 這些是進階維護，不是日常步驟：

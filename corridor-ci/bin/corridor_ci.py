@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, replace
@@ -762,7 +763,16 @@ def render_workflow_policy(decision: WorkflowPolicyDecision) -> str:
     return "\n".join(lines) + "\n"
 
 
-def run_policy_gate(repo: Path, base: str, head: str) -> int:
+def run_policy_gate(
+    repo: Path,
+    base: str,
+    head: str,
+    *,
+    approval_attempts: int = 6,
+    approval_delay_seconds: float = 15.0,
+    sleep: Callable[[float], None] = time.sleep,
+    transport: Callable[..., Any] | None = None,
+) -> int:
     event = read_event_payload()
     pull = event.get("pull_request") if isinstance(event, dict) else None
     if not isinstance(pull, dict):
@@ -786,22 +796,38 @@ def run_policy_gate(repo: Path, base: str, head: str) -> int:
     workflow_changed = any(
         normalize_path(path).startswith(WORKFLOW_PREFIX) for path in changed
     )
-    comments: list[dict[str, Any]] = []
-    if workflow_changed:
-        try:
-            comments = read_pr_comments(
-                token=token, repository=repository, pr_number=pr_number
-            )
-        except Exception as exc:
-            raise SystemExit(
-                f"policy gate could not read trusted approvals: {exc}"
-            ) from exc
-    decision = evaluate_workflow_policy(
-        changed_files=changed,
-        comments=comments,
-        head_sha=head_sha,
-        pr_author=pr_author,
-    )
+    def _evaluate() -> WorkflowPolicyDecision:
+        comments: list[dict[str, Any]] = []
+        if workflow_changed:
+            try:
+                comments = read_pr_comments(
+                    token=token,
+                    repository=repository,
+                    pr_number=pr_number,
+                    transport=transport,
+                )
+            except Exception as exc:
+                raise SystemExit(
+                    f"policy gate could not read trusted approvals: {exc}"
+                ) from exc
+        return evaluate_workflow_policy(
+            changed_files=changed,
+            comments=comments,
+            head_sha=head_sha,
+            pr_author=pr_author,
+        )
+
+    decision = _evaluate()
+    # The approval comment can only be posted after the push that starts
+    # this run, so the standard flow always loses the first race by a few
+    # seconds. Re-read briefly before failing; a genuinely missing
+    # approval still fails closed after the window, and a late approval
+    # needs a normal re-run.
+    attempt = 1
+    while workflow_changed and not decision.ok and attempt < approval_attempts:
+        sleep(approval_delay_seconds)
+        attempt += 1
+        decision = _evaluate()
     markdown = render_workflow_policy(decision)
     print(markdown)
     write_step_summary(markdown)
