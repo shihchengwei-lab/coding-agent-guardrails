@@ -166,8 +166,8 @@ def _do_session_start(*, id_field: str = "session_id") -> int:
     try:
         git_dir = resolve_git_dir(cwd)
         git_root = resolve_git_root(cwd)
-        state = collect_git_state(cwd, is_after=False)
-        fingerprint = compute_diff_fingerprint(cwd)
+        state = collect_git_state(git_root, is_after=False)
+        fingerprint = compute_diff_fingerprint(git_root)
     except NotAGitRepoError:
         return 0
     except (OSError, RuntimeError, FileNotFoundError):
@@ -360,8 +360,8 @@ def _do_session_end(
             value.replace("\\", "/") for value in payload_scope if value
         ))
 
-    state_after = collect_git_state(cwd, is_after=True)
-    fingerprint_after = compute_diff_fingerprint(cwd)
+    state_after = collect_git_state(Path(git_root_str), is_after=True)
+    fingerprint_after = compute_diff_fingerprint(Path(git_root_str))
     state_after = derive_turn_delta(Path(git_root_str), state_before, state_after)
 
     no_change = (

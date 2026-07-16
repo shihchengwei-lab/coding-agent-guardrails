@@ -138,6 +138,48 @@ class TestSubdirectoryRun:
         assert "| added | `flask` |" in report
         assert "removed" not in report
 
+    def test_dirty_pre_run_from_subdir_keeps_run(self, tmp_git_repo: Path):
+        # Regression: the no-diff fingerprints used to be computed relative
+        # to the invocation cwd, so from a subdirectory they were blind to
+        # content changes in a pre-run-dirty file outside that subdirectory
+        # and the cleanup deleted the whole run dir, raw logs included.
+        (tmp_git_repo / "tracked.txt").write_text("first")
+        _git(tmp_git_repo, "add", ".")
+        _git(tmp_git_repo, "commit", "-q", "-m", "init")
+        (tmp_git_repo / "tracked.txt").write_text("dirty")  # pre-run dirty
+        sub = tmp_git_repo / "sub"
+        sub.mkdir()
+        proc = _agentcam(
+            sub, "run", "--",
+            sys.executable, "-c",
+            "open('../tracked.txt','w').write('agent change')",
+        )
+        assert proc.returncode == 0
+        runs = tmp_git_repo / ".git" / "agentcam" / "runs"
+        assert runs.exists() and any(runs.iterdir()), (
+            "run dir was deleted by no-diff cleanup despite a real change"
+        )
+        assert "tracked.txt" in _report(tmp_git_repo)
+
+    def test_verify_from_subdir_matches_recorded_fingerprint(
+        self, tmp_git_repo: Path
+    ):
+        # Regression: `run` records the fingerprint from git_root but
+        # verify/handoff recomputed it from cwd, so verify always failed
+        # with "state changed" when invoked from a subdirectory.
+        (tmp_git_repo / "tracked.txt").write_text("x")
+        _git(tmp_git_repo, "add", ".")
+        _git(tmp_git_repo, "commit", "-q", "-m", "init")
+        sub = tmp_git_repo / "sub"
+        sub.mkdir()
+        _agentcam(
+            sub, "run", "--",
+            sys.executable, "-c",
+            "open('../produced.txt','w').write('hi')",
+        )
+        proc = _agentcam(sub, "verify", "--", sys.executable, "-c", "pass")
+        assert proc.returncode == 0, proc.stderr
+
 
 # ---------------------------------------------------------------------------
 # Pre-run dirty

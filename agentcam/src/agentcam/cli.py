@@ -404,12 +404,14 @@ def _handoff_command(args) -> int:
         NotAGitRepoError,
         compute_final_state_fingerprint,
         resolve_git_dir,
+        resolve_git_root,
     )
     from agentcam.verification import read_records
 
     cwd = Path.cwd()
     try:
         git_dir = resolve_git_dir(cwd)
+        git_root = resolve_git_root(cwd)
     except NotAGitRepoError:
         print(
             "agentcam: not in a git repository. agentcam handoff needs "
@@ -456,7 +458,7 @@ def _handoff_command(args) -> int:
         )
         return 2
     try:
-        current_state_fingerprint = compute_final_state_fingerprint(cwd)
+        current_state_fingerprint = compute_final_state_fingerprint(git_root)
     except Exception as e:  # noqa: BLE001
         print(f"agentcam: could not fingerprint current state: {e}", file=sys.stderr)
         return 2
@@ -578,6 +580,7 @@ def _verify_command(args) -> int:
         NotAGitRepoError,
         compute_final_state_fingerprint,
         resolve_git_dir,
+        resolve_git_root,
     )
     from agentcam.redaction import redact_argv
     from agentcam.verification import new_record_id, sync_manifest, write_record
@@ -594,6 +597,7 @@ def _verify_command(args) -> int:
     cwd = Path.cwd()
     try:
         git_dir = resolve_git_dir(cwd)
+        git_root = resolve_git_root(cwd)
     except NotAGitRepoError:
         print(
             "agentcam: not in a git repository. agentcam verify needs "
@@ -662,7 +666,7 @@ def _verify_command(args) -> int:
                 file=sys.stderr,
             )
             return 2
-        if compute_final_state_fingerprint(cwd) != final_state_fingerprint:
+        if compute_final_state_fingerprint(git_root) != final_state_fingerprint:
             print(
                 "agentcam: state changed after the recorded run; create a new "
                 "run before recording checks.",
@@ -700,7 +704,7 @@ def _verify_command(args) -> int:
         "exit_code": proc.returncode,
         "duration_seconds": round(duration, 3),
         "recorded_at": started_at.isoformat(),
-        "state_fingerprint": compute_final_state_fingerprint(cwd),
+        "state_fingerprint": compute_final_state_fingerprint(git_root),
     }
 
     if session_dir is not None:
@@ -795,7 +799,7 @@ def _run_command(args) -> int:
 
     # 2) Collect pre-run git state.
     try:
-        state_before = collect_git_state(cwd, is_after=False)
+        state_before = collect_git_state(git_root, is_after=False)
     except NotAGitRepoError:
         print(
             "agentcam: not in a git repository. "
@@ -812,7 +816,7 @@ def _run_command(args) -> int:
     # Codex round-2 fix; fingerprint used to be always computed inside
     # collect_git_state regardless of --keep-empty).
     fingerprint_before = (
-        compute_diff_fingerprint(cwd) if not args.keep_empty else ""
+        compute_diff_fingerprint(git_root) if not args.keep_empty else ""
     )
 
     # 3) Create the run directory under <git_dir>/agentcam/runs/<run_id>/.
@@ -860,10 +864,10 @@ def _run_command(args) -> int:
 
     post_git_error: str | None = None
     try:
-        state_after = collect_git_state(cwd, is_after=True)
+        state_after = collect_git_state(git_root, is_after=True)
         state_after = derive_turn_delta(git_root, state_before, state_after)
         fingerprint_after = (
-            compute_diff_fingerprint(cwd) if not args.keep_empty else ""
+            compute_diff_fingerprint(git_root) if not args.keep_empty else ""
         )
     except Exception as e:  # noqa: BLE001
         post_git_error = f"{type(e).__name__}: {e}"
