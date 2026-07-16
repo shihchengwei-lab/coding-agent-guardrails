@@ -79,8 +79,8 @@ try {
     throw "Corridor workflow not installed"
   }
   $workflow = Get-Content -Raw -Encoding utf8 (Join-Path $Project ".github/workflows/corridor.yml")
-  if ($workflow -notmatch "coding-agent-guardrails:managed corridor-ci-v14\.0\.0" -or
-      $workflow -notmatch "corridor-ci@corridor-ci-v14\.0\.0") {
+  if ($workflow -notmatch "coding-agent-guardrails:managed corridor-ci-v15\.0\.0" -or
+      $workflow -notmatch "corridor-ci@corridor-ci-v15\.0\.0") {
     throw "installed Corridor workflow is not the managed v12 template"
   }
 
@@ -106,7 +106,7 @@ try {
 
   & $Manifest.python -m agentcam.cli version | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "agentcam not installed into selected Python" }
-  if ((& $Manifest.python -m agentcam.cli version).Trim() -ne "agentcam 0.6.0") {
+  if ((& $Manifest.python -m agentcam.cli version).Trim() -ne "agentcam 0.7.0") {
     throw "unexpected agentcam version"
   }
 

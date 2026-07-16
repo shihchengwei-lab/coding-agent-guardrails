@@ -7,6 +7,33 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-07-16
+
+### Changed
+
+- Git state, fingerprints, and path signatures are computed from the git
+  root instead of the invocation cwd. Subdirectory runs no longer lose
+  their run records to the no-diff cleanup, and `verify`/`handoff` work
+  from subdirectories.
+- Hook-mode session snapshots are stored as JSON with an explicit
+  `GitState` serializer instead of pickle, removing the deserialization
+  code-execution class entirely.
+- Inline redaction covers scheme-generic URL credentials (`postgres://`,
+  `mongodb+srv://`, `redis://`, `git+ssh://`) and fine-grained
+  `github_pat_` tokens; the output risk scan catches `rm -fr`,
+  `rm -r -f`, whole-cwd and glob-everything deletions, post-argument
+  force pushes, and the `+refspec` shorthand.
+- The export bundle relativizes `cwd`, `git_root`, `git_dir`, and every
+  `paths.*` entry to the git root; the handoff `Scope` line falls back
+  to the files that actually changed.
+
+### Migration
+
+- In-flight hook sessions started under 0.6.x left `state_before.pickle`
+  snapshots; 0.7.0 discards them instead of loading them. Finish or
+  discard in-progress sessions before upgrading if their turn record
+  matters.
+
 ## [0.6.0] — 2026-07-11
 
 ### Changed

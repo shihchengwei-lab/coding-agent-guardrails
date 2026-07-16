@@ -13,7 +13,7 @@ body lines. That exposed the right concerns but assigned machine bookkeeping to
 the human. It also allowed prose, recorded evidence, and final state to drift
 apart.
 
-Corridor v14 moves that structure to `.guardrails/review.json`. The local Stop
+Corridor v15 moves that structure to `.guardrails/review.json`. The local Stop
 coordinator generates it from Git-local intent, trusted checks, Agentcam, and
 the final product fingerprint. CI recomputes the PR state independently. The PR
 body is again for normal human explanation, with no fixed grammar.

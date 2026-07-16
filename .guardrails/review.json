@@ -5,14 +5,38 @@
     "terminal": "unavailable"
   },
   "delivery": {
-    "base_commit": "56d1529f6cf0b13dcde52307f198c88a21bd8047",
+    "base_commit": "58890bd334e71a09acad01379ab910007850af08",
     "changed_files": [
+      {
+        "path": "CHANGELOG.md",
+        "status": "modified"
+      },
       {
         "path": "README.md",
         "status": "modified"
       },
       {
         "path": "README.zh-TW.md",
+        "status": "modified"
+      },
+      {
+        "path": "agentcam/CHANGELOG.md",
+        "status": "modified"
+      },
+      {
+        "path": "agentcam/README.md",
+        "status": "modified"
+      },
+      {
+        "path": "agentcam/src/agentcam/__init__.py",
+        "status": "modified"
+      },
+      {
+        "path": "agentcam/tests/test_ruleset_provenance.py",
+        "status": "modified"
+      },
+      {
+        "path": "corridor-ci/README.md",
         "status": "modified"
       },
       {
@@ -24,42 +48,68 @@
         "status": "modified"
       },
       {
-        "path": "corridor-ci/tests/test_corridor_ci.py",
+        "path": "corridor-ci/docs/MANIFESTO.md",
         "status": "modified"
       },
       {
-        "path": "slime-coding/bin/patch-cost",
+        "path": "corridor-ci/examples/workflow.yml",
         "status": "modified"
       },
       {
-        "path": "slime-coding/tests/test_trusted_checks.py",
+        "path": "docs/MIGRATION.md",
         "status": "modified"
       },
       {
-        "path": "tests/test_low_friction_runtime.py",
+        "path": "installer/guardrails_installer.py",
+        "status": "modified"
+      },
+      {
+        "path": "slime-coding/CHANGELOG.md",
+        "status": "modified"
+      },
+      {
+        "path": "tests/test-install.ps1",
+        "status": "modified"
+      },
+      {
+        "path": "tests/test-install.sh",
+        "status": "modified"
+      },
+      {
+        "path": "tests/test_installer_core.py",
         "status": "modified"
       }
     ],
     "outcomes": [
-      "Mental-model convergence: committed-only deliveries complete, stale delivery state self-absorbs, every Stop block says the next step, the policy gate absorbs the approval-comment race, and the README states the two-concept model"
+      "Release wrap-up: agentcam 0.7.0 and Corridor CI v15.0.0 with lockstep pin updates, v14 template auto-upgrade recognition, the cross-component changelog with security notes, contract freeze, and migration guidance"
     ],
-    "product_fingerprint": "a3008aca48af6781ce1ca45cbab8facc9b398c90a1c0c9ee3d6757ff435bcc54",
-    "review_first": "README.md",
+    "product_fingerprint": "9fedc7f8f10df7ced7fbbae3018dd4d167713bab5b73cfb4223847f0741f3f72",
+    "review_first": "CHANGELOG.md",
     "risk": "none-detected",
     "scope": [
+      "CHANGELOG.md",
       "README.md",
       "README.zh-TW.md",
+      "agentcam/CHANGELOG.md",
+      "agentcam/README.md",
+      "agentcam/src/agentcam/__init__.py",
+      "agentcam/tests/test_ruleset_provenance.py",
+      "corridor-ci/README.md",
       "corridor-ci/bin/corridor_ci.py",
       "corridor-ci/docs/HANDOFF_SPEC.md",
-      "corridor-ci/tests/test_corridor_ci.py",
-      "slime-coding/bin/patch-cost",
-      "slime-coding/tests/test_trusted_checks.py",
-      "tests/test_low_friction_runtime.py"
+      "corridor-ci/docs/MANIFESTO.md",
+      "corridor-ci/examples/workflow.yml",
+      "docs/MIGRATION.md",
+      "installer/guardrails_installer.py",
+      "slime-coding/CHANGELOG.md",
+      "tests/test-install.sh",
+      "tests/test-install.ps1",
+      "tests/test_installer_core.py"
     ],
     "scope_changes": []
   },
   "generator": {
-    "agentcam_version": "0.6.0",
+    "agentcam_version": "0.7.0",
     "runtime_revision": "development"
   },
   "schema": 1,
@@ -71,10 +121,10 @@
           "diff",
           "--check"
         ],
-        "duration_ms": 2,
+        "duration_ms": 3,
         "exit_code": 0,
         "id": "structural",
-        "state_fingerprint": "a3008aca48af6781ce1ca45cbab8facc9b398c90a1c0c9ee3d6757ff435bcc54"
+        "state_fingerprint": "9fedc7f8f10df7ced7fbbae3018dd4d167713bab5b73cfb4223847f0741f3f72"
       }
     ],
     "level": "structural-only"

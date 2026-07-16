@@ -151,7 +151,7 @@ def test_installed_workflow_has_stable_context_and_minimal_permissions():
 
     assert "permissions:\n  contents: read" in workflow
     assert "jobs:\n  corridor:\n    name: Corridor" in workflow
-    assert "corridor-ci@corridor-ci-v14.0.0" in workflow
+    assert "corridor-ci@corridor-ci-v15.0.0" in workflow
     assert "pull-requests: write" not in workflow
 
 
@@ -184,6 +184,38 @@ jobs:
     target.write_text(v13, encoding="utf-8")
     assert installer._official_workflow_action(target, current) == "upgrade"
     target.write_text(v13 + "# user change\n", encoding="utf-8")
+    assert installer._official_workflow_action(target, current) == "preserve"
+
+
+def test_official_v14_workflow_is_upgradeable_but_modified_copy_is_preserved(tmp_path):
+    current = ROOT / "corridor-ci" / "examples" / "workflow.yml"
+    target = tmp_path / "corridor.yml"
+    v14 = """# coding-agent-guardrails:managed corridor-ci-v14.0.0
+name: Corridor CI
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  corridor:
+    name: Corridor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v14.0.0
+        with:
+          mode: fail
+"""
+    target.write_text(v14, encoding="utf-8")
+    assert installer._official_workflow_action(target, current) == "upgrade"
+    target.write_text(v14 + "# user change\n", encoding="utf-8")
     assert installer._official_workflow_action(target, current) == "preserve"
 
 

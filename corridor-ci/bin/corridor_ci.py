@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Corridor CI v14: validate a state-bound Guardrails review artifact."""
+"""Corridor CI v15: validate a state-bound Guardrails review artifact."""
 
 from __future__ import annotations
 
@@ -442,7 +442,7 @@ def evaluate_review_artifact(
     pr_title: str,
     pr_url: str,
 ) -> Report:
-    """Validate the v14 machine-generated review artifact, not PR prose."""
+    """Validate the v15 machine-generated review artifact, not PR prose."""
     changed = [normalize_path(path) for path in changed_files if normalize_path(path)]
     product = [path for path in changed if path not in SCOPE_METADATA_PATHS]
     deleted = {
