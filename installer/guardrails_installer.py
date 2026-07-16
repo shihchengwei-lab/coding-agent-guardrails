@@ -26,8 +26,10 @@ import uuid
 SCHEMA = 1
 DEFAULT_TIMEOUT = 600
 OFFICIAL_WORKFLOW_HASHES = {
-    # corridor-ci/examples/workflow.yml from the immutable v13.0.0 release.
-    "bf11e60c97edb5323cf0df4042335013d2f24818efae7a63d343a013ffa901e8",
+    # corridor-ci/examples/workflow.yml from past immutable releases, so
+    # repos still carrying those templates are recognized and upgraded.
+    "bf11e60c97edb5323cf0df4042335013d2f24818efae7a63d343a013ffa901e8",  # v13.0.0
+    "55c41dc950ca83448bffe927a6212774be5eac095787572d0445fb0cc43f4aef",  # v14.0.0
 }
 CHECK_ID = re.compile(r"^[a-z0-9_-]{1,64}$")
 BLOCK_START = "<!-- coding-agent-guardrails:discipline:start -->"
@@ -400,7 +402,7 @@ def _prepare_version(repo: Repository, source: Path, python: Path) -> PreparedVe
             _run([env_python, "-m", "pip", "install", "--quiet", "--upgrade", source / "agentcam"])
         env_python = _python_in_env(env)
         version = _run([env_python, "-m", "agentcam.cli", "version"]).stdout.strip()
-        if version != "agentcam 0.6.0":
+        if version != "agentcam 0.7.0":
             raise InstallerError(f"installed Agentcam version mismatch: {version}")
         return PreparedVersion(revision, runtime, env, env_python, created_runtime, created_env)
     except Exception:
@@ -618,7 +620,7 @@ def install_project(
                 "environment": str(prepared.env),
                 "python": str(prepared.python),
                 "installer_python": str(python),
-                "agentcam_version": "0.6.0",
+                "agentcam_version": "0.7.0",
                 "files": files,
             }
             manifest["owned_versions"] = merge_owned_versions(
@@ -749,7 +751,7 @@ def doctor(project: Path, *, remote: bool = False) -> int:
     workflow = repo.root / ".github" / "workflows" / "corridor.yml"
     if workflow.exists():
         text = workflow.read_text(encoding="utf-8-sig")
-        if not re.search(r"(?m)^\s{4}name: Corridor\s*$", text) or "corridor-ci@corridor-ci-v14.0.0" not in text:
+        if not re.search(r"(?m)^\s{4}name: Corridor\s*$", text) or "corridor-ci@corridor-ci-v15.0.0" not in text:
             failures.append(f"Corridor workflow has unexpected check name or version: {workflow}")
     if remote:
         try:

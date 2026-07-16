@@ -1,6 +1,6 @@
-# Corridor CI v14 review artifact specification
+# Corridor CI v15 review artifact specification
 
-The historical filename is retained for stable links. Corridor CI v14 has no
+The historical filename is retained for stable links. Corridor CI v15 has no
 fixed PR-body handoff. It reads exactly one JSON artifact at
 `.guardrails/review.json` by default.
 
@@ -10,7 +10,7 @@ fixed PR-body handoff. It reads exactly one JSON artifact at
 {
   "schema": 1,
   "generator": {
-    "agentcam_version": "0.6.0",
+    "agentcam_version": "0.7.0",
     "runtime_revision": "revision"
   },
   "delivery": {

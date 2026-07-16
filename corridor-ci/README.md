@@ -1,4 +1,4 @@
-# Corridor CI v14
+# Corridor CI v15
 
 Corridor CI is the receiving-side gate for the single Guardrails review
 artifact. It does not parse the pull-request body and does not execute PR code.
@@ -15,7 +15,7 @@ a maintainer spends review attention.
 
 ## Workflow
 
-After the v14 release, pin the immutable tag:
+After the v15 release, pin the immutable tag:
 
 ```yaml
 name: Corridor CI
@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v14.0.0
+      - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v15.0.0
 ```
 
 The default mode is `fail`. A workflow is not a merge gate until `Corridor` is
@@ -80,7 +80,7 @@ Sticky comments require `pull-requests: write`; the default action needs only
 
 The schema and invariants are documented in
 [`docs/HANDOFF_SPEC.md`](docs/HANDOFF_SPEC.md). The name is retained so old
-links do not break; v14 has no PR-body handoff grammar.
+links do not break; v15 has no PR-body handoff grammar.
 
 ## Boundary
 

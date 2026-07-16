@@ -1,4 +1,4 @@
-# coding-agent-guardrails:managed corridor-ci-v14.0.0
+# coding-agent-guardrails:managed corridor-ci-v15.0.0
 name: Corridor CI
 
 on:
@@ -17,6 +17,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v14.0.0
+      - uses: shihchengwei-lab/coding-agent-guardrails/corridor-ci@corridor-ci-v15.0.0
         with:
           mode: fail

@@ -73,10 +73,10 @@ assert not any("old/patch-cost" in h.get("command", "") for h in stop), stop
 PY
 
 test -f "$PROJECT/.github/workflows/corridor.yml"
-grep -q '^# coding-agent-guardrails:managed corridor-ci-v14.0.0$' "$PROJECT/.github/workflows/corridor.yml"
-grep -q 'corridor-ci@corridor-ci-v14.0.0' "$PROJECT/.github/workflows/corridor.yml"
+grep -q '^# coding-agent-guardrails:managed corridor-ci-v15.0.0$' "$PROJECT/.github/workflows/corridor.yml"
+grep -q 'corridor-ci@corridor-ci-v15.0.0' "$PROJECT/.github/workflows/corridor.yml"
 test ! -e "$PROJECT/.slime"
-"$AGENTCAM_PYTHON" -m agentcam.cli version | grep -q '^agentcam 0.6.0$'
+"$AGENTCAM_PYTHON" -m agentcam.cli version | grep -q '^agentcam 0.7.0$'
 if find "$PROJECT" -name '*.bak-*' -print -quit | grep -q .; then
   echo "FAIL: successful install left permanent backup files" >&2
   exit 1
