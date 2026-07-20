@@ -22,6 +22,10 @@ HIGH_RISK_SEGMENTS = {
     "credential", "secret", "migration", "migrations", "terraform",
     "kubernetes", "helm", "deploy", "deployment", "infrastructure",
 }
+TEST_SEGMENTS = {"test", "tests", "testdata", "spec", "specs", "__tests__"}
+DOC_SEGMENTS = {"doc", "docs"}
+DOC_SUFFIXES = (".md", ".rst", ".txt")
+DOC_BASENAMES = {"license", "notice"}
 
 
 def read_input():
@@ -831,6 +835,43 @@ def delivery_risk(changed):
     return level, list(dict.fromkeys(reasons))
 
 
+def review_first_tier(path):
+    # The path-based tiers 0-2 must cover every path signal delivery_risk
+    # treats as high — otherwise a file can raise the artifact's risk to
+    # high without being eligible to lead the review.
+    normalized = path.replace("\\", "/").lower()
+    segments = set(filter(None, normalized.split("/")))
+    basename = os.path.basename(normalized)
+    if normalized.startswith(".github/workflows/"):
+        return 0
+    if is_dependency_manifest(normalized):
+        return 1
+    if segments & HIGH_RISK_SEGMENTS:
+        return 2
+    if segments & TEST_SEGMENTS or basename.startswith(("test_", "test-")):
+        return 4
+    if (
+        segments & DOC_SEGMENTS
+        or basename in DOC_BASENAMES
+        or basename.endswith(DOC_SUFFIXES)
+    ):
+        return 5
+    return 3
+
+
+def choose_review_first(changed):
+    """Deterministic review entry point: the changed file the delivery-risk
+    rules rank highest; within a tier deletions first, then by path."""
+    return min(
+        changed,
+        key=lambda item: (
+            review_first_tier(item["path"]),
+            0 if item.get("status") == "deleted" else 1,
+            item["path"],
+        ),
+    )["path"]
+
+
 def agentcam_path_risk(changed):
     """Return Agentcam's canonical path risk before finalizing its session."""
     try:
@@ -1110,13 +1151,7 @@ def finish_delivery(cwd, data):
     if str(evidence.get("overall_risk") or "").upper() == "HIGH":
         risk = "high"
     capture_data = manifest.get("capture") if isinstance(manifest.get("capture"), dict) else {}
-    review_first = next(
-        (item["path"] for item in changed if any(
-            segment in set(item["path"].lower().split("/"))
-            for segment in HIGH_RISK_SEGMENTS
-        )),
-        changed[0]["path"],
-    )
+    review_first = choose_review_first(changed)
     recorded = any(item["id"] == "primary" for item in checks)
     # Read the version from the installed package: a hardcoded literal
     # would silently lie in the artifact after the next agentcam release.

@@ -6,6 +6,12 @@ cloning, so "versions" track the git history rather than published releases.
 
 ## Unreleased
 
+- The artifact's `review_first` is now a deterministic delivery-risk
+  ranking over the changed files (enforcement workflows, dependency
+  manifests, security-sensitive paths, other product source, tests,
+  docs; deletions lead within a tier, ties break by path) instead of a
+  security-segment match that fell back to the alphabetically first
+  changed file.
 - Deliveries whose turn made no new git-visible change now complete with
   degraded capture instead of blocking — the "agent works, user asks to
   commit" flow works on the first Stop.

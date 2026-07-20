@@ -352,14 +352,31 @@ def _export_command(args) -> int:
     return 0
 
 
+_LOW_PRIORITY_SEGMENTS = {"doc", "docs", "test", "tests", "spec", "specs", "__tests__"}
+_DOC_SUFFIXES = (".md", ".rst", ".txt")
+
+
 def _pick_review_first(paths: list[str], flags: list[dict]) -> str:
-    """Highest-severity flagged file that is in the changed set, else
-    the first changed file."""
+    """Highest-severity flagged file that is in the changed set, else the
+    first changed file that is not docs or tests (first path overall when
+    only docs and tests changed)."""
     for level in ("HIGH", "MEDIUM"):
         for flag in flags:
             if flag.get("level") == level and flag.get("evidence") in paths:
                 return flag["evidence"]
-    return paths[0]
+
+    def rank(path: str) -> tuple[int, str]:
+        normalized = path.replace("\\", "/").lower()
+        segments = set(filter(None, normalized.split("/")))
+        basename = normalized.rsplit("/", 1)[-1]
+        low = bool(
+            segments & _LOW_PRIORITY_SEGMENTS
+            or basename.startswith(("test_", "test-"))
+            or basename.endswith(_DOC_SUFFIXES)
+        )
+        return (1 if low else 0, path)
+
+    return min(paths, key=rank)
 
 
 def _verified_line(verifications: list, state_fingerprint: str = "") -> str:

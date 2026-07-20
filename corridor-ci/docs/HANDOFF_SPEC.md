@@ -55,6 +55,13 @@ Every changed product file must be covered by `delivery.scope`.
 `review_first` must be one of those product files. Empty and match-all scope is
 invalid.
 
+`review_first` is the generator's deterministic pick of the changed product
+file its delivery-risk rules rank highest: enforcement workflows, then
+dependency manifests, then security-sensitive paths, then other product
+source, with tests and docs last; within a tier deletions lead and ties break
+by path. Corridor validates only membership — like the rest of the artifact,
+the ranking itself is author-side evidence, not an enforced boundary.
+
 The accepted risk values are `high`, `medium`, `none-detected`, and `unknown`.
 Corridor recomputes a minimum risk; the artifact may be more cautious but not
 less cautious.
