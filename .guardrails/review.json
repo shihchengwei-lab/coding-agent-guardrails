@@ -1,30 +1,61 @@
 {
-  "approval": {
-    "confirmation_id": "dd980c4c06b1177f49f6009e3fa18f828df26bfdfc6dac8585a715b8924677f4",
-    "confirmed": true,
-    "product_fingerprint": "94ac9eaef208a13e4bbc2ade7ac2bca45458fd1660d22af9829842cbad3eea20",
-    "required": true
-  },
+  "approval": null,
   "capture": {
     "coverage": "partial",
     "terminal": "unavailable"
   },
   "delivery": {
-    "base_commit": "394974a01b8b2e4fb8ea715d39710d9dab50feab",
+    "base_commit": "02d03d6ac8e27801000104b382eed6e4ecdcbdce",
     "changed_files": [
       {
-        "path": ".github/workflows/corridor.yml",
+        "path": "agentcam/CHANGELOG.md",
+        "status": "modified"
+      },
+      {
+        "path": "agentcam/README.md",
+        "status": "modified"
+      },
+      {
+        "path": "agentcam/src/agentcam/cli.py",
+        "status": "modified"
+      },
+      {
+        "path": "agentcam/tests/test_handoff.py",
+        "status": "modified"
+      },
+      {
+        "path": "corridor-ci/docs/HANDOFF_SPEC.md",
+        "status": "modified"
+      },
+      {
+        "path": "slime-coding/CHANGELOG.md",
+        "status": "modified"
+      },
+      {
+        "path": "slime-coding/bin/patch-cost",
+        "status": "modified"
+      },
+      {
+        "path": "slime-coding/tests/test_trusted_checks.py",
         "status": "modified"
       }
     ],
     "outcomes": [
-      "This repository enforces PRs with the published immutable Corridor v15.0.0 release"
+      "review_first is a deterministic delivery-risk ranking shared with delivery_risk instead of the alphabetically first changed file",
+      "agentcam handoff's no-flag fallback skips docs and tests"
     ],
-    "product_fingerprint": "94ac9eaef208a13e4bbc2ade7ac2bca45458fd1660d22af9829842cbad3eea20",
-    "review_first": ".github/workflows/corridor.yml",
-    "risk": "high",
+    "product_fingerprint": "5e81d3d0600e300c7df9af1d765bdf1650379e18c5eb406016a65cf97e1183b8",
+    "review_first": "agentcam/src/agentcam/cli.py",
+    "risk": "none-detected",
     "scope": [
-      ".github/workflows/corridor.yml"
+      "agentcam/CHANGELOG.md",
+      "agentcam/README.md",
+      "agentcam/src/agentcam/cli.py",
+      "agentcam/tests/test_handoff.py",
+      "corridor-ci/docs/HANDOFF_SPEC.md",
+      "slime-coding/CHANGELOG.md",
+      "slime-coding/bin/patch-cost",
+      "slime-coding/tests/test_trusted_checks.py"
     ],
     "scope_changes": []
   },
@@ -37,16 +68,46 @@
     "checks": [
       {
         "argv": [
-          "git",
-          "diff",
-          "--check"
+          "python3",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "tests",
+          "-q"
         ],
-        "duration_ms": 3,
+        "duration_ms": 3739,
         "exit_code": 0,
-        "id": "structural",
-        "state_fingerprint": "94ac9eaef208a13e4bbc2ade7ac2bca45458fd1660d22af9829842cbad3eea20"
+        "id": "primary",
+        "state_fingerprint": "5e81d3d0600e300c7df9af1d765bdf1650379e18c5eb406016a65cf97e1183b8"
+      },
+      {
+        "argv": [
+          "python3",
+          "-m",
+          "pytest",
+          "tests",
+          "-q"
+        ],
+        "duration_ms": 73412,
+        "exit_code": 0,
+        "id": "agentcam-pytest",
+        "state_fingerprint": "5e81d3d0600e300c7df9af1d765bdf1650379e18c5eb406016a65cf97e1183b8"
+      },
+      {
+        "argv": [
+          "python3",
+          "-m",
+          "pytest",
+          "tests",
+          "-q"
+        ],
+        "duration_ms": 1167,
+        "exit_code": 0,
+        "id": "corridor-pytest",
+        "state_fingerprint": "5e81d3d0600e300c7df9af1d765bdf1650379e18c5eb406016a65cf97e1183b8"
       }
     ],
-    "level": "structural-only"
+    "level": "recorded"
   }
 }

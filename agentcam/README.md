@@ -312,7 +312,8 @@ agentcam handoff
 
 `handoff` drafts the legacy five-line text format for human use:
 `Scope` from the files that actually changed, `Review first` from the
-highest-severity risk flag, `Risk` from flags plus capture coverage, `Verified`
+highest-severity risk flag (with no flag, the first changed file that is
+not docs or tests), `Risk` from flags plus capture coverage, `Verified`
 from recorded passing checks. `Decision` always stays with you:
 agentcam records what changed, not why. Without a recorded check (or
 with only failing ones) `Verified` stays a fill-in too: red must not

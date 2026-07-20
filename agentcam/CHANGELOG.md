@@ -7,6 +7,12 @@ Versioning follows [SemVer](https://semver.org/) once 1.0.0 ships;
 
 ## [Unreleased]
 
+### Changed
+
+- With no risk flag, `handoff` now picks `Review first` from the first
+  changed file that is not docs or tests instead of the first changed
+  file, so a docs edit no longer outranks product source.
+
 ## [0.7.0] — 2026-07-16
 
 ### Changed

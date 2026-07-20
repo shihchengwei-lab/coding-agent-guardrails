@@ -209,5 +209,74 @@ class TrustedChecksTest(unittest.TestCase):
         self.assertFalse(slime.is_dependency_manifest("src/main.rs"))
 
 
+class ReviewFirstTest(unittest.TestCase):
+    def test_workflow_outranks_changelog(self):
+        self.assertEqual(
+            slime.choose_review_first([
+                {"path": "CHANGELOG.md", "status": "modified"},
+                {"path": ".github/workflows/corridor.yml", "status": "modified"},
+            ]),
+            ".github/workflows/corridor.yml",
+        )
+
+    def test_dependency_manifest_outranks_plain_source(self):
+        self.assertEqual(
+            slime.choose_review_first([
+                {"path": "setup.py", "status": "modified"},
+                {"path": "src/api.py", "status": "modified"},
+            ]),
+            "setup.py",
+        )
+
+    def test_high_risk_segment_outranks_plain_source(self):
+        self.assertEqual(
+            slime.choose_review_first([
+                {"path": "src/api.py", "status": "modified"},
+                {"path": "src/auth/tokens.py", "status": "modified"},
+            ]),
+            "src/auth/tokens.py",
+        )
+
+    def test_plain_source_outranks_tests_and_docs(self):
+        # Alphabetical order alone would pick the docs file.
+        self.assertEqual(
+            slime.choose_review_first([
+                {"path": "docs/guide.md", "status": "modified"},
+                {"path": "src/zz_util.py", "status": "modified"},
+                {"path": "tests/test_api.py", "status": "modified"},
+            ]),
+            "src/zz_util.py",
+        )
+
+    def test_deletion_leads_within_a_tier(self):
+        self.assertEqual(
+            slime.choose_review_first([
+                {"path": "src/b.py", "status": "modified"},
+                {"path": "src/z.py", "status": "deleted"},
+            ]),
+            "src/z.py",
+        )
+
+    def test_ties_break_alphabetically(self):
+        self.assertEqual(
+            slime.choose_review_first([
+                {"path": "src/b.py", "status": "modified"},
+                {"path": "src/a.py", "status": "modified"},
+            ]),
+            "src/a.py",
+        )
+
+    def test_every_delivery_risk_path_signal_outranks_plain_source(self):
+        plain = slime.review_first_tier("src/app.py")
+        for path in (
+            ".github/workflows/deploy.yml",
+            "requirements.txt",
+            "Cargo.toml",
+            "src/auth/login.py",
+            "infra/terraform/main.tf",
+        ):
+            self.assertLess(slime.review_first_tier(path), plain, path)
+
+
 if __name__ == "__main__":
     unittest.main()

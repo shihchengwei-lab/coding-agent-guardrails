@@ -252,6 +252,34 @@ class TestHandoff:
         assert proc.stderr.startswith(b"agentcam:")
 
 
+class TestPickReviewFirst:
+    def test_highest_severity_flag_wins(self):
+        from agentcam.cli import _pick_review_first
+
+        paths = ["a.py", "src/core.py"]
+        flags = [
+            {"level": "MEDIUM", "evidence": "a.py"},
+            {"level": "HIGH", "evidence": "src/core.py"},
+        ]
+        assert _pick_review_first(paths, flags) == "src/core.py"
+
+    def test_unflagged_fallback_skips_docs_and_tests(self):
+        from agentcam.cli import _pick_review_first
+
+        paths = [
+            "CHANGELOG.md",
+            "docs/guide.md",
+            "src/util.py",
+            "tests/test_util.py",
+        ]
+        assert _pick_review_first(paths, []) == "src/util.py"
+
+    def test_docs_only_change_falls_back_to_first_path(self):
+        from agentcam.cli import _pick_review_first
+
+        assert _pick_review_first(["docs/b.md", "CHANGELOG.md"], []) == "CHANGELOG.md"
+
+
 # ---------------------------------------------------------------------------
 # `agentcam export --files`
 # ---------------------------------------------------------------------------
